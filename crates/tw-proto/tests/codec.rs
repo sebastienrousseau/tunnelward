@@ -230,11 +230,14 @@ fn unknown_fields_and_codes_are_malformed() -> TestResult {
     Ok(())
 }
 
-/// Valid registrations with one rule broken, and the code each must get.
-fn broken_registers() -> [(Register, RejectCode); 10] {
+fn names(v: &[&str]) -> Vec<String> {
+    v.iter().map(|s| (*s).to_owned()).collect()
+}
+
+/// Valid registrations with one header rule broken, and the code each gets.
+fn broken_headers() -> Vec<(Register, RejectCode)> {
     let ok = register();
-    let routes = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-    [
+    vec![
         (
             Register {
                 version: 2,
@@ -249,63 +252,51 @@ fn broken_registers() -> [(Register, RejectCode); 10] {
             },
             RejectCode::Invalid,
         ),
-        (
-            Register {
-                routes: Vec::new(),
-                ..ok.clone()
-            },
-            RejectCode::Invalid,
-        ),
-        (
-            Register {
-                routes: routes(&["mcp/ok", "Bad Route"]),
-                ..ok.clone()
-            },
-            RejectCode::Invalid,
-        ),
-        (
-            Register {
-                routes: routes(&["mcp/a", "mcp/a"]),
-                ..ok.clone()
-            },
-            RejectCode::Invalid,
-        ),
-        (
-            Register {
-                capacity: 0,
-                ..ok.clone()
-            },
-            RejectCode::Invalid,
-        ),
-        (
-            Register {
-                domains: routes(&["Bad.Domain"]),
-                ..ok.clone()
-            },
-            RejectCode::Invalid,
-        ),
-        (
-            Register {
-                domains: routes(&["a.org", "a.org"]),
-                ..ok.clone()
-            },
-            RejectCode::Invalid,
-        ),
-        (
-            Register {
-                domains: (0..17).map(|i| format!("d{i}.org")).collect(),
-                ..ok.clone()
-            },
-            RejectCode::Invalid,
-        ),
-        (
-            Register {
-                routes: (0..65).map(|i| format!("r{i}")).collect(),
-                ..ok
-            },
-            RejectCode::Invalid,
-        ),
+        (Register { capacity: 0, ..ok }, RejectCode::Invalid),
     ]
+}
+
+/// Valid registrations with one claim rule broken; all get `Invalid`.
+fn broken_claims() -> Vec<Register> {
+    let ok = register();
+    let many = |p: &str, n: usize| (0..n).map(|i| format!("{p}{i}.org")).collect::<Vec<_>>();
+    vec![
+        Register {
+            routes: Vec::new(),
+            ..ok.clone()
+        },
+        Register {
+            routes: names(&["mcp/ok", "Bad Route"]),
+            ..ok.clone()
+        },
+        Register {
+            routes: names(&["mcp/a", "mcp/a"]),
+            ..ok.clone()
+        },
+        Register {
+            routes: (0..65).map(|i| format!("r{i}")).collect(),
+            ..ok.clone()
+        },
+        Register {
+            domains: names(&["Bad.Domain"]),
+            ..ok.clone()
+        },
+        Register {
+            domains: names(&["a.org", "a.org"]),
+            ..ok.clone()
+        },
+        Register {
+            domains: many("d", 17),
+            ..ok
+        },
+    ]
+}
+
+fn broken_registers() -> impl Iterator<Item = (Register, RejectCode)> {
+    let claims = broken_claims()
+        .into_iter()
+        .map(|r| (r, RejectCode::Invalid));
+    broken_headers().into_iter().chain(claims)
 }
 
 #[test]
