@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! Stable rejection codes. A code's number never changes meaning; new
 //! codes take new numbers.

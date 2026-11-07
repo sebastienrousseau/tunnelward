@@ -7,6 +7,42 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.5]
+
+### Added
+
+- Pools. Every connector whose claim ranks highest for a request forms
+  its pool; of two picked at random, the one with fewer requests in
+  flight takes it. A connector never holds more requests than the
+  smaller of its capacity and the gateway's stream grant, and a response
+  body keeps its slot until it ends or is dropped.
+- A bounded wait queue (FR-8): with no free slot, a request waits up to
+  `max_wait` (default 2 s) in a queue of at most
+  `limits.max_waiting_per_route`, then gets `SendError::Unavailable` with
+  a `Retry-After`.
+- Routes are kept after their last connector leaves
+  (`routes_keep_time`, default 2 h): requests for them wait and get
+  `Unavailable`, not `NoRoute`, and a connector that comes back serves
+  the waiting ones (gap G4).
+- A pluggable `RouteResolver`, with `LongestFirst` as the default (G3).
+- `tw_connector::Forward`: sends each request on to a local HTTP/1.1
+  server over TCP, TLS with a pinned CA, or a Unix socket; 502 when the
+  target fails, 504 when it is late (G5).
+- `Config::new` with defaults; `Gateway::in_flight` and
+  `Gateway::waiting`.
+- The README logo.
+
+### Changed
+
+- Licences (decision D8): `tw-proto`, `tw-crypto`, `tw-identity`,
+  `tw-mcp`, `tw-connector` and `tw-testpki` are now MIT OR Apache-2.0, so
+  services can embed them; the gateway, binaries and the other crates stay
+  GPL-3.0-only. `LICENSE` is now `LICENSE-GPL`, beside `LICENSE-MIT` and
+  `LICENSE-APACHE`. The gate fails if a permissive crate depends on a GPL
+  one (`scripts/licence-boundary.sh`).
+- Contributions need the Contributor License Agreement (`docs/cla/`, a
+  draft pending legal review) as well as the DCO sign-off.
+
 ## [0.0.4]
 
 ### Added
@@ -103,6 +139,7 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 - Licence GPL-3.0-only, REUSE metadata, security policy, contribution
   guide, code of conduct and agent instructions.
 
+[0.0.5]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.1...v0.0.2

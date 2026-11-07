@@ -49,8 +49,16 @@ impl std::error::Error for AdmitError {}
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum SendError {
-    /// No live connector serves the request's host and path.
+    /// No live connector serves the request's host and path, and no
+    /// route is kept for it.
     NoRoute,
+    /// The route exists but no connector had a free slot within
+    /// `max_wait`, or its wait queue was full. Answer 503 with this
+    /// `Retry-After`.
+    Unavailable {
+        /// How long the client should wait before retrying.
+        retry_after: std::time::Duration,
+    },
     /// The request's URI could not be made absolute.
     BadRequest(http::Error),
     /// The request failed on the connector connection.
@@ -61,6 +69,13 @@ impl fmt::Display for SendError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NoRoute => f.write_str("no connector serves this route"),
+            Self::Unavailable { retry_after } => {
+                write!(
+                    f,
+                    "no connector free; retry after {} s",
+                    retry_after.as_secs()
+                )
+            }
             Self::BadRequest(e) => write!(f, "bad request: {e}"),
             Self::Http(e) => write!(f, "request through connector failed: {e}"),
         }

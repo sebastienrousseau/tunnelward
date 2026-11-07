@@ -63,6 +63,12 @@ const STEPS: &[Step] = &[
         env: &[],
     },
     Step {
+        name: "licence-boundary",
+        program: "bash",
+        args: &["scripts/licence-boundary.sh"],
+        env: &[],
+    },
+    Step {
         name: "cargo-vet",
         program: "bash",
         args: &["scripts/vet.sh"],

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
-# SPDX-License-Identifier: GPL-3.0-only
+# SPDX-License-Identifier: MIT OR Apache-2.0
 
 [package]
 name = "tw-connector"
@@ -7,7 +7,7 @@ description = "Tunnelward connector: outbound registration and stdio bridge"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+license = "MIT OR Apache-2.0"
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
@@ -15,8 +15,10 @@ homepage.workspace = true
 publish = false
 
 [dependencies]
+bytes.workspace = true
 http.workspace = true
-hyper = { workspace = true, features = ["http2", "server"] }
+http-body-util.workspace = true
+hyper = { workspace = true, features = ["client", "http1", "http2", "server"] }
 hyper-util.workspace = true
 tokio = { workspace = true, features = ["net", "time"] }
 tokio-rustls.workspace = true

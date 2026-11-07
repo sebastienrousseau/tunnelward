@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! Tunnelward connector: dials a gateway, registers, then serves the
 //! gateway's requests over the connection it opened.
@@ -13,11 +13,14 @@
 //!
 //! [`register`] does the first part and returns a [`Registered`] session;
 //! [`Registered::serve`] runs the HTTP/2 server until the gateway closes
-//! the connection. Reconnecting, several gateways and draining arrive in
-//! v0.0.6.
+//! the connection. [`Forward`] is a service that sends each request on to
+//! a local HTTP server. Reconnecting, several gateways and draining arrive
+//! in v0.0.6.
 
 mod error;
+mod forward;
 mod session;
 
 pub use error::Error;
+pub use forward::{Forward, ForwardBody, Target};
 pub use session::{Config, Registered, register};

@@ -1,0 +1,9 @@
+Tunnel icon (Noun Project item 8029303), in .github/logo.svg.
+
+Used under the Noun Project licence held by the maintainer, Sebastien
+Rousseau, through a Noun Project Pro subscription (royalty-free, no
+attribution required). The icon is not covered by this repository's
+GPL-3.0-only licence and is not licensed to anyone else by its inclusion
+here.
+
+Terms: https://thenounproject.com/legal/terms-of-use/

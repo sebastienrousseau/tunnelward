@@ -25,8 +25,12 @@ is specific here and wins where it is stricter.
 4. **Security is never paywalled.** PQ TLS, mTLS, route ownership, policy
    and the audit log stay in the open crates.
 5. **No performance number without a benchmark anyone can rerun.**
-6. **Crypto changes need an ADR** in `docs/adr/` and test vectors.
-7. **Releases**: `v0.0.N`, one `feat/v0.0.N` branch and one pull request
+6. **Keep the licence boundary.** `tw-proto`, `tw-crypto`, `tw-identity`,
+   `tw-mcp`, `tw-connector` and `tw-testpki` are MIT OR Apache-2.0 and must
+   never depend on a GPL crate (`scripts/licence-boundary.sh`). A new crate
+   an SDK needs is permissive from its first commit.
+7. **Crypto changes need an ADR** in `docs/adr/` and test vectors.
+8. **Releases**: `v0.0.N`, one `feat/v0.0.N` branch and one pull request
    per release; signed annotated tag `tunnelward v0.0.N`; GitHub release
    title `tunnelward 0.0.N`.
 
@@ -40,7 +44,8 @@ It is the source of truth; see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Leave alone
 
-- `LICENSE`, `LICENSES/`: legal texts.
+- `LICENSE-GPL`, `LICENSE-MIT`, `LICENSE-APACHE`, `LICENSES/`: legal texts.
+- `docs/cla/`: drafts pending legal review; change only on the maintainer's word.
 - `supply-chain/` and `Cargo.lock`: change them only through `cargo vet`
   and `cargo`, never by hand.
 - `.complexity-baseline`: it may only shrink.

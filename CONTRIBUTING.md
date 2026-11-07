@@ -25,7 +25,12 @@ welcome; please read this first.
 - Cryptographically signed (SSH or GPG): `git config commit.gpgsign true`.
 - A [DCO](https://developercertificate.org) sign-off on every commit:
   `git commit -s`. The trailer certifies you have the right to contribute
-  the change under GPL-3.0-only.
+  the change under the licence of the crate it touches (see the README's
+  licence table).
+- The [Contributor License Agreement](docs/cla/README.md), accepted once
+  through the CLA bot on your first pull request. It lets the project
+  offer a commercial licence, which funds the open core, for code that
+  includes yours. You keep your copyright.
 - Work assisted by an AI tool says so in an `Assisted-by:` trailer.
 
 ## Code rules

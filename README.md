@@ -5,7 +5,7 @@ Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/release
 -->
 
 <p align="center">
-  <!-- No logo yet: the Satellion brand assets for Tunnelward are not made. -->
+  <img src=".github/logo.svg" alt="Tunnelward logo: an arch-shaped tunnel entrance" width="128" />
 </p>
 
 <h1 align="center">Tunnelward</h1>
@@ -19,7 +19,7 @@ Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/release
   <a href="https://crates.io/crates/tunnelward"><img src="https://img.shields.io/crates/v/tunnelward.svg?style=for-the-badge&color=fc8d62&logo=rust" alt="Registry" height="28" /></a>
   <a href="https://docs.rs/tunnelward"><img src="https://img.shields.io/badge/docs.rs-tunnelward-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs" alt="Docs" height="28" /></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/sebastienrousseau/tunnelward"><img src="https://img.shields.io/ossf-scorecard/github.com/sebastienrousseau/tunnelward?style=for-the-badge&label=OpenSSF%20Scorecard&logo=openssf" alt="OpenSSF Scorecard" height="28" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge" alt="License: GPL-3.0-only" height="28" /></a>
+  <a href="#license"><img src="https://img.shields.io/badge/license-GPL--3.0--only%20%7C%20MIT%20OR%20Apache--2.0-blue.svg?style=for-the-badge" alt="License: GPL-3.0-only for the gateway and binaries, MIT OR Apache-2.0 for the SDK crates" height="28" /></a>
   <a href="https://github.com/sebastienrousseau/tunnelward/blob/main/docs/POLICIES.md"><img src="https://img.shields.io/badge/MSRV-1.89-93450a.svg?style=for-the-badge&logo=rust" alt="Minimum supported Rust version 1.89" height="28" /></a>
 </p>
 
@@ -131,7 +131,9 @@ until the release the plan gives them.
 | CLI | `tunnelward --version`, `--help` | Shipped in 0.0.1 |
 | Protocol | Register, Accept, Reject frames; length-prefixed CBOR codec | Shipped in 0.0.2 |
 | Transport | Reverse HTTP/2 over the connector's outbound TLS connection | Shipped in 0.0.4 |
-| Routing | Domain (exact or `*.` wildcard), longest route, catch-all `*` | Shipped in 0.0.4 |
+| Routing | Domain (exact or `*.` wildcard), longest route, catch-all `*`; pluggable resolver | Shipped in 0.0.4, resolver in 0.0.5 |
+| Load | Pools, least-loaded of two random picks, capacity per connector, bounded wait queue with `Retry-After`, routes kept after connectors leave | Shipped in 0.0.5 |
+| Forwarding | Connector forwards to a local HTTP/1.1 server over TCP, TLS with a pinned CA, or a Unix socket | Shipped in 0.0.5 |
 | Crypto | TLS 1.3 only; hybrid PQ key exchange (X25519MLKEM768) first, optional hybrid-only; mutual TLS | Shipped in 0.0.3 |
 
 ---
@@ -227,4 +229,17 @@ Pre-0.1.0, any release may change any API, wire format or CLI output; the CHANGE
 
 ## License
 
-Licensed under the GNU General Public License, version 3 only ([GPL-3.0-only](LICENSE)).
+Two licences, split by what you embed (decision D8):
+
+| Crates | Licence | Why |
+| :--- | :--- | :--- |
+| `tw-proto`, `tw-crypto`, `tw-identity`, `tw-mcp`, `tw-connector`, `tw-testpki` | [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE), at your option | They ship inside your services, as the connector library and the SDKs' base |
+| `tw-gateway`, `tw-policy`, `tw-audit`, `tw-attest`, `tw-cli` (the `tunnelward` binary), `xtask` | [GPL-3.0-only](LICENSE-GPL) | The gateway and tools you run, not embed |
+
+The gate fails if a permissive crate depends on a GPL one
+(`scripts/licence-boundary.sh`). Every file names its licence in an SPDX
+header; `REUSE.toml` covers the rest, including the logo, which is a Noun
+Project icon used under the maintainer's licence and not under either of
+the above.
+
+Contributions are accepted under the [Contributor License Agreement](docs/cla/README.md).

@@ -99,6 +99,12 @@ user-id = 359 # Sean McArthur (seanmonstar)
 start = "2022-10-25"
 end = "2027-11-07"
 
+[[trusted.httparse]]
+criteria = "safe-to-deploy"
+user-id = 359 # Sean McArthur (seanmonstar)
+start = "2019-07-03"
+end = "2027-11-07"
+
 [[trusted.hyper]]
 criteria = "safe-to-deploy"
 user-id = 359 # Sean McArthur (seanmonstar)

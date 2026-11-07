@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Tunnel icon, Noun Project item 8029303, used under the maintainer's Noun Project licence (see REUSE.toml). -->
+<svg width="3600pt" height="3600pt" version="1.1" viewBox="0 0 3600 3600" xmlns="http://www.w3.org/2000/svg">
+ <style>path { fill: #0b1226; } @media (prefers-color-scheme: dark) { path { fill: #e6ebf7; } }</style>
+ <path d="m1800 180c-893.23 0-1620 726.77-1620 1620v1620h3240v-1620c0-893.23-726.77-1620-1620-1620zm0 288c734.47 0 1332 597.53 1332 1332v1128.4l-756-756v-372.38c0-317.53-258.47-576-576-576s-576 258.47-576 576v372.38l-756 756v-1128.4c0-734.47 597.53-1332 1332-1332zm-372.38 1908h744.77l756 756h-2256.8zm84.375-288v-288c0-158.77 129.23-288 288-288 158.77 0 288 129.23 288 288v288z"/>
+</svg>

@@ -9,16 +9,10 @@ use http_body_util::Full;
 use hyper::Request;
 use tw_proto::CATCH_ALL_ROUTE;
 
-use crate::SendError;
-
-/// What routing looks at: the host, lowercased without its port, and the
-/// path.
-pub(crate) struct Target {
-    pub(crate) host: Option<String>,
-    pub(crate) path: String,
-}
+use crate::{SendError, Target};
 
 impl Target {
+    /// The target of a request whose URI is absolute.
     pub(crate) fn of(request: &Request<Full<Bytes>>) -> Self {
         let host = request.uri().host().map(str::to_ascii_lowercase);
         Self {
