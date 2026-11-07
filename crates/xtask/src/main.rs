@@ -6,8 +6,12 @@
 //! `cargo xtask ci` runs every check CI runs, in the order CI runs them,
 //! and stops at the first failure. CI calls this command and nothing
 //! else, so a check added here is a check added to CI.
+//!
+//! `cargo xtask miri` and `cargo xtask fuzz [seconds]` need a nightly
+//! toolchain, so they are separate tasks with their own CI jobs.
 
 use std::env;
+use std::fs;
 use std::process::{Command, ExitCode};
 
 /// One check: what it is called, the program, its arguments, and extra
@@ -60,8 +64,8 @@ const STEPS: &[Step] = &[
     },
     Step {
         name: "cargo-vet",
-        program: "cargo",
-        args: &["vet", "--locked"],
+        program: "bash",
+        args: &["scripts/vet.sh"],
         env: &[],
     },
     Step {
@@ -77,6 +81,19 @@ const STEPS: &[Step] = &[
         env: &[],
     },
 ];
+
+const MIRI: &[Step] = &[Step {
+    name: "miri",
+    program: "cargo",
+    args: &["+nightly", "miri", "test", "-p", "tw-proto", "--locked"],
+    env: &[("MIRIFLAGS", "-Zmiri-strict-provenance")],
+}];
+
+/// Fuzz targets, each with a committed seed corpus in `fuzz/seeds/<name>`.
+const FUZZ_TARGETS: &[&str] = &["decode"];
+
+/// Seconds each target runs when `cargo xtask fuzz` is given no time.
+const DEFAULT_FUZZ_SECS: u32 = 60;
 
 /// Runs one step, returning a message on failure.
 fn run(step: &Step) -> Result<(), String> {
@@ -99,17 +116,67 @@ fn run(step: &Step) -> Result<(), String> {
 }
 
 /// Runs every step in order, stopping at the first failure.
-fn ci() -> Result<(), String> {
-    STEPS.iter().try_for_each(run)?;
-    println!("==> all {} checks passed", STEPS.len());
+fn run_all(steps: &[Step]) -> Result<(), String> {
+    steps.iter().try_for_each(run)?;
+    println!("==> all {} checks passed", steps.len());
     Ok(())
 }
 
+/// Replays each target's seeds, then fuzzes it for `secs` seconds. New
+/// inputs go to the untracked `fuzz/corpus/<name>`; the seeds stay as
+/// committed.
+fn fuzz(secs: u32) -> Result<(), String> {
+    let host = host_triple()?;
+    FUZZ_TARGETS.iter().try_for_each(|target| {
+        let corpus = format!("fuzz/corpus/{target}");
+        fs::create_dir_all(&corpus).map_err(|e| format!("fuzz: cannot create {corpus}: {e}"))?;
+        println!("==> fuzz {target} for {secs} s");
+        let status = Command::new("cargo")
+            .args([
+                "+nightly", "fuzz", "run", "--target", &host, target, &corpus,
+            ])
+            .arg(format!("fuzz/seeds/{target}"))
+            .args(["--", &format!("-max_total_time={secs}")])
+            .status()
+            .map_err(|e| format!("fuzz: cannot start cargo: {e}"))?;
+        status
+            .success()
+            .then_some(())
+            .ok_or(format!("fuzz {target}: failed ({status})"))
+    })
+}
+
+/// The nightly toolchain's host triple. cargo-fuzz otherwise builds for
+/// the triple it was itself built for, and a prebuilt musl `cargo-fuzz`
+/// (as CI installs) then builds for musl, where `AddressSanitizer` cannot run.
+fn host_triple() -> Result<String, String> {
+    let out = Command::new("rustc")
+        .args(["+nightly", "-vV"])
+        .output()
+        .map_err(|e| format!("fuzz: cannot run rustc: {e}"))?;
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))
+        .map(str::to_owned)
+        .ok_or_else(|| "fuzz: rustc -vV printed no host".to_owned())
+}
+
+fn fuzz_secs(arg: Option<&str>) -> Result<u32, String> {
+    arg.map_or(Ok(DEFAULT_FUZZ_SECS), |s| {
+        s.parse()
+            .map_err(|_| format!("fuzz: `{s}` is not a number of seconds"))
+    })
+}
+
+const USAGE: &str = "usage: cargo xtask <ci | miri | fuzz [seconds]>";
+
 fn main() -> ExitCode {
-    let task = env::args().nth(1);
-    let result = match task.as_deref() {
-        Some("ci") => ci(),
-        _ => Err("usage: cargo xtask ci".to_owned()),
+    let args: Vec<String> = env::args().skip(1).collect();
+    let result = match args.first().map(String::as_str) {
+        Some("ci") => run_all(STEPS),
+        Some("miri") => run_all(MIRI),
+        Some("fuzz") => fuzz_secs(args.get(1).map(String::as_str)).and_then(fuzz),
+        _ => Err(USAGE.to_owned()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

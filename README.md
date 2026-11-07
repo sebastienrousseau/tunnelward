@@ -95,16 +95,17 @@ cargo run --quiet --locked -p tw-cli -- --version
 cargo xtask ci
 ```
 
-v0.0.1 is the workspace skeleton: the binary reports its version and
-usage, and `cargo xtask ci` runs every check CI runs. The tunnel itself
-lands from v0.0.2 onwards.
+The binary reports its version and usage, and `cargo xtask ci` runs
+every check CI runs. v0.0.2 adds the wire protocol (`tw-proto`); the
+tunnel itself lands from v0.0.4.
 
 ---
 
 ## The Tunnelward ecosystem
 
 One crate per concern, so the protocol core can be fuzzed and audited on
-its own. All are placeholders in v0.0.1 except `tw-cli`.
+its own. `tw-proto` and `tw-cli` have code; the others are placeholders
+until the release the plan gives them.
 
 | Component | Purpose | Use case |
 | :--- | :--- | :--- |
@@ -126,7 +127,7 @@ its own. All are placeholders in v0.0.1 except `tw-cli`.
 | Area | Capability | Status |
 | :--- | :--- | :--- |
 | CLI | `tunnelward --version`, `--help` | Shipped in 0.0.1 |
-| Protocol | Register, Accept, Reject frames | Planned for 0.0.2 |
+| Protocol | Register, Accept, Reject frames; length-prefixed CBOR codec | Shipped in 0.0.2 |
 | Transport | Reverse HTTP/2 over outbound TLS | Planned for 0.0.4 |
 | Crypto | Hybrid PQ TLS (X25519MLKEM768) | Planned for 0.0.3 |
 
@@ -176,7 +177,7 @@ No examples yet; the first, a gateway and connector on one machine, comes with `
 
 ## When not to use Tunnelward
 
-- Today, for anything: v0.0.1 carries no traffic.
+- Today, for anything: no release carries traffic yet.
 - For LLM routing, prompt guardrails or token accounting: use an MCP or LLM gateway such as agentgateway in front of it.
 - As a general-purpose VPN or mesh.
 - If you want a vendor edge to run the data plane for you: Tunnelward is self-hosted.
@@ -199,7 +200,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for the toolchain and what the gate runs.
 - No `unsafe` code in any Tunnelward crate (`unsafe_code = "forbid"`).
 - No `unwrap`, `expect` or `panic!` outside tests (clippy, denied).
 - Dependencies checked by `cargo deny` and `cargo vet` on every pull request; Actions pinned by commit SHA.
-- Fuzzing starts with `tw-proto` in 0.0.2.
+- The register-frame decoder, the only parser that sees bytes before a connector's identity is known, is fuzzed (`fuzz/fuzz_targets/decode.rs`, 60 s per pull request, 30 min weekly), property-tested, and run under Miri.
 
 Report vulnerabilities according to [`SECURITY.md`](SECURITY.md).
 
@@ -209,7 +210,7 @@ Report vulnerabilities according to [`SECURITY.md`](SECURITY.md).
 
 - User manual: not written yet.
 - API reference: `cargo doc --workspace --open`; docs.rs once published.
-- Developer docs: [DEVELOPMENT.md](DEVELOPMENT.md), [docs/POLICIES.md](docs/POLICIES.md).
+- Developer docs: [DEVELOPMENT.md](DEVELOPMENT.md), [docs/POLICIES.md](docs/POLICIES.md), [design decisions](docs/adr/README.md).
 - Ecosystem: [the table above](#the-tunnelward-ecosystem); passmcp is the sibling that writes the attestations Tunnelward checks.
 
 ---

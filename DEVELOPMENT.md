@@ -29,6 +29,25 @@ warnings denied, `cargo deny check`, `cargo vet`, `reuse lint` and
 `scripts/complexity.sh`. CI runs this command and nothing else on Linux,
 so passing it locally means the Linux job passes.
 
+## Nightly-only checks
+
+```bash
+rustup toolchain install nightly --component miri
+cargo install cargo-fuzz --locked
+cargo xtask miri        # tw-proto's tests under Miri
+cargo xtask fuzz 60     # replay seeds, then 60 s per fuzz target
+```
+
+A fuzz crash leaves its input in `fuzz/artifacts/`. Fix the bug, then
+commit that input to `fuzz/seeds/<target>/` so every run replays it.
+
+## Supply chain
+
+`cargo vet` must pass, and `scripts/vet.sh` fails if the number of
+exempted crates changes without `supply-chain/exemptions-baseline.txt`
+changing with it. A new dependency comes with an audit
+(`cargo vet certify`) or a trust entry, never a new exemption.
+
 ## Testing the MSRV on macOS
 
 Older toolchains cannot link against a newer macOS SDK (`tapi error:

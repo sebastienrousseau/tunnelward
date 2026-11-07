@@ -13,17 +13,23 @@ yanked = "deny"
 ignore = []
 
 [licenses]
-# GPL-3.0-only is the workspace's own licence. The workspace has no
-# dependencies yet; each licence a new one brings is added here in the
-# same change, and must be compatible with distribution under GPL-3.0.
+# GPL-3.0-only is the workspace's own licence. Each licence a new
+# dependency brings is added here in the same change, and must be
+# compatible with distribution under GPL-3.0.
 allow = [
   "GPL-3.0-only",
+  "Apache-2.0", # the serde family and proptest, dual MIT
+  "MIT",        # cbor4ii; the serde family
+  "Unicode-3.0", # unicode-ident's Unicode data tables
 ]
 confidence-threshold = 0.9
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "deny"
 wildcards = "deny"
+# A duplicate needs an entry in `skip` naming who pulls the older copy
+# in and when it can go.
+skip = []
 
 [sources]
 unknown-registry = "deny"

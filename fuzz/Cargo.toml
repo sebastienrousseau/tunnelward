@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# cargo-fuzz targets. Outside the workspace: libFuzzer needs nightly and
+# its own lockfile. Run with `cargo xtask fuzz` (see DEVELOPMENT.md).
+
+[package]
+name = "tw-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+tw-proto = { path = "../crates/tw-proto" }
+
+[workspace]
+
+[[bin]]
+name = "decode"
+path = "fuzz_targets/decode.rs"
+test = false
+doc = false
+bench = false

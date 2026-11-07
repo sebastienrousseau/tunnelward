@@ -14,5 +14,14 @@ homepage.workspace = true
 # Not published until the crate has an API worth depending on.
 publish = false
 
+[dependencies]
+cbor4ii.workspace = true
+serde.workspace = true
+serde_bytes.workspace = true
+
+[dev-dependencies]
+cbor4ii.workspace = true
+proptest.workspace = true
+
 [lints]
 workspace = true
