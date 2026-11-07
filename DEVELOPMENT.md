@@ -5,7 +5,7 @@
 
 ## Toolchain
 
-- Rust 1.85 or newer (stable is what CI uses for everything but the MSRV
+- Rust 1.89 or newer (stable is what CI uses for everything but the MSRV
   build).
 - The gate's tools: `cargo-deny`, `cargo-vet` 0.10, `reuse`, `jq` and
   `rust-code-analysis-cli` 0.0.25.
@@ -28,6 +28,16 @@ Runs, in order and stopping at the first failure: `cargo fmt --check`,
 warnings denied, `cargo deny check`, `cargo vet`, `reuse lint` and
 `scripts/complexity.sh`. CI runs this command and nothing else on Linux,
 so passing it locally means the Linux job passes.
+
+## Testing the MSRV on macOS
+
+Older toolchains cannot link against a newer macOS SDK (`tapi error:
+malformed file`). Point them at an older SDK:
+
+```bash
+SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+  cargo +1.89 test --workspace --locked
+```
 
 ## Layout
 

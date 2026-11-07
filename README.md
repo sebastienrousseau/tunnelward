@@ -20,7 +20,7 @@ Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/release
   <a href="https://docs.rs/tunnelward"><img src="https://img.shields.io/badge/docs.rs-tunnelward-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs" alt="Docs" height="28" /></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/sebastienrousseau/tunnelward"><img src="https://img.shields.io/ossf-scorecard/github.com/sebastienrousseau/tunnelward?style=for-the-badge&label=OpenSSF%20Scorecard&logo=openssf" alt="OpenSSF Scorecard" height="28" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge" alt="License: GPL-3.0-only" height="28" /></a>
-  <a href="https://github.com/sebastienrousseau/tunnelward/blob/main/docs/POLICIES.md"><img src="https://img.shields.io/badge/MSRV-1.85-93450a.svg?style=for-the-badge&logo=rust" alt="Minimum supported Rust version 1.85" height="28" /></a>
+  <a href="https://github.com/sebastienrousseau/tunnelward/blob/main/docs/POLICIES.md"><img src="https://img.shields.io/badge/MSRV-1.89-93450a.svg?style=for-the-badge&logo=rust" alt="Minimum supported Rust version 1.89" height="28" /></a>
 </p>
 
 <p align="center">
@@ -82,8 +82,8 @@ cargo install --locked --path crates/tw-cli
 
 ## Requirements
 
-- Rust 1.85 or newer ([policy](docs/POLICIES.md)).
-- CI tests Linux, macOS and Windows on stable, and Linux on 1.85.
+- Rust 1.89 or newer ([policy](docs/POLICIES.md)).
+- CI tests Linux, macOS and Windows on stable, and Linux on 1.89.
 
 ---
 

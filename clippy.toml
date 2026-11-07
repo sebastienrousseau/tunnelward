@@ -3,7 +3,7 @@
 #
 # Thresholds for the lints denied in [workspace.lints.clippy]. These are
 # the ~/Code/AGENTS.md section 0 ceilings; they may tighten, never relax.
-msrv = "1.85"
+msrv = "1.89"
 cognitive-complexity-threshold = 15
 too-many-lines-threshold = 60
 allow-unwrap-in-tests = true

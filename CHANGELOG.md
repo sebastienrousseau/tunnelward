@@ -11,7 +11,7 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 
 ### Added
 
-- Cargo workspace (edition 2024, resolver 3, MSRV 1.85) with one crate
+- Cargo workspace (edition 2024, resolver 3, MSRV 1.89) with one crate
   per concern: `tw-proto`, `tw-crypto`, `tw-identity`, `tw-attest`,
   `tw-policy`, `tw-mcp`, `tw-audit`, `tw-gateway`, `tw-connector`.
   They are placeholders; the code arrives from v0.0.2.

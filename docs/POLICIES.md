@@ -5,11 +5,13 @@
 
 ## Minimum supported Rust version
 
-The floor is **Rust 1.85**, set by `rust-version` in the workspace
+The floor is **Rust 1.89**, set by `rust-version` in the workspace
 `Cargo.toml` and checked by the `msrv` CI job, which builds every crate
 with exactly that toolchain.
 
-- 1.85 is the first release with edition 2024, which the workspace uses.
+- 1.89 matches kyberlib, the sibling crate Tunnelward will use for
+  ML-KEM, so the two build on the same toolchain. Edition 2024 needs
+  only 1.85.
 - The floor may rise in any 0.0.N release, only when a dependency or a
   language feature needs it. The release's CHANGELOG entry names the new
   floor and the reason.
