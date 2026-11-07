@@ -1,0 +1,2 @@
+# Fuzz seeds are exact bytes: PROXY v1 needs its CRLF.
+fuzz/seeds/** binary

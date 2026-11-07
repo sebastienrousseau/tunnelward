@@ -18,21 +18,32 @@
 
 mod admit;
 mod cidr;
+mod client_addr;
 mod config;
 mod drain;
 mod error;
+mod forwarding;
+mod ingress;
 mod kill;
+mod listener;
+mod observer;
 mod pool;
+pub mod proxy_protocol;
+mod ratelimit;
 mod registry;
 mod resolver;
 mod retry;
 mod route;
 
 pub use cidr::{Cidr, CidrError};
-pub use config::Config;
+pub use client_addr::ClientAddr;
+pub use config::{Config, IngressConfig};
 pub use drain::{DrainReport, DrainTarget};
 pub use error::{AdmitError, SendError};
+pub use ingress::{Ingress, IngressBody};
+pub use observer::{ProxyObserver, RequestInfo};
 pub use pool::ResponseBody;
+pub use ratelimit::RateLimit;
 pub use resolver::{LongestFirst, RouteResolver, Target};
 
 use std::sync::Arc;
@@ -75,6 +86,8 @@ struct Inner {
     config: Config,
     acceptor: TlsAcceptor,
     registry: Registry,
+    limiter: ratelimit::Limiter,
+    next_request: std::sync::atomic::AtomicU64,
 }
 
 impl Gateway {
@@ -82,11 +95,14 @@ impl Gateway {
     #[must_use]
     pub fn new(config: Config) -> Self {
         let acceptor = TlsAcceptor::from(config.tls.clone());
+        let limiter = ratelimit::Limiter::new(config.ingress.rate_limit);
         Self {
             inner: Arc::new(Inner {
                 config,
                 acceptor,
                 registry: Registry::default(),
+                limiter,
+                next_request: std::sync::atomic::AtomicU64::new(0),
             }),
         }
     }

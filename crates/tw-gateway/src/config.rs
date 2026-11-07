@@ -9,7 +9,7 @@ use std::time::Duration;
 use tw_crypto::rustls::ServerConfig;
 use tw_proto::Limits;
 
-use crate::{Cidr, LongestFirst, RouteResolver};
+use crate::{Cidr, LongestFirst, ProxyObserver, RateLimit, RouteResolver};
 
 /// How a gateway admits connectors and routes requests. [`Config::new`]
 /// gives the defaults; every field is public to change one.
@@ -40,6 +40,60 @@ pub struct Config {
     /// Source addresses connectors may connect from (G9). Empty admits
     /// every address; mutual TLS still applies either way.
     pub connector_allow: Vec<Cidr>,
+    /// The agent-facing ingress.
+    pub ingress: IngressConfig,
+}
+
+/// How the agent-facing ingress behaves (G12, G13).
+#[derive(Debug, Clone)]
+pub struct IngressConfig {
+    /// TLS for agents, from `tw_crypto::server_config` with no client
+    /// certificates and ALPN `h2` and `http/1.1`. `None` serves plain
+    /// HTTP/1.1, for a gateway behind a TLS-terminating load balancer.
+    pub tls: Option<Arc<ServerConfig>>,
+    /// Proxies whose `Forwarded` and `X-Forwarded-For` are believed, and
+    /// whose PROXY headers are read (FR-11).
+    pub trusted_proxies: Vec<Cidr>,
+    /// Read a PROXY v1 or v2 header first on connections from trusted
+    /// proxies.
+    pub proxy_protocol: bool,
+    /// Longest request URI, in bytes (414 above it).
+    pub max_url_len: usize,
+    /// Largest request body, in bytes (413 above it).
+    pub max_body: usize,
+    /// Longest the gateway waits for a connector's response headers (504).
+    pub request_timeout: Duration,
+    /// Longest an idle client connection stays open.
+    pub idle_timeout: Duration,
+    /// Per-client-address limits (429 above them).
+    pub rate_limit: RateLimit,
+    /// The gateway's name in `Via`.
+    pub via_name: String,
+    /// Also send `X-Forwarded-For`, `-Proto` and `-Host`.
+    pub legacy_forwarded: bool,
+    /// Hooks called for every request (G11).
+    pub observers: Vec<Arc<dyn ProxyObserver>>,
+}
+
+impl Default for IngressConfig {
+    /// Plain HTTP, no trusted proxies, URL 8 KiB, body 16 MiB, 60 s
+    /// request and idle timeouts, [`RateLimit::default`], `Via` name
+    /// `tunnelward`, legacy headers on.
+    fn default() -> Self {
+        Self {
+            tls: None,
+            trusted_proxies: Vec::new(),
+            proxy_protocol: false,
+            max_url_len: 8 * 1024,
+            max_body: 16 * 1024 * 1024,
+            request_timeout: Duration::from_secs(60),
+            idle_timeout: Duration::from_secs(60),
+            rate_limit: RateLimit::default(),
+            via_name: "tunnelward".to_owned(),
+            legacy_forwarded: true,
+            observers: Vec::new(),
+        }
+    }
 }
 
 impl Config {
@@ -59,6 +113,7 @@ impl Config {
             routes_keep_time: Duration::from_secs(2 * 60 * 60),
             resolver: Arc::new(LongestFirst),
             connector_allow: Vec::new(),
+            ingress: IngressConfig::default(),
         }
     }
 }

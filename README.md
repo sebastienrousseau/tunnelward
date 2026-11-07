@@ -136,6 +136,7 @@ until the release the plan gives them.
 | Forwarding | Connector forwards to a local HTTP/1.1 server over TCP, TLS with a pinned CA, or a Unix socket; request hook | Shipped in 0.0.5, hook in 0.0.6 |
 | Resilience | Several connections to several gateways, DNS discovery, jittered reconnects, lease renewal with no lost request, keep-alive pings | Shipped in 0.0.6 |
 | Operations | Drain by connector, route or address with a deadline; graceful connector shutdown; connector source allowlist | Shipped in 0.0.6 |
+| Ingress | HTTP/1.1 and HTTP/2 (TLS, ALPN) for agents; streaming responses with backpressure; client address from trusted proxies only, PROXY v1/v2; URL, body, timeout and rate limits; observer hooks | Shipped in 0.0.7 |
 | Crypto | TLS 1.3 only; hybrid PQ key exchange (X25519MLKEM768) first, optional hybrid-only; mutual TLS | Shipped in 0.0.3 |
 
 ---

@@ -7,6 +7,38 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.7]
+
+### Added
+
+- The agent-facing ingress (FR-2): `Gateway::serve_ingress` serves
+  HTTP/1.1, or over TLS HTTP/2 and HTTP/1.1 chosen by ALPN;
+  `Gateway::ingress` is the same per-connection service for embedders
+  (G10). Responses stream, and a client that stops reading stalls the
+  connector's stream through flow control instead of filling memory.
+- Client address (FR-11, G12): the socket's peer is authoritative;
+  `Forwarded` and `X-Forwarded-For` are believed only from
+  `trusted_proxies`, and a PROXY v1 or v2 header is read only from them
+  (`proxy_protocol`). The connector sees one authoritative `Forwarded`
+  (and legacy `X-Forwarded-*`, unless off) and the gateway's `Via` hop;
+  whatever the client sent is removed.
+- Ingress limits (G13): URL 8 KiB (414), body 16 MiB (413), request
+  timeout (504), per-address token-bucket rate limit (429 with
+  `Retry-After`), idle timeout. Routing errors map to 404, 503 with
+  `Retry-After` and 502.
+- `ProxyObserver` hooks (G11): request, response headers, body complete
+  with byte count, and failures.
+- A `proxy` fuzz target for the PROXY protocol parser.
+
+### Deferred
+
+- WebSocket passthrough needs HTTP/2 extended CONNECT (RFC 8441)
+  through the tunnel and splicing at the connector; MCP's Streamable
+  HTTP does not use it. It gets its own release.
+- JA4 and HTTP/2 SETTINGS fingerprints need checking against FoxIO's
+  reference outputs before a provenance record can rely on them. They
+  get their own release.
+
 ## [0.0.6]
 
 ### Added
@@ -172,6 +204,7 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 - Licence GPL-3.0-only, REUSE metadata, security policy, contribution
   guide, code of conduct and agent instructions.
 
+[0.0.7]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.3...v0.0.4

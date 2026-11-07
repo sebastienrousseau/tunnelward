@@ -1,0 +1,322 @@
+// SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+// SPDX-License-Identifier: GPL-3.0-only
+
+//! The agent-facing request path (FR-2, G12, G13).
+//!
+//! [`Ingress`] is a hyper service for one client connection: it resolves
+//! the client (FR-11), applies the limits, buffers the request body up to
+//! `max_body`, restates the forwarding headers, and sends the request
+//! through a connector. The response streams back. Embedders mount it in
+//! their own server with [`Gateway::ingress`]; [`Gateway::serve_ingress`]
+//! is the ready-made listener.
+
+use core::future::Future;
+use core::pin::Pin;
+use core::task::{Context, Poll};
+use std::convert::Infallible;
+use std::net::SocketAddr;
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
+
+use bytes::Bytes;
+use http::header::{CONTENT_LENGTH, HOST, RETRY_AFTER};
+use http::{HeaderValue, Request, Response, StatusCode, Version};
+use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
+use hyper::body::{Body, Frame, Incoming, SizeHint};
+
+use crate::forwarding::{Stamp, rewrite};
+use crate::{ClientAddr, Gateway, RequestInfo, ResponseBody, SendError};
+
+/// The ingress response body: a connector's stream, or the gateway's own
+/// short answer.
+pub type IngressBody = BoxBody<Bytes, hyper::Error>;
+
+/// The ingress service for one client connection. Cloning is cheap.
+#[derive(Clone, Debug)]
+pub struct Ingress {
+    gateway: Gateway,
+    peer: SocketAddr,
+    secure: bool,
+}
+
+impl core::fmt::Debug for Gateway {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Gateway").finish_non_exhaustive()
+    }
+}
+
+impl Gateway {
+    /// The ingress service for a client connection from `peer` (after any
+    /// PROXY header). `secure` says whether the client used TLS, for the
+    /// `proto` the connector is told.
+    #[must_use]
+    pub fn ingress(&self, peer: SocketAddr, secure: bool) -> Ingress {
+        Ingress {
+            gateway: self.clone(),
+            peer,
+            secure,
+        }
+    }
+}
+
+impl hyper::service::Service<Request<Incoming>> for Ingress {
+    type Response = Response<IngressBody>;
+    type Error = Infallible;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Infallible>> + Send>>;
+
+    fn call(&self, request: Request<Incoming>) -> Self::Future {
+        let this = self.clone();
+        Box::pin(async move { Ok(this.handle(request).await) })
+    }
+}
+
+/// A refusal: the status, the reason for observers, and any `Retry-After`.
+struct Refusal {
+    status: StatusCode,
+    reason: String,
+    retry_after: Option<Duration>,
+}
+
+impl Refusal {
+    fn new(status: StatusCode, reason: impl Into<String>) -> Self {
+        Self {
+            status,
+            reason: reason.into(),
+            retry_after: None,
+        }
+    }
+}
+
+impl Ingress {
+    async fn handle(self, request: Request<Incoming>) -> Response<IngressBody> {
+        let started = Instant::now();
+        let inner = &self.gateway.inner;
+        let ingress = &inner.config.ingress;
+        let client = ClientAddr::resolve(self.peer, request.headers(), &ingress.trusted_proxies);
+        let info = RequestInfo {
+            id: inner.next_request.fetch_add(1, Ordering::Relaxed),
+            method: request.method().clone(),
+            uri: request.uri().clone(),
+            client,
+        };
+        for o in &ingress.observers {
+            o.on_request(&info);
+        }
+        match self.forward(request, &info).await {
+            Ok(response) => self.observed(response, info, started),
+            Err(refusal) => self.refuse(&info, &refusal, started),
+        }
+    }
+
+    async fn forward(
+        &self,
+        request: Request<Incoming>,
+        info: &RequestInfo,
+    ) -> Result<Response<ResponseBody>, Refusal> {
+        let ingress = &self.gateway.inner.config.ingress;
+        self.admit(&request, info)?;
+        let request = self.buffer(request).await?;
+        let request = self.restate(request, info);
+        match tokio::time::timeout(ingress.request_timeout, self.gateway.send(request)).await {
+            Ok(Ok(response)) => Ok(response),
+            Ok(Err(error)) => Err(refusal_for(&error)),
+            Err(_) => Err(Refusal::new(
+                StatusCode::GATEWAY_TIMEOUT,
+                "no response within the request timeout",
+            )),
+        }
+    }
+
+    /// Checks that cost nothing: URL length, declared body size, rate.
+    fn admit(&self, request: &Request<Incoming>, info: &RequestInfo) -> Result<(), Refusal> {
+        let ingress = &self.gateway.inner.config.ingress;
+        if request.uri().to_string().len() > ingress.max_url_len {
+            return Err(Refusal::new(StatusCode::URI_TOO_LONG, "URL over the limit"));
+        }
+        let declared = request
+            .headers()
+            .get(CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok()?.parse::<u64>().ok());
+        if declared.is_some_and(|n| n > ingress.max_body as u64) {
+            return Err(Refusal::new(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "declared body over the limit",
+            ));
+        }
+        self.gateway
+            .inner
+            .limiter
+            .check(info.client.client, Instant::now())
+            .map_err(|wait| Refusal {
+                retry_after: Some(wait),
+                ..Refusal::new(StatusCode::TOO_MANY_REQUESTS, "rate limit")
+            })
+    }
+
+    /// Reads the body, stopping at `max_body`.
+    async fn buffer(&self, request: Request<Incoming>) -> Result<Request<Full<Bytes>>, Refusal> {
+        let max = self.gateway.inner.config.ingress.max_body;
+        let (parts, body) = request.into_parts();
+        let collected = Limited::new(body, max).collect().await.map_err(|e| {
+            if e.is::<LengthLimitError>() {
+                Refusal::new(StatusCode::PAYLOAD_TOO_LARGE, "body over the limit")
+            } else {
+                Refusal::new(StatusCode::BAD_REQUEST, "request body failed")
+            }
+        })?;
+        Ok(Request::from_parts(parts, Full::new(collected.to_bytes())))
+    }
+
+    /// States the resolved client in the forwarding headers.
+    fn restate(
+        &self,
+        mut request: Request<Full<Bytes>>,
+        info: &RequestInfo,
+    ) -> Request<Full<Bytes>> {
+        let ingress = &self.gateway.inner.config.ingress;
+        let host = request
+            .uri()
+            .authority()
+            .map(|a| a.as_str().to_owned())
+            .or_else(|| {
+                request
+                    .headers()
+                    .get(HOST)
+                    .and_then(|h| h.to_str().ok())
+                    .map(str::to_owned)
+            });
+        let stamp = Stamp {
+            client: info.client.client,
+            proto: if self.secure { "https" } else { "http" },
+            host: host.as_deref(),
+            via: &ingress.via_name,
+            http_version: if request.version() == Version::HTTP_2 {
+                "2"
+            } else {
+                "1.1"
+            },
+            legacy: ingress.legacy_forwarded,
+        };
+        rewrite(request.headers_mut(), &stamp);
+        request
+    }
+
+    fn observed(
+        &self,
+        response: Response<ResponseBody>,
+        info: RequestInfo,
+        started: Instant,
+    ) -> Response<IngressBody> {
+        let observers = self.gateway.inner.config.ingress.observers.clone();
+        for o in &observers {
+            o.on_response(&info, response.status(), started.elapsed());
+        }
+        response.map(|body| {
+            Observed {
+                inner: body,
+                observers,
+                info,
+                started,
+                bytes: 0,
+                done: false,
+            }
+            .boxed()
+        })
+    }
+
+    fn refuse(
+        &self,
+        info: &RequestInfo,
+        refusal: &Refusal,
+        started: Instant,
+    ) -> Response<IngressBody> {
+        let observers = &self.gateway.inner.config.ingress.observers;
+        for o in observers {
+            o.on_failure(info, refusal.status, &refusal.reason);
+        }
+        for o in observers {
+            o.on_response(info, refusal.status, started.elapsed());
+        }
+        let text = format!("{}: {}\n", refusal.status, refusal.reason);
+        let mut response =
+            Response::new(Full::new(Bytes::from(text)).map_err(|e| match e {}).boxed());
+        *response.status_mut() = refusal.status;
+        if let Some(wait) = refusal.retry_after {
+            let secs = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
+            response
+                .headers_mut()
+                .insert(RETRY_AFTER, HeaderValue::from(secs.max(1)));
+        }
+        response
+    }
+}
+
+fn refusal_for(error: &SendError) -> Refusal {
+    match error {
+        SendError::NoRoute => Refusal::new(StatusCode::NOT_FOUND, "no connector serves this route"),
+        SendError::Unavailable { retry_after } => Refusal {
+            retry_after: Some(*retry_after),
+            ..Refusal::new(StatusCode::SERVICE_UNAVAILABLE, "no connector free")
+        },
+        SendError::BadRequest(_) => Refusal::new(StatusCode::BAD_REQUEST, error.to_string()),
+        _ => Refusal::new(StatusCode::BAD_GATEWAY, error.to_string()),
+    }
+}
+
+/// A response body that tells observers when it ends, and how big it was.
+struct Observed {
+    inner: ResponseBody,
+    observers: Vec<std::sync::Arc<dyn crate::ProxyObserver>>,
+    info: RequestInfo,
+    started: Instant,
+    bytes: u64,
+    done: bool,
+}
+
+impl Observed {
+    fn finish(&mut self) {
+        if !self.done {
+            self.done = true;
+            let elapsed = self.started.elapsed();
+            for o in &self.observers {
+                o.on_complete(&self.info, self.bytes, elapsed);
+            }
+        }
+    }
+}
+
+impl Drop for Observed {
+    fn drop(&mut self) {
+        self.finish();
+    }
+}
+
+impl Body for Observed {
+    type Data = Bytes;
+    type Error = hyper::Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, hyper::Error>>> {
+        let polled = Pin::new(&mut self.inner).poll_frame(cx);
+        match &polled {
+            Poll::Ready(Some(Ok(frame))) => {
+                let len = frame.data_ref().map_or(0, Bytes::len);
+                self.bytes += len as u64;
+            }
+            Poll::Ready(None | Some(Err(_))) => self.finish(),
+            Poll::Pending => {}
+        }
+        polled
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.inner.size_hint()
+    }
+}
