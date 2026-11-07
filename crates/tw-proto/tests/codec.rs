@@ -31,6 +31,7 @@ fn register() -> Register {
         connector_id: ConnectorId([1; 16]),
         spiffe_id: "spiffe://example.org/ns/prod/sa/payments".into(),
         routes: vec!["mcp/payments".into(), "mcp/ledger".into()],
+        domains: vec!["mcp.example.org".into(), "*.tools.example.org".into()],
         mcp: Some(McpDescriptor {
             name: "payments".into(),
             version: "1.4.0".into(),
@@ -84,6 +85,25 @@ fn every_frame_kind_round_trips() -> TestResult {
             }
         );
     }
+    Ok(())
+}
+
+#[test]
+fn catch_all_and_no_domains_are_valid() -> TestResult {
+    let limits = Limits::default();
+    let frame = Frame::Register(Register {
+        routes: vec!["*".into()],
+        domains: Vec::new(),
+        ..register()
+    });
+    let bytes = encode(&frame, &limits)?;
+    assert_eq!(
+        decode(&bytes, &limits)?,
+        Decoded::Frame {
+            frame,
+            consumed: bytes.len()
+        }
+    );
     Ok(())
 }
 
@@ -211,7 +231,7 @@ fn unknown_fields_and_codes_are_malformed() -> TestResult {
 }
 
 /// Valid registrations with one rule broken, and the code each must get.
-fn broken_registers() -> [(Register, RejectCode); 7] {
+fn broken_registers() -> [(Register, RejectCode); 10] {
     let ok = register();
     let routes = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
     [
@@ -253,6 +273,27 @@ fn broken_registers() -> [(Register, RejectCode); 7] {
         (
             Register {
                 capacity: 0,
+                ..ok.clone()
+            },
+            RejectCode::Invalid,
+        ),
+        (
+            Register {
+                domains: routes(&["Bad.Domain"]),
+                ..ok.clone()
+            },
+            RejectCode::Invalid,
+        ),
+        (
+            Register {
+                domains: routes(&["a.org", "a.org"]),
+                ..ok.clone()
+            },
+            RejectCode::Invalid,
+        ),
+        (
+            Register {
+                domains: (0..17).map(|i| format!("d{i}.org")).collect(),
                 ..ok.clone()
             },
             RejectCode::Invalid,

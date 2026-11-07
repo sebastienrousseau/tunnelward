@@ -46,6 +46,8 @@ pub struct Limits {
     pub max_frame_len: u32,
     /// Routes one connector identity may claim.
     pub max_routes_per_identity: u16,
+    /// Domains one connector identity may claim.
+    pub max_domains_per_identity: u16,
     /// Domains one gateway serves.
     pub max_domains: u32,
     /// Requests waiting for a free connector, per route.
@@ -63,6 +65,7 @@ impl Default for Limits {
         Self {
             max_frame_len: 64 * KIB,
             max_routes_per_identity: 64,
+            max_domains_per_identity: 16,
             max_domains: 1024,
             max_waiting_per_route: 1024,
             max_policy_body: MIB,
@@ -85,6 +88,7 @@ mod tests {
         assert_eq!(l.stream.initial_stream_window, 262_144);
         assert_eq!(l.stream.initial_connection_window, 4_194_304);
         assert_eq!(l.max_routes_per_identity, 64);
+        assert_eq!(l.max_domains_per_identity, 16);
         assert_eq!(l.max_domains, 1024);
         assert_eq!(l.max_waiting_per_route, 1024);
         assert_eq!(l.max_policy_body, 1_048_576);

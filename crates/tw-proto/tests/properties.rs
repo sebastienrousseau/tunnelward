@@ -34,16 +34,18 @@ fn register() -> impl Strategy<Value = Register> {
         "[a-z0-9]{1,12}(\\.[a-z0-9]{1,12}){0,2}",
         proptest::collection::vec("[A-Za-z0-9._-]{0,6}[A-Za-z0-9_-]", 1..=4),
         proptest::collection::btree_set(route(), 1..=8),
+        proptest::collection::btree_set("(\\*\\.)?[a-z0-9]{1,10}\\.[a-z]{2,6}", 0..=4),
         proptest::option::of(("[ -~]{1,40}", "[ -~]{1,20}", any::<[u8; 32]>())),
         proptest::option::of(proptest::collection::vec(any::<u8>(), 0..512)),
         1..=u32::MAX,
     )
         .prop_map(
-            |(id, domain, path, routes, mcp, attestation, capacity)| Register {
+            |(id, domain, path, routes, domains, mcp, attestation, capacity)| Register {
                 version: PROTOCOL_VERSION,
                 connector_id: ConnectorId(id),
                 spiffe_id: format!("spiffe://{domain}/{}", path.join("/")),
                 routes: routes.into_iter().collect(),
+                domains: domains.into_iter().collect(),
                 mcp: mcp.map(|(name, version, tools_digest)| McpDescriptor {
                     name,
                     version,

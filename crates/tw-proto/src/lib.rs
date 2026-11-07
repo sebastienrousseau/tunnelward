@@ -19,6 +19,7 @@
 //!     connector_id: ConnectorId([7; 16]),
 //!     spiffe_id: "spiffe://example.org/ns/prod/sa/payments".into(),
 //!     routes: vec!["mcp/payments".into()],
+//!     domains: vec!["mcp.example.org".into()],
 //!     mcp: None,
 //!     attestation: None,
 //!     capacity: 32,
@@ -44,6 +45,7 @@ pub use frame::{
 };
 pub use limits::{LENGTH_PREFIX_LEN, Limits, StreamLimits};
 pub use validate::{
-    Invalid, MAX_MCP_NAME_LEN, MAX_MCP_VERSION_LEN, MAX_REASON_LEN, MAX_ROUTE_LEN,
-    MAX_ROUTE_SEGMENTS, MAX_SEGMENT_LEN, MAX_SPIFFE_ID_LEN, is_route, is_spiffe_id, validate,
+    CATCH_ALL_ROUTE, Invalid, MAX_DOMAIN_LEN, MAX_MCP_NAME_LEN, MAX_MCP_VERSION_LEN,
+    MAX_REASON_LEN, MAX_ROUTE_LEN, MAX_ROUTE_SEGMENTS, MAX_SEGMENT_LEN, MAX_SPIFFE_ID_LEN,
+    is_domain, is_route, is_spiffe_id, validate,
 };

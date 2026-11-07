@@ -45,8 +45,12 @@ pub struct Register {
     pub connector_id: ConnectorId,
     /// The connector's SPIFFE ID; must match its client certificate.
     pub spiffe_id: String,
-    /// Path-prefix routes the connector serves, such as `mcp/payments`.
+    /// Path-prefix routes the connector serves, such as `mcp/payments`;
+    /// `*` serves every path not claimed more specifically.
     pub routes: Vec<String>,
+    /// Hostnames the routes apply to, such as `mcp.example.org` or
+    /// `*.example.org`. Empty means any host.
+    pub domains: Vec<String>,
     /// The MCP server behind the connector, when there is one.
     pub mcp: Option<McpDescriptor>,
     /// A passmcp attestation bundle (DSSE envelope), when the route needs one.
