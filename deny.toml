@@ -21,6 +21,8 @@ allow = [
   "Apache-2.0", # the serde family and proptest, dual MIT
   "MIT",        # cbor4ii; the serde family
   "Unicode-3.0", # unicode-ident's Unicode data tables
+  "ISC",         # rustls, rustls-webpki, aws-lc-rs, aws-lc-sys, untrusted
+  "BSD-3-Clause", # code inside aws-lc-sys
 ]
 confidence-threshold = 0.9
 
