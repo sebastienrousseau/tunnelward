@@ -6,11 +6,17 @@
 # main before tagging, and again after creating the tag and before
 # pushing it. It fails on anything that would make the release wrong.
 #
-# Usage: scripts/release-preflight.sh VERSION      (e.g. 0.0.2)
+# Usage: scripts/release-preflight.sh VERSION [COMMIT]
+#   VERSION  e.g. 0.0.2
+#   COMMIT   the release commit, when it is not main's head (the first
+#            release, tagged after the release tooling reached main).
+#            Versions and the changelog are read from COMMIT; the
+#            Highlights always come from main.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 version="$1"
 tag="v$version"
+target="$(git rev-parse "${2:-HEAD}^{commit}")"
 repo="sebastienrousseau/tunnelward"
 failed=0
 
@@ -42,9 +48,10 @@ check "working tree clean" git diff --quiet HEAD
 git fetch -q origin main
 check "main matches origin/main" test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
 
-echo "== version $version"
-check "workspace version is $version" grep -qx "version = \"$version\"" Cargo.toml
-check "CHANGELOG has a $version section" grep -q "^## \[$version\]" CHANGELOG.md
+echo "== version $version at ${target:0:7}"
+check "release commit is on main" git merge-base --is-ancestor "$target" HEAD
+check "workspace version is $version" bash -c "git show $target:Cargo.toml | grep -qx 'version = \"$version\"'"
+check "CHANGELOG has a $version section" bash -c "git show $target:CHANGELOG.md | grep -q '^## \[$version\]'"
 check "docs/releases/$tag.md has Highlights" grep -q '^## Highlights' "docs/releases/$tag.md"
 check "Highlights have no em dash" bash -c "! grep -q '—' docs/releases/$tag.md"
 
@@ -53,7 +60,7 @@ if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
   check "annotated" test "$(git cat-file -t "refs/tags/$tag")" = tag
   check "signature verifies" git tag -v "$tag"
   check "message is 'tunnelward $tag'" test "$(git for-each-ref --format='%(contents:subject)' "refs/tags/$tag")" = "tunnelward $tag"
-  check "points at main's head" test "$(git rev-parse "$tag^{commit}")" = "$(git rev-parse HEAD)"
+  check "points at the release commit" test "$(git rev-parse "$tag^{commit}")" = "$target"
   check "not on origin yet" bash -c "! git ls-remote --exit-code --tags origin refs/tags/$tag"
 fi
 
