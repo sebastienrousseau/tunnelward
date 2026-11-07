@@ -6,7 +6,7 @@
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper::client::conn::http2;
-use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use std::net::IpAddr;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -127,7 +127,12 @@ impl Gateway {
     {
         let (stream, kill) = Killable::new(tls);
         let grant = self.inner.config.limits.stream;
+        let keep_alive = self.inner.config.keep_alive;
         let (sender, conn) = http2::Builder::new(TokioExecutor::new())
+            .timer(TokioTimer::new())
+            .keep_alive_interval(keep_alive)
+            .keep_alive_timeout(keep_alive)
+            .keep_alive_while_idle(true)
             .max_header_list_size(grant.max_header_list_size)
             .initial_stream_window_size(grant.initial_stream_window)
             .initial_connection_window_size(grant.initial_connection_window)

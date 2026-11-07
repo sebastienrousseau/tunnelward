@@ -68,11 +68,26 @@ pub enum Target {
     },
 }
 
+/// Changes a request before it is sent to the target (G8), for example
+/// to add a header the target expects.
+pub type RequestHook = Arc<dyn Fn(&mut Request<Incoming>) + Send + Sync>;
+
 /// Forwards each request to a [`Target`]. Cloning is cheap.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Forward {
     target: Arc<Target>,
     timeout: Duration,
+    hook: Option<RequestHook>,
+}
+
+impl core::fmt::Debug for Forward {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Forward")
+            .field("target", &self.target)
+            .field("timeout", &self.timeout)
+            .field("hook", &self.hook.is_some())
+            .finish()
+    }
 }
 
 impl Forward {
@@ -83,10 +98,22 @@ impl Forward {
         Self {
             target: Arc::new(target),
             timeout,
+            hook: None,
         }
     }
 
-    async fn forward(self, request: Request<Incoming>) -> Response<ForwardBody> {
+    /// Runs `hook` on every request before it is forwarded, after the
+    /// gateway's routing and before hop-by-hop headers are removed.
+    #[must_use]
+    pub fn with_request_hook(mut self, hook: RequestHook) -> Self {
+        self.hook = Some(hook);
+        self
+    }
+
+    async fn forward(self, mut request: Request<Incoming>) -> Response<ForwardBody> {
+        if let Some(hook) = &self.hook {
+            hook(&mut request);
+        }
         match timeout(self.timeout, self.exchange(request)).await {
             Ok(Ok(response)) => response.map(BodyExt::boxed),
             Ok(Err(why)) => error_response(StatusCode::BAD_GATEWAY, &why),

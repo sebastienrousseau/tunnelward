@@ -16,6 +16,7 @@ publish = false
 
 [dependencies]
 bytes.workspace = true
+h2.workspace = true
 http.workspace = true
 http-body-util.workspace = true
 hyper = { workspace = true, features = ["client", "http2"] }

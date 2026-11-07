@@ -25,6 +25,9 @@ pub struct Config {
     pub lease_secs: u32,
     /// How long in-flight requests get to finish when a lease ends.
     pub drain_grace: Duration,
+    /// How often an idle connector connection is pinged (HTTP/2 PING), and
+    /// how long the answer may take before the connection is dropped.
+    pub keep_alive: Duration,
     /// Longest the TLS handshake and register frame may take together.
     pub registration_timeout: Duration,
     /// Longest a request waits for a connector with a free slot (FR-8).
@@ -50,6 +53,7 @@ impl Config {
             limits: Limits::default(),
             lease_secs: 3600,
             drain_grace: Duration::from_secs(30),
+            keep_alive: Duration::from_secs(20),
             registration_timeout: Duration::from_secs(10),
             max_wait: Duration::from_secs(2),
             routes_keep_time: Duration::from_secs(2 * 60 * 60),

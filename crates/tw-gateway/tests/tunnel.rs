@@ -228,3 +228,30 @@ async fn the_connector_allowlist_refuses_unlisted_sources() -> Res<()> {
     assert_eq!(gateway.routes(), vec!["mcp".to_owned()]);
     Ok(())
 }
+
+#[tokio::test]
+async fn a_connector_that_goes_silent_is_dropped_by_keep_alive() -> Res<()> {
+    let config = Config {
+        keep_alive: Duration::from_millis(300),
+        routes_keep_time: Duration::ZERO,
+        ..gateway_config()?
+    };
+    let (gateway, addr) = start(config).await?;
+    // Register over raw TLS, read Accept, then never speak HTTP/2: a peer
+    // whose process hung but whose socket stayed open.
+    let mut stream = raw(&addr, &[ALPN]).await?;
+    let frame = Frame::Register(registration(1, &["mcp"], &[]));
+    let bytes = tw_proto::encode(&frame, &Limits::default())?;
+    send_body(&mut stream, &bytes[tw_proto::LENGTH_PREFIX_LEN..]).await?;
+    assert!(matches!(
+        read_frame(&mut stream, &Limits::default()).await?,
+        Frame::Accept(_)
+    ));
+    assert_eq!(gateway.routes(), vec!["mcp".to_owned()]);
+    eventually("the silent connector to be dropped", || {
+        gateway.routes().is_empty()
+    })
+    .await?;
+    drop(stream);
+    Ok(())
+}

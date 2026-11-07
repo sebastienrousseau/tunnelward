@@ -681,6 +681,7 @@ name = "tw-gateway"
 version = "0.0.6"
 dependencies = [
  "bytes",
+ "h2",
  "http",
  "http-body-util",
  "hyper",

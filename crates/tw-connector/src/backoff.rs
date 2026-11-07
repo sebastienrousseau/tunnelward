@@ -47,7 +47,7 @@ impl Backoff {
 
 /// A random fraction in `[0, 1)` from the standard library's randomly
 /// keyed hasher; jitter needs spread, not secrecy.
-fn unit_random() -> f64 {
+pub(crate) fn unit_random() -> f64 {
     let bits = u32::try_from(RandomState::new().hash_one(0_u8) >> 32).unwrap_or(0);
     f64::from(bits) / 4_294_967_296.0
 }
@@ -71,21 +71,25 @@ mod tests {
     #[test]
     fn delays_grow_towards_the_cap_then_reset() {
         let mut b = Backoff::new(BASE, CAP);
+        // Each delay is at most three times the one before: certain.
         let early: Duration = (0..3).map(|_| b.next_delay()).max().unwrap_or_default();
         assert!(
             early <= BASE * 27,
             "three steps grow at most 3x each: {early:?}"
         );
-        for _ in 0..200 {
-            b.next_delay();
-        }
-        let late: Duration = (0..20).map(|_| b.next_delay()).max().unwrap_or_default();
+        // Repeated failures reach the cap. Once a delay is above a third of
+        // the cap, the next is above 90% of it with probability ~0.1, so 1000
+        // steps miss it with probability below 1e-20.
+        let largest: Duration = (0..1000).map(|_| b.next_delay()).max().unwrap_or_default();
         assert!(
-            late > CAP / 2,
-            "after many failures delays approach the cap: {late:?}"
+            largest >= CAP.mul_f64(0.9),
+            "delays approach the cap: {largest:?}"
         );
         b.reset();
-        assert!(b.next_delay() <= BASE * 3);
+        assert!(
+            b.next_delay() <= BASE * 3,
+            "after a reset delays start low again"
+        );
     }
 
     #[test]

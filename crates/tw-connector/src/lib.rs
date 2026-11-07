@@ -14,15 +14,22 @@
 //! [`register`] does the first part and returns a [`Registered`] session;
 //! [`Registered::serve`] runs the HTTP/2 server until the gateway closes
 //! the connection. [`Forward`] is a service that sends each request on to
-//! a local HTTP server. Reconnecting, several gateways and draining arrive
-//! in v0.0.6.
+//! a local HTTP server. [`Connector`] keeps several connections to several
+//! gateways up for good: it renews them before their leases end, reconnects
+//! with jittered backoff, follows DNS, reports [`ConnectorEvent`]s, and
+//! shuts down gracefully.
 
 mod backoff;
 mod error;
+mod event;
 mod forward;
 mod session;
+mod slot;
+mod supervisor;
 
 pub use backoff::Backoff;
 pub use error::Error;
-pub use forward::{Forward, ForwardBody, Target};
+pub use event::ConnectorEvent;
+pub use forward::{Forward, ForwardBody, RequestHook, Target};
 pub use session::{Config, Registered, register};
+pub use supervisor::{Connector, ConnectorConfig, Gateways};

@@ -259,3 +259,23 @@ async fn a_unix_socket_target_works() -> Res<()> {
     std::fs::remove_dir_all(&dir)?;
     Ok(())
 }
+
+#[tokio::test]
+async fn a_request_hook_can_change_requests_before_they_reach_the_target() -> Res<()> {
+    let target = Target::Http {
+        addr: tcp_backend().await?,
+    };
+    let forward = Forward::new(target, WAIT).with_request_hook(Arc::new(|request| {
+        request
+            .headers_mut()
+            .insert("x-test", HeaderValue::from_static("hooked"));
+    }));
+    let (gateway, addr) = start(gateway_config()?).await?;
+    let session = register(&connector_config(&addr, registration(1, &["mcp"], &[]))?).await?;
+    tokio::spawn(async move {
+        let _ended = session.serve(forward).await;
+    });
+    let (_, _, _, body) = call(&gateway, get("http://app.example/mcp/h")?).await?;
+    assert_eq!(body, "GET /mcp/h host=app.example x=hooked body=");
+    Ok(())
+}

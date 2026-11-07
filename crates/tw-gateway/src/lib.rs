@@ -25,6 +25,7 @@ mod kill;
 mod pool;
 mod registry;
 mod resolver;
+mod retry;
 mod route;
 
 pub use cidr::{Cidr, CidrError};
@@ -46,6 +47,23 @@ use tokio_rustls::TlsAcceptor;
 
 use pool::Lease;
 use registry::{Pick, Registry};
+
+/// How one attempt to send a request failed.
+enum Attempt {
+    /// The connector never saw the request: safe to send elsewhere.
+    Unprocessed(u64, hyper::Error),
+    /// Anything else.
+    Failed(SendError),
+}
+
+impl Attempt {
+    fn into_send_error(self) -> SendError {
+        match self {
+            Self::Unprocessed(_, e) => SendError::Http(e),
+            Self::Failed(e) => e,
+        }
+    }
+}
 
 /// A gateway. Cloning is cheap and shares the same registry.
 #[derive(Clone)]
@@ -139,12 +157,41 @@ impl Gateway {
     ) -> Result<Response<ResponseBody>, SendError> {
         let request = route::absolute(request)?;
         let target = Target::of(&request);
-        let Lease { mut sender, slot } = self.acquire(&target).await?;
-        sender.ready().await.map_err(SendError::Http)?;
-        let response = sender
-            .send_request(request)
+        let spare = retry::copy(&request);
+        match self.attempt(&target, request).await {
+            Err(Attempt::Unprocessed(session, _)) => {
+                // That connection is going away: stop choosing it, try another.
+                self.inner.registry.mark_draining(|e| e.session == session);
+                self.attempt(&target, spare)
+                    .await
+                    .map_err(Attempt::into_send_error)
+            }
+            other => other.map_err(Attempt::into_send_error),
+        }
+    }
+
+    async fn attempt(
+        &self,
+        target: &Target,
+        request: Request<Full<Bytes>>,
+    ) -> Result<Response<ResponseBody>, Attempt> {
+        let Lease {
+            session,
+            mut sender,
+            slot,
+        } = self.acquire(target).await.map_err(Attempt::Failed)?;
+        // A connection that cannot take a request has sent nothing yet.
+        sender
+            .ready()
             .await
-            .map_err(SendError::Http)?;
+            .map_err(|e| Attempt::Unprocessed(session, e))?;
+        let response = sender.send_request(request).await.map_err(|e| {
+            if retry::unprocessed(&e) {
+                Attempt::Unprocessed(session, e)
+            } else {
+                Attempt::Failed(SendError::Http(e))
+            }
+        })?;
         Ok(response.map(|body| ResponseBody::new(body, slot)))
     }
 

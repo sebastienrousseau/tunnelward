@@ -58,6 +58,7 @@ impl Entry {
     pub(crate) fn lease(&self, changed: Arc<Notify>) -> Lease {
         self.in_flight.fetch_add(1, Ordering::AcqRel);
         Lease {
+            session: self.session,
             sender: self.sender.clone(),
             slot: Slot {
                 count: self.in_flight.clone(),
@@ -69,6 +70,7 @@ impl Entry {
 
 /// A connection with one slot taken on it.
 pub(crate) struct Lease {
+    pub(crate) session: u64,
     pub(crate) sender: SendRequest<Full<Bytes>>,
     pub(crate) slot: Slot,
 }
