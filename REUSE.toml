@@ -12,7 +12,7 @@ SPDX-PackageDownloadLocation = "https://github.com/sebastienrousseau/tunnelward"
 
 # Written by cargo and cargo-vet, which rewrite them whole.
 [[annotations]]
-path = ["Cargo.lock", "supply-chain/**"]
+path = ["Cargo.lock", "fuzz/Cargo.lock", "supply-chain/**"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>"
 SPDX-License-Identifier = "GPL-3.0-only"
@@ -21,6 +21,13 @@ SPDX-License-Identifier = "GPL-3.0-only"
 # fixes its first line as the bare licence identifier.
 [[annotations]]
 path = [".gitignore", ".complexity-baseline", ".github/demo.gif", "README.md"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>"
+SPDX-License-Identifier = "GPL-3.0-only"
+
+# Fuzzing seeds: frames as bytes, replayed on every pull request.
+[[annotations]]
+path = ["fuzz/seeds/**"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>"
 SPDX-License-Identifier = "GPL-3.0-only"
