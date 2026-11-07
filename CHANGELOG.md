@@ -7,6 +7,37 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.4]
+
+### Added
+
+- A working tunnel. `tw-connector` dials the gateway over TLS with ALPN
+  `tw/1`, sends `Register`, and on `Accept` serves HTTP/2 on the same
+  connection with the roles reversed (ADR 0001). `tw-gateway` admits
+  connectors (`Gateway::admit` on any stream, or `serve_connectors` on a
+  TCP listener) and sends requests through them (`Gateway::send`).
+- Routing by domain, then the longest route on a `/` boundary, then the
+  catch-all `*`. A connector leaves the routing table when its
+  connection ends.
+- `Register` can claim `domains` (exact or `*.` wildcard, up to 16) and the
+  catch-all route `*` (gaps G1 and G2).
+- The gateway closes a connection that does not negotiate `tw/1`,
+  answers a bad register frame with `Reject` and its code, refuses an
+  oversized length prefix before reading the body, and drops a
+  connection that sends no frame within the registration timeout.
+- `tw-proto` feature `io`: `read_frame` and `write_frame` on tokio
+  streams; a read stops exactly at the frame's end.
+- `tw-testpki`: the TEST-ONLY certificates, shared by every crate's tests.
+- `supply-chain/README.md`: how a dependency gets vetted, and the
+  maintainer's trust decisions.
+
+### Notes
+
+- Reversed-role HTTP/2 works on hyper 1.12 and h2 0.4.20 with no
+  workaround; ADR 0001's fallback (RFC 8441) is not needed.
+- A commit on this branch (1f876b6) went in while the gate was red; the
+  next commit (3cba209) fixed it.
+
 ## [0.0.3]
 
 ### Added
@@ -72,6 +103,7 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 - Licence GPL-3.0-only, REUSE metadata, security policy, contribution
   guide, code of conduct and agent instructions.
 
+[0.0.4]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/sebastienrousseau/tunnelward/releases/tag/v0.0.1

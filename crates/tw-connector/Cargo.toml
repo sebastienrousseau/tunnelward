@@ -14,5 +14,14 @@ homepage.workspace = true
 # Not published until the crate has an API worth depending on.
 publish = false
 
+[dependencies]
+http.workspace = true
+hyper = { workspace = true, features = ["http2", "server"] }
+hyper-util.workspace = true
+tokio = { workspace = true, features = ["net", "time"] }
+tokio-rustls.workspace = true
+tw-crypto = { path = "../tw-crypto" }
+tw-proto = { path = "../tw-proto", features = ["io"] }
+
 [lints]
 workspace = true

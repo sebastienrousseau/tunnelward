@@ -35,6 +35,8 @@
 mod code;
 mod codec;
 mod frame;
+#[cfg(feature = "io")]
+pub mod io;
 mod limits;
 mod validate;
 
