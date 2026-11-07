@@ -17,10 +17,12 @@
 //! a local HTTP server. Reconnecting, several gateways and draining arrive
 //! in v0.0.6.
 
+mod backoff;
 mod error;
 mod forward;
 mod session;
 
+pub use backoff::Backoff;
 pub use error::Error;
 pub use forward::{Forward, ForwardBody, Target};
 pub use session::{Config, Registered, register};

@@ -5,7 +5,8 @@
 //! many requests wait for each route.
 
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU32;
+use std::net::IpAddr;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -13,8 +14,9 @@ use bytes::Bytes;
 use http_body_util::Full;
 use hyper::client::conn::http2::SendRequest;
 use tokio::sync::Notify;
-use tw_proto::{ConnectorId, Register};
+use tw_proto::Register;
 
+use crate::kill::KillSwitch;
 use crate::pool::{Entry, Lease, choose};
 use crate::{RouteResolver, Target};
 
@@ -43,9 +45,19 @@ pub(crate) enum Pick {
     None,
 }
 
+/// A connection as the registry needs it.
+pub(crate) struct Link {
+    pub(crate) sender: SendRequest<Full<Bytes>>,
+    /// The gateway's stream grant, capping the connector's capacity.
+    pub(crate) grant: u32,
+    pub(crate) peer: Option<IpAddr>,
+    pub(crate) kill: Arc<KillSwitch>,
+}
+
 #[derive(Default)]
 pub(crate) struct Registry {
     state: Mutex<State>,
+    next_session: AtomicU64,
     /// Notified when a slot frees or a connector arrives.
     changed: Arc<Notify>,
 }
@@ -78,23 +90,67 @@ impl Registry {
         self.changed.clone()
     }
 
-    pub(crate) fn insert(&self, register: Register, sender: SendRequest<Full<Bytes>>, grant: u32) {
+    /// Adds one connection and returns its session number.
+    pub(crate) fn insert(&self, register: Register, link: Link) -> u64 {
+        let session = self.next_session.fetch_add(1, Ordering::Relaxed);
         self.lock().entries.push(Entry {
+            session,
             id: register.connector_id,
-            capacity: register.capacity.min(grant),
+            peer: link.peer,
+            draining: false,
+            kill: link.kill,
+            capacity: register.capacity.min(link.grant),
             routes: register.routes,
             domains: register.domains,
             in_flight: Arc::new(AtomicU32::new(0)),
-            sender,
+            sender: link.sender,
         });
         self.changed.notify_waiters();
+        session
+    }
+
+    /// Marks every session `select` picks as draining; returns them.
+    pub(crate) fn mark_draining(&self, select: impl Fn(&Entry) -> bool) -> Vec<u64> {
+        let mut state = self.lock();
+        let picked: Vec<u64> = state
+            .entries
+            .iter_mut()
+            .filter(|e| select(e))
+            .map(|e| {
+                e.draining = true;
+                e.session
+            })
+            .collect();
+        picked
+    }
+
+    /// Requests in flight on `session`, or `None` once it is gone.
+    pub(crate) fn session_load(&self, session: u64) -> Option<u32> {
+        self.lock()
+            .entries
+            .iter()
+            .find(|e| e.session == session)
+            .map(Entry::load)
+    }
+
+    /// Ends `session`'s connection, resetting what is still open.
+    pub(crate) fn abort(&self, session: u64) {
+        if let Some(e) = self.lock().entries.iter().find(|e| e.session == session) {
+            e.kill.kill();
+        }
+    }
+
+    pub(crate) fn draining(&self) -> u32 {
+        let count = self.lock().entries.iter().filter(|e| e.draining).count();
+        u32::try_from(count).unwrap_or(u32::MAX)
     }
 
     /// Forgets connector `id`, keeping its routes for `keep`.
-    pub(crate) fn remove(&self, id: ConnectorId, keep: Duration) {
+    /// Forgets `session`, keeping its routes for `keep`.
+    pub(crate) fn remove(&self, session: u64, keep: Duration) {
         let mut state = self.lock();
         let (gone, live): (Vec<Entry>, Vec<Entry>) =
-            state.entries.drain(..).partition(|e| e.id == id);
+            state.entries.drain(..).partition(|e| e.session == session);
         state.entries = live;
         let until = Instant::now() + keep;
         state.kept.extend(gone.into_iter().map(|e| Kept {
@@ -102,6 +158,8 @@ impl Registry {
             domains: e.domains,
             until,
         }));
+        drop(state);
+        self.changed.notify_waiters();
     }
 
     pub(crate) fn routes(&self) -> Vec<String> {

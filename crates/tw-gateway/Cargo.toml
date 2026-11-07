@@ -20,7 +20,7 @@ http.workspace = true
 http-body-util.workspace = true
 hyper = { workspace = true, features = ["client", "http2"] }
 hyper-util.workspace = true
-tokio = { workspace = true, features = ["net", "rt", "time"] }
+tokio = { workspace = true, features = ["macros", "net", "rt", "time"] }
 tokio-rustls.workspace = true
 tw-crypto = { path = "../tw-crypto" }
 tw-proto = { path = "../tw-proto", features = ["io"] }

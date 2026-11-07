@@ -23,7 +23,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.5"
+version = "0.0.6"
 edition = "2024"
 # The MSRV floor. See docs/POLICIES.md before changing it.
 rust-version = "1.89"

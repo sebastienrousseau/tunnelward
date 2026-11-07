@@ -17,14 +17,19 @@
 //! agent-facing ingress arrive in later releases (v0.0.5 to v0.0.10).
 
 mod admit;
+mod cidr;
 mod config;
+mod drain;
 mod error;
+mod kill;
 mod pool;
 mod registry;
 mod resolver;
 mod route;
 
+pub use cidr::{Cidr, CidrError};
 pub use config::Config;
+pub use drain::{DrainReport, DrainTarget};
 pub use error::{AdmitError, SendError};
 pub use pool::ResponseBody;
 pub use resolver::{LongestFirst, RouteResolver, Target};
@@ -38,7 +43,6 @@ use hyper::{Request, Response};
 use tokio::net::TcpListener;
 use tokio::time::{Instant, timeout_at};
 use tokio_rustls::TlsAcceptor;
-use tw_proto::ConnectorId;
 
 use pool::Lease;
 use registry::{Pick, Registry};
@@ -77,10 +81,23 @@ impl Gateway {
     /// The listener's accept error.
     pub async fn serve_connectors(&self, listener: TcpListener) -> std::io::Result<()> {
         loop {
-            let (tcp, _) = listener.accept().await?;
+            let (tcp, peer) = listener.accept().await?;
+            if !self.allows(peer.ip()) {
+                // Closed before any TLS work: an unlisted source costs one accept.
+                continue;
+            }
             let gateway = self.clone();
-            tokio::spawn(async move { gateway.admit(tcp).await });
+            tokio::spawn(async move { gateway.admit_from(tcp, Some(peer.ip())).await });
         }
+    }
+
+    /// Whether the connector allowlist admits `ip`. An empty list admits
+    /// every address. Embedders that accept connections themselves call this
+    /// before [`Gateway::admit`].
+    #[must_use]
+    pub fn allows(&self, ip: std::net::IpAddr) -> bool {
+        let allow = &self.inner.config.connector_allow;
+        allow.is_empty() || allow.iter().any(|range| range.contains(ip))
     }
 
     /// The routes of every live connector, sorted.
@@ -180,9 +197,9 @@ impl Gateway {
         }
     }
 
-    fn remove(&self, id: ConnectorId) {
+    fn remove(&self, session: u64) {
         self.inner
             .registry
-            .remove(id, self.inner.config.routes_keep_time);
+            .remove(session, self.inner.config.routes_keep_time);
     }
 }
