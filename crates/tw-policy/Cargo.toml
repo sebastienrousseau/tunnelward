@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-only
+
+[package]
+name = "tw-policy"
+description = "Tunnelward per-tool policy evaluation with Cedar"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+# Not published until the crate has an API worth depending on.
+publish = false
+
+[lints]
+workspace = true

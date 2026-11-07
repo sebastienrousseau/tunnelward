@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Thresholds for the lints denied in [workspace.lints.clippy]. These are
+# the ~/Code/AGENTS.md section 0 ceilings; they may tighten, never relax.
+msrv = "1.85"
+cognitive-complexity-threshold = 15
+too-many-lines-threshold = 60
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true

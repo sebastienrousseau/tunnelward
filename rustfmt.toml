@@ -1,0 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-only
+edition = "2024"
+max_width = 100
+use_field_init_shorthand = true

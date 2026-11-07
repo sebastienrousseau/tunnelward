@@ -1,0 +1,225 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!--
+README template. Global rules: see ~/Code/AGENTS.md and ~/Code/REPO-STANDARD.md.
+Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/releases/tag/v0.0.5
+-->
+
+<p align="center">
+  <!-- No logo yet: the Satellion brand assets for Tunnelward are not made. -->
+</p>
+
+<h1 align="center">Tunnelward</h1>
+
+<p align="center">
+  Serve AI agents from behind a firewall: services dial out to a gateway, prove what they are, and need no inbound port.
+</p>
+
+<p align="center">
+  <a href="https://github.com/sebastienrousseau/tunnelward/actions"><img src="https://img.shields.io/github/actions/workflow/status/sebastienrousseau/tunnelward/ci.yml?style=for-the-badge&logo=github" alt="Build" height="28" /></a>
+  <a href="https://crates.io/crates/tunnelward"><img src="https://img.shields.io/crates/v/tunnelward.svg?style=for-the-badge&color=fc8d62&logo=rust" alt="Registry" height="28" /></a>
+  <a href="https://docs.rs/tunnelward"><img src="https://img.shields.io/badge/docs.rs-tunnelward-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs" alt="Docs" height="28" /></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/sebastienrousseau/tunnelward"><img src="https://img.shields.io/ossf-scorecard/github.com/sebastienrousseau/tunnelward?style=for-the-badge&label=OpenSSF%20Scorecard&logo=openssf" alt="OpenSSF Scorecard" height="28" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-blue.svg?style=for-the-badge" alt="License: GPL-3.0-only" height="28" /></a>
+  <a href="https://github.com/sebastienrousseau/tunnelward/blob/main/docs/POLICIES.md"><img src="https://img.shields.io/badge/MSRV-1.85-93450a.svg?style=for-the-badge&logo=rust" alt="Minimum supported Rust version 1.85" height="28" /></a>
+</p>
+
+<p align="center">
+  <img src=".github/demo.gif" alt="A terminal runs tunnelward --version, which prints tunnelward 0.0.1, then tunnelward --help, which prints the usage" width="100%" />
+</p>
+
+---
+
+## Contents
+
+**Getting started**
+
+- [Install](#install) — from source with cargo
+- [Requirements](#requirements) — toolchain floor, platforms
+- [Quick Start](#quick-start) — build the workspace and run the gate
+
+**The Tunnelward ecosystem**
+
+- [The Tunnelward ecosystem](#the-tunnelward-ecosystem) — tw-proto, tw-crypto, tw-identity, tw-attest, tw-policy, tw-mcp, tw-audit, tw-gateway, tw-connector, tw-cli
+
+**Library reference**
+
+- [Capabilities at a glance](#capabilities-at-a-glance) — the current surface by theme
+- [Ecosystem comparison](#ecosystem-comparison) — short matrix; full table at [`docs/COMPARISON.md`](docs/COMPARISON.md)
+- [Benchmarks](#benchmarks) — headline numbers; full table at [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)
+- [Features](#features) — module-level capability list
+- [Configuration](#configuration) — core options
+- [Examples](#examples) — runnable example index
+
+**Operational**
+
+- [When not to use Tunnelward](#when-not-to-use-tunnelward) — limitations
+- [Development](#development) — make targets, fuzzing, CI
+- [Security](#security) — guarantees and compliance
+- [Documentation](#documentation) — all reference docs
+- [Stability guarantees](#stability-guarantees) — SemVer axis, output stability, minimum toolchain discipline
+- [License](#license)
+
+---
+
+## Install
+
+### As a Rust library
+
+```toml
+# Not published yet. The crates go to crates.io once they carry an API
+# worth depending on; until then, build from source as below.
+```
+
+From source, the `tunnelward` binary:
+
+```bash
+git clone https://github.com/sebastienrousseau/tunnelward
+cd tunnelward
+cargo install --locked --path crates/tw-cli
+```
+
+---
+
+## Requirements
+
+- Rust 1.85 or newer ([policy](docs/POLICIES.md)).
+- CI tests Linux, macOS and Windows on stable, and Linux on 1.85.
+
+---
+
+## Quick Start
+
+```bash
+cargo build --workspace --locked
+cargo run --quiet --locked -p tw-cli -- --version
+cargo xtask ci
+```
+
+v0.0.1 is the workspace skeleton: the binary reports its version and
+usage, and `cargo xtask ci` runs every check CI runs. The tunnel itself
+lands from v0.0.2 onwards.
+
+---
+
+## The Tunnelward ecosystem
+
+One crate per concern, so the protocol core can be fuzzed and audited on
+its own. All are placeholders in v0.0.1 except `tw-cli`.
+
+| Component | Purpose | Use case |
+| :--- | :--- | :--- |
+| `tw-proto` | Register frames, limits, error codes | Parsing what a connector sends before its identity is known |
+| `tw-crypto` | rustls configuration with hybrid post-quantum key exchange | X25519MLKEM768 on every TLS hop |
+| `tw-identity` | SPIFFE SVIDs, enrolment tokens | Proving which workload a connector is |
+| `tw-attest` | passmcp attestation verification | Admitting only MCP servers that passed passmcp |
+| `tw-policy` | Cedar policy per MCP tool | Allowing or denying each `tools/call` |
+| `tw-mcp` | MCP envelope parsing, Streamable HTTP, SSE | Reading the method and tool name without parsing the body |
+| `tw-audit` | Hash-chained log, offline verifier | Proving what was allowed, after the fact |
+| `tw-gateway` | Ingress, routing, admission, admin API | The public side agents connect to |
+| `tw-connector` | Outbound registration, stdio bridge | The private side next to the MCP server |
+| `tw-cli` | The `tunnelward` binary | Operating all of the above |
+
+---
+
+## Capabilities at a glance
+
+| Area | Capability | Status |
+| :--- | :--- | :--- |
+| CLI | `tunnelward --version`, `--help` | Shipped in 0.0.1 |
+| Protocol | Register, Accept, Reject frames | Planned for 0.0.2 |
+| Transport | Reverse HTTP/2 over outbound TLS | Planned for 0.0.4 |
+| Crypto | Hybrid PQ TLS (X25519MLKEM768) | Planned for 0.0.3 |
+
+---
+
+## Ecosystem comparison
+
+No comparison is published yet: there is nothing built to compare. `docs/COMPARISON.md` will be written, with evidence, once the tunnel works.
+
+| Project | Inbound port needed | Admission by attestation | Self-hosted |
+| :--- | :---: | :---: | :---: |
+| **Tunnelward** | Not yet built | Not yet built | Not yet built |
+
+See [`docs/COMPARISON.md`](docs/COMPARISON.md) for the evidence and complete matrix.
+
+---
+
+## Benchmarks
+
+No benchmarks yet. A number appears here only after a benchmark anyone can rerun has measured it.
+
+| Scenario | Result | Environment |
+| :--- | ---: | :--- |
+| None yet | n/a | n/a |
+
+See [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) for methodology and full results.
+
+---
+
+## Features
+
+The workspace has no Cargo features yet.
+
+---
+
+## Configuration
+
+Nothing to configure in v0.0.1.
+
+---
+
+## Examples
+
+No examples yet; the first, a gateway and connector on one machine, comes with `tunnelward dev` in 0.0.8.
+
+---
+
+## When not to use Tunnelward
+
+- Today, for anything: v0.0.1 carries no traffic.
+- For LLM routing, prompt guardrails or token accounting: use an MCP or LLM gateway such as agentgateway in front of it.
+- As a general-purpose VPN or mesh.
+- If you want a vendor edge to run the data plane for you: Tunnelward is self-hosted.
+
+---
+
+## Development
+
+```bash
+cargo xtask ci   # the single gate CI runs
+make demo        # re-render .github/demo.gif
+```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the toolchain and what the gate runs.
+
+---
+
+## Security
+
+- No `unsafe` code in any Tunnelward crate (`unsafe_code = "forbid"`).
+- No `unwrap`, `expect` or `panic!` outside tests (clippy, denied).
+- Dependencies checked by `cargo deny` and `cargo vet` on every pull request; Actions pinned by commit SHA.
+- Fuzzing starts with `tw-proto` in 0.0.2.
+
+Report vulnerabilities according to [`SECURITY.md`](SECURITY.md).
+
+---
+
+## Documentation
+
+- User manual: not written yet.
+- API reference: `cargo doc --workspace --open`; docs.rs once published.
+- Developer docs: [DEVELOPMENT.md](DEVELOPMENT.md), [docs/POLICIES.md](docs/POLICIES.md).
+- Ecosystem: [the table above](#the-tunnelward-ecosystem); passmcp is the sibling that writes the attestations Tunnelward checks.
+
+---
+
+## Stability guarantees
+
+Pre-0.1.0, any release may change any API, wire format or CLI output; the CHANGELOG says what changed. Each release moves the patch number by one. The minimum Rust version may rise in any release, and the CHANGELOG names the reason ([policy](docs/POLICIES.md)).
+
+---
+
+## License
+
+Licensed under the GNU General Public License, version 3 only ([GPL-3.0-only](LICENSE)).

@@ -1,0 +1,2 @@
+# Known complexity offenders, one per line; may only shrink.
+# See scripts/complexity.sh.

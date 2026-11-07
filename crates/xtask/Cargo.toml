@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Developer tasks: `cargo xtask ci` is the single gate CI runs. No
+# dependencies, so the gate itself adds nothing to the supply chain.
+
+[package]
+name = "xtask"
+description = "Tunnelward developer tasks; `cargo xtask ci` is the single gate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true

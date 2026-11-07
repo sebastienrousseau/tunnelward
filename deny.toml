@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# cargo-deny: advisories, licences, bans and sources. Run by `cargo xtask ci`.
+
+[graph]
+all-features = true
+
+[advisories]
+# Every advisory fails the gate; an ignore needs a written reason and the
+# maintainer's sign-off, never a quiet entry here.
+yanked = "deny"
+ignore = []
+
+[licenses]
+# GPL-3.0-only is the workspace's own licence. The workspace has no
+# dependencies yet; each licence a new one brings is added here in the
+# same change, and must be compatible with distribution under GPL-3.0.
+allow = [
+  "GPL-3.0-only",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

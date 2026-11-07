@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Machine-readable licensing, per the REUSE specification. Every source
+# file carries an SPDX header; this covers files whose tools rewrite them
+# or whose format takes no comments.
+
+version = 1
+SPDX-PackageName = "tunnelward"
+SPDX-PackageSupplier = "Sebastien Rousseau <sebastian.rousseau@gmail.com>"
+SPDX-PackageDownloadLocation = "https://github.com/sebastienrousseau/tunnelward"
+
+# Written by cargo and cargo-vet, which rewrite them whole.
+[[annotations]]
+path = ["Cargo.lock", "supply-chain/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>"
+SPDX-License-Identifier = "GPL-3.0-only"
+
+# Files with no comment syntax, a binary, and the README, whose template
+# fixes its first line as the bare licence identifier.
+[[annotations]]
+path = [".gitignore", ".complexity-baseline", ".github/demo.gif", "README.md"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>"
+SPDX-License-Identifier = "GPL-3.0-only"
