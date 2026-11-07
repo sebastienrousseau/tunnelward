@@ -18,11 +18,12 @@ members = [
   "crates/tw-mcp",
   "crates/tw-policy",
   "crates/tw-proto",
+  "crates/tw-testpki",
   "crates/xtask",
 ]
 
 [workspace.package]
-version = "0.0.3"
+version = "0.0.4"
 edition = "2024"
 # The MSRV floor. See docs/POLICIES.md before changing it.
 rust-version = "1.89"

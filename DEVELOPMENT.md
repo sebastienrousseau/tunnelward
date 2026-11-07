@@ -43,7 +43,7 @@ commit that input to `fuzz/seeds/<target>/` so every run replays it.
 
 ## Test certificates
 
-`crates/tw-crypto/tests/pki/` holds TEST-ONLY certificates and keys,
+`crates/tw-testpki/pki/` holds TEST-ONLY certificates and keys,
 written by `scripts/gen-test-pki.sh` (needs the `openssl` CLI). They are
 valid for 100 years; regenerate them only if a test needs a new one.
 

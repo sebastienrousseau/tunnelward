@@ -6,50 +6,19 @@
 
 use std::sync::Arc;
 
-use tw_crypto::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName};
+use tw_crypto::rustls::pki_types::ServerName;
 use tw_crypto::rustls::{
-    ClientConfig, ClientConnection, Connection, NamedGroup, ProtocolVersion, RootCertStore,
-    ServerConfig, ServerConnection,
+    ClientConfig, ClientConnection, Connection, NamedGroup, ProtocolVersion, ServerConfig,
+    ServerConnection,
 };
-use tw_crypto::{
-    ClientAuth, Identity, KeyExchange, client_config, negotiated_group, server_config,
-};
+use tw_crypto::{ClientAuth, KeyExchange, client_config, negotiated_group, server_config};
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
 const ALPN: &[&[u8]] = &[b"tw/1"];
 const SERVER_NAME: &str = "gateway.test";
 
-/// TEST-ONLY certificates from scripts/gen-test-pki.sh.
-mod pki {
-    pub(super) const CA: &[u8] = include_bytes!("pki/ca.der");
-    pub(super) const OTHER_CA: &[u8] = include_bytes!("pki/other-ca.der");
-    pub(super) const GATEWAY: (&[u8], &[u8]) = (
-        include_bytes!("pki/gateway.der"),
-        include_bytes!("pki/gateway.key"),
-    );
-    pub(super) const CONNECTOR: (&[u8], &[u8]) = (
-        include_bytes!("pki/connector.der"),
-        include_bytes!("pki/connector.key"),
-    );
-    pub(super) const INTRUDER: (&[u8], &[u8]) = (
-        include_bytes!("pki/intruder.der"),
-        include_bytes!("pki/intruder.key"),
-    );
-}
-
-fn identity((cert, key): (&[u8], &[u8])) -> Identity {
-    Identity {
-        chain: vec![CertificateDer::from(cert.to_vec())],
-        key: PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.to_vec())),
-    }
-}
-
-fn roots(ca: &[u8]) -> Res<Arc<RootCertStore>> {
-    let mut store = RootCertStore::empty();
-    store.add(CertificateDer::from(ca.to_vec()))?;
-    Ok(Arc::new(store))
-}
+use tw_testpki::{self as pki, identity, roots};
 
 fn mtls() -> Res<ClientAuth> {
     Ok(ClientAuth::Required(roots(pki::CA)?))
@@ -59,7 +28,7 @@ fn server(auth: ClientAuth, kx: KeyExchange) -> Res<ServerConfig> {
     Ok(server_config(identity(pki::GATEWAY), auth, kx, ALPN)?)
 }
 
-fn client(cert: Option<(&[u8], &[u8])>, kx: KeyExchange) -> Res<ClientConfig> {
+fn client(cert: Option<pki::Pair>, kx: KeyExchange) -> Res<ClientConfig> {
     Ok(client_config(
         roots(pki::CA)?,
         cert.map(identity),
