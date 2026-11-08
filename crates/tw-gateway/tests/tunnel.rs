@@ -4,112 +4,36 @@
 //! End to end over loopback: a connector dials the gateway, registers,
 //! and serves a request the gateway sends back through that connection.
 
-use std::convert::Infallible;
-use std::sync::Arc;
+mod common;
+
 use std::time::Duration;
 
 use bytes::Bytes;
-use http_body_util::{BodyExt, Full};
-use hyper::body::Incoming;
-use hyper::service::service_fn;
-use hyper::{Request, Response, StatusCode};
+use http_body_util::Full;
+use hyper::{Request, StatusCode};
 use tokio::io::AsyncWriteExt;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
-use tw_connector::{Config as ConnectorConfig, Error as ConnectorError, register};
+use tw_connector::{Error as ConnectorError, register};
 use tw_crypto::rustls::pki_types::ServerName;
-use tw_crypto::{ClientAuth, KeyExchange, client_config, server_config};
-use tw_gateway::{Config, Gateway, SendError};
+use tw_gateway::{Config, SendError};
 use tw_proto::io::read_frame;
-use tw_proto::{ALPN, ConnectorId, Frame, Limits, PROTOCOL_VERSION, Register, RejectCode};
+use tw_proto::{ALPN, Frame, Limits, RejectCode};
 use tw_testpki as pki;
 
-type Res<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+use common::{
+    Res, WAIT, connector_config, eventually, gateway_config, get, get_request, registration, start,
+    start_connector, tls_client,
+};
 
-const WAIT: Duration = Duration::from_secs(5);
-
-async fn start_gateway(registration_timeout: Duration) -> Res<(Gateway, String)> {
-    let tls = server_config(
-        pki::identity(pki::GATEWAY),
-        ClientAuth::Required(pki::roots(pki::CA)?),
-        KeyExchange::default(),
-        &[ALPN],
-    )?;
-    let gateway = Gateway::new(Config {
-        tls: Arc::new(tls),
-        limits: Limits::default(),
-        lease_secs: 30,
+/// A gateway that forgets a route as soon as its connector leaves.
+async fn start_gateway(registration_timeout: Duration) -> Res<(tw_gateway::Gateway, String)> {
+    let config = Config {
         registration_timeout,
-    });
-    let listener = TcpListener::bind("127.0.0.1:0").await?;
-    let addr = listener.local_addr()?.to_string();
-    let serving = gateway.clone();
-    tokio::spawn(async move { serving.serve_connectors(listener).await });
-    Ok((gateway, addr))
-}
-
-fn tls_client(alpn: &[&[u8]]) -> Res<Arc<tw_crypto::rustls::ClientConfig>> {
-    let tls = client_config(
-        pki::roots(pki::CA)?,
-        Some(pki::identity(pki::CONNECTOR)),
-        KeyExchange::default(),
-        alpn,
-    )?;
-    Ok(Arc::new(tls))
-}
-
-fn registration(id: u8, routes: &[&str], domains: &[&str]) -> Register {
-    Register {
-        version: PROTOCOL_VERSION,
-        connector_id: ConnectorId([id; 16]),
-        spiffe_id: "spiffe://example.org/connector".into(),
-        routes: routes.iter().map(|s| (*s).to_owned()).collect(),
-        domains: domains.iter().map(|s| (*s).to_owned()).collect(),
-        mcp: None,
-        attestation: None,
-        capacity: 16,
-    }
-}
-
-fn connector_config(addr: &str, register: Register) -> Res<ConnectorConfig> {
-    Ok(ConnectorConfig {
-        gateway: addr.to_owned(),
-        server_name: ServerName::try_from(pki::GATEWAY_NAME)?.to_owned(),
-        tls: tls_client(&[ALPN])?,
-        register,
-        limits: Limits::default(),
-        handshake_timeout: WAIT,
-    })
-}
-
-/// Answers every request with `<name> <method> <path>`.
-fn echo(name: &str, req: &Request<Incoming>) -> Response<Full<Bytes>> {
-    let text = format!("{name} {} {}", req.method(), req.uri().path());
-    Response::new(Full::new(Bytes::from(text)))
-}
-
-/// Registers a connector that echoes as `name`, serving on its own task.
-async fn start_connector(
-    addr: &str,
-    name: &'static str,
-    register_as: Register,
-) -> Res<tokio::task::JoinHandle<()>> {
-    let session = register(&connector_config(addr, register_as)?).await?;
-    Ok(tokio::spawn(async move {
-        let _ended = session
-            .serve(service_fn(move |req| {
-                std::future::ready(Ok::<_, Infallible>(echo(name, &req)))
-            }))
-            .await;
-    }))
-}
-
-async fn get(gateway: &Gateway, uri: &str) -> Res<(StatusCode, String)> {
-    let request = Request::get(uri).body(Full::new(Bytes::new()))?;
-    let response = gateway.send(request).await?;
-    let status = response.status();
-    let body = response.into_body().collect().await?.to_bytes();
-    Ok((status, String::from_utf8(body.to_vec())?))
+        routes_keep_time: Duration::ZERO,
+        ..gateway_config()?
+    };
+    start(config).await
 }
 
 #[tokio::test]
@@ -162,11 +86,8 @@ async fn routing_prefers_domain_then_longest_route_then_catch_all() -> Res<()> {
 #[tokio::test]
 async fn no_connector_means_no_route() -> Res<()> {
     let (gateway, _) = start_gateway(WAIT).await?;
-    let request = Request::get("http://x.org/mcp").body(Full::new(Bytes::new()))?;
-    assert!(matches!(
-        gateway.send(request).await,
-        Err(SendError::NoRoute)
-    ));
+    let sent = gateway.send(get_request("http://x.org/mcp")?).await;
+    assert!(matches!(sent, Err(SendError::NoRoute)), "{sent:?}");
     Ok(())
 }
 
@@ -175,16 +96,9 @@ async fn a_closed_connector_stops_being_routable() -> Res<()> {
     let (gateway, addr) = start_gateway(WAIT).await?;
     let serving = start_connector(&addr, "echo", registration(1, &["mcp/echo"], &[])).await?;
     serving.abort();
-    let deadline = tokio::time::Instant::now() + WAIT;
-    while !gateway.routes().is_empty() {
-        assert!(tokio::time::Instant::now() < deadline, "route still listed");
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    let request = Request::get("http://x.org/mcp/echo").body(Full::new(Bytes::new()))?;
-    assert!(matches!(
-        gateway.send(request).await,
-        Err(SendError::NoRoute)
-    ));
+    eventually("the route to go", || gateway.routes().is_empty()).await?;
+    let sent = gateway.send(get_request("http://x.org/mcp/echo")?).await;
+    assert!(matches!(sent, Err(SendError::NoRoute)), "{sent:?}");
     Ok(())
 }
 

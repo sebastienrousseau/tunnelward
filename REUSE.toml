@@ -33,9 +33,18 @@ SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
 SPDX-License-Identifier = "GPL-3.0-only"
 
 # TEST-ONLY certificates and keys, written by scripts/gen-test-pki.sh.
-# DER has no comment syntax. The keys protect nothing.
+# DER has no comment syntax. The keys protect nothing. MIT OR Apache-2.0
+# like tw-testpki, which embeds them (D8).
 [[annotations]]
 path = ["crates/tw-testpki/pki/**"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>"
-SPDX-License-Identifier = "GPL-3.0-only"
+SPDX-License-Identifier = "MIT OR Apache-2.0"
+
+# The README logo: a Noun Project icon the maintainer holds a Pro licence
+# for. Not GPL; see LICENSES/LicenseRef-NounProject.txt.
+[[annotations]]
+path = [".github/logo.svg"]
+precedence = "override"
+SPDX-FileCopyrightText = "Noun Project contributor (item 8029303)"
+SPDX-License-Identifier = "LicenseRef-NounProject"

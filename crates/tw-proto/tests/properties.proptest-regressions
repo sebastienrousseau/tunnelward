@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
-# SPDX-License-Identifier: GPL-3.0-only
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # Seeds for failure cases proptest has generated in the past. It is
 # automatically read and these particular cases re-run before any
 # novel cases are generated.

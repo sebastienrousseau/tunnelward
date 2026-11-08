@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! Hard limits. Every one is configurable, has a documented default, and
 //! is checked before the memory it bounds is allocated.

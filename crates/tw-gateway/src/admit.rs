@@ -3,9 +3,6 @@
 
 //! Admitting one connector connection.
 
-use std::sync::Arc;
-use std::time::Duration;
-
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper::client::conn::http2;
@@ -13,27 +10,10 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::timeout;
 use tokio_rustls::server::TlsStream;
-use tw_crypto::rustls::ServerConfig;
 use tw_proto::io::{ReadError, read_frame, write_frame};
-use tw_proto::{
-    ALPN, Accept, ConnectorId, Frame, Limits, MAX_REASON_LEN, Register, Reject, RejectCode,
-};
+use tw_proto::{ALPN, Accept, ConnectorId, Frame, MAX_REASON_LEN, Register, Reject, RejectCode};
 
 use crate::{AdmitError, Gateway};
-
-/// How a gateway admits connectors.
-#[derive(Debug, Clone)]
-pub struct Config {
-    /// TLS for the connector listener: from `tw_crypto::server_config`
-    /// with client certificates required and ALPN `tw/1`.
-    pub tls: Arc<ServerConfig>,
-    /// Frame and HTTP/2 limits.
-    pub limits: Limits,
-    /// Lease granted in [`Accept`]; renewal arrives in v0.0.6.
-    pub lease_secs: u32,
-    /// Longest the TLS handshake and register frame may take together.
-    pub registration_timeout: Duration,
-}
 
 /// What a decoded first frame turned into.
 enum Outcome {
@@ -131,7 +111,9 @@ impl Gateway {
             .await
             .map_err(AdmitError::Http)?;
         let id = register.connector_id;
-        self.inner.registry.insert(register, sender);
+        self.inner
+            .registry
+            .insert(register, sender, grant.max_concurrent_streams);
         let gateway = self.clone();
         tokio::spawn(async move {
             // Whatever ends the connection, the connector stops being routable.

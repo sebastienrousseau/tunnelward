@@ -17,24 +17,31 @@
 //! agent-facing ingress arrive in later releases (v0.0.5 to v0.0.10).
 
 mod admit;
+mod config;
 mod error;
+mod pool;
 mod registry;
+mod resolver;
 mod route;
 
-pub use admit::Config;
+pub use config::Config;
 pub use error::{AdmitError, SendError};
+pub use pool::ResponseBody;
+pub use resolver::{LongestFirst, RouteResolver, Target};
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use bytes::Bytes;
 use http_body_util::Full;
-use hyper::body::Incoming;
 use hyper::{Request, Response};
 use tokio::net::TcpListener;
+use tokio::time::{Instant, timeout_at};
 use tokio_rustls::TlsAcceptor;
 use tw_proto::ConnectorId;
 
-use registry::Registry;
+use pool::Lease;
+use registry::{Pick, Registry};
 
 /// A gateway. Cloning is cheap and shares the same registry.
 #[derive(Clone)]
@@ -76,36 +83,106 @@ impl Gateway {
         }
     }
 
-    /// The routes of every live connector, sorted, for inventory and tests.
+    /// The routes of every live connector, sorted.
     #[must_use]
     pub fn routes(&self) -> Vec<String> {
         self.inner.registry.routes()
     }
 
-    /// Sends `request` to the connector that serves its host and path.
-    /// A request without a scheme and authority gets `http` and its `Host`
-    /// header.
+    /// Requests in flight across every connector, response bodies included.
+    #[must_use]
+    pub fn in_flight(&self) -> u32 {
+        self.inner.registry.in_flight()
+    }
+
+    /// Requests waiting for a connector with a free slot.
+    #[must_use]
+    pub fn waiting(&self) -> u32 {
+        self.inner.registry.waiting()
+    }
+
+    /// Sends `request` to a connector that serves its host and path. A
+    /// request without a scheme and authority gets `http` and its `Host`
+    /// header. Among the connectors whose claim ranks highest, the less
+    /// loaded of two picked at random takes it. When none has a free slot,
+    /// or the route is kept with no connector, the request waits up to
+    /// `max_wait` in a queue bounded by `limits.max_waiting_per_route`.
+    ///
+    /// The returned body holds the request's slot until it ends or is
+    /// dropped.
     ///
     /// # Errors
     ///
-    /// [`SendError::NoRoute`] when no live connector serves it,
+    /// [`SendError::NoRoute`] when nothing serves it,
+    /// [`SendError::Unavailable`] when the wait ends or the queue is full,
     /// [`SendError::Http`] when the request fails on the connection.
     pub async fn send(
         &self,
         request: Request<Full<Bytes>>,
-    ) -> Result<Response<Incoming>, SendError> {
+    ) -> Result<Response<ResponseBody>, SendError> {
         let request = route::absolute(request)?;
-        let target = route::Target::of(&request);
-        let mut sender = self
+        let target = Target::of(&request);
+        let Lease { mut sender, slot } = self.acquire(&target).await?;
+        sender.ready().await.map_err(SendError::Http)?;
+        let response = sender
+            .send_request(request)
+            .await
+            .map_err(SendError::Http)?;
+        Ok(response.map(|body| ResponseBody::new(body, slot)))
+    }
+
+    fn pick(&self, target: &Target) -> Pick {
+        self.inner
+            .registry
+            .pick(self.inner.config.resolver.as_ref(), target)
+    }
+
+    async fn acquire(&self, target: &Target) -> Result<Lease, SendError> {
+        match self.pick(target) {
+            Pick::Ready(lease) => Ok(lease),
+            Pick::None => Err(SendError::NoRoute),
+            Pick::Wait(route) => self.wait(target, &route).await,
+        }
+    }
+
+    async fn wait(&self, target: &Target, route: &str) -> Result<Lease, SendError> {
+        let config = &self.inner.config;
+        let _queued = self
             .inner
             .registry
-            .pick(&target)
-            .ok_or(SendError::NoRoute)?;
-        sender.ready().await.map_err(SendError::Http)?;
-        sender.send_request(request).await.map_err(SendError::Http)
+            .enqueue(route, config.limits.max_waiting_per_route)
+            .ok_or_else(|| self.unavailable())?;
+        let deadline = Instant::now() + config.max_wait;
+        let changed = self.inner.registry.changed();
+        loop {
+            let notified = changed.notified();
+            tokio::pin!(notified);
+            // Registered before looking, so a release in between is not missed.
+            notified.as_mut().enable();
+            match self.pick(target) {
+                Pick::Ready(lease) => return Ok(lease),
+                Pick::None => return Err(SendError::NoRoute),
+                Pick::Wait(_) => {}
+            }
+            timeout_at(deadline, notified)
+                .await
+                .map_err(|_| self.unavailable())?;
+        }
+    }
+
+    /// `Unavailable`, with `Retry-After` of `max_wait` rounded up to whole
+    /// seconds, at least one.
+    fn unavailable(&self) -> SendError {
+        let wait = self.inner.config.max_wait;
+        let secs = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
+        SendError::Unavailable {
+            retry_after: Duration::from_secs(secs.max(1)),
+        }
     }
 
     fn remove(&self, id: ConnectorId) {
-        self.inner.registry.remove(id);
+        self.inner
+            .registry
+            .remove(id, self.inner.config.routes_keep_time);
     }
 }

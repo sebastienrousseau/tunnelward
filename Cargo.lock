@@ -244,6 +244,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "httparse"
+version = "1.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
+
+[[package]]
 name = "httpdate"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -262,7 +268,9 @@ dependencies = [
  "h2",
  "http",
  "http-body",
+ "httparse",
  "httpdate",
+ "itoa",
  "pin-project-lite",
  "smallvec",
  "tokio",
@@ -635,21 +643,23 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tw-attest"
-version = "0.0.4"
+version = "0.0.5"
 
 [[package]]
 name = "tw-audit"
-version = "0.0.4"
+version = "0.0.5"
 
 [[package]]
 name = "tw-cli"
-version = "0.0.4"
+version = "0.0.5"
 
 [[package]]
 name = "tw-connector"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
+ "bytes",
  "http",
+ "http-body-util",
  "hyper",
  "hyper-util",
  "tokio",
@@ -660,7 +670,7 @@ dependencies = [
 
 [[package]]
 name = "tw-crypto"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "rustls",
  "tw-testpki",
@@ -668,7 +678,7 @@ dependencies = [
 
 [[package]]
 name = "tw-gateway"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "bytes",
  "http",
@@ -685,19 +695,19 @@ dependencies = [
 
 [[package]]
 name = "tw-identity"
-version = "0.0.4"
+version = "0.0.5"
 
 [[package]]
 name = "tw-mcp"
-version = "0.0.4"
+version = "0.0.5"
 
 [[package]]
 name = "tw-policy"
-version = "0.0.4"
+version = "0.0.5"
 
 [[package]]
 name = "tw-proto"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "cbor4ii",
  "proptest",
@@ -708,7 +718,7 @@ dependencies = [
 
 [[package]]
 name = "tw-testpki"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "tw-crypto",
 ]
@@ -836,7 +846,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "xtask"
-version = "0.0.4"
+version = "0.0.5"
 
 [[package]]
 name = "zeroize"
