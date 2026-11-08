@@ -81,6 +81,12 @@ const STEPS: &[Step] = &[
         env: &[],
     },
     Step {
+        name: "semver",
+        program: "bash",
+        args: &["scripts/semver.sh"],
+        env: &[],
+    },
+    Step {
         name: "complexity",
         program: "bash",
         args: &["scripts/complexity.sh"],

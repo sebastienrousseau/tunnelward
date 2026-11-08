@@ -23,6 +23,9 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 
 ### Changed
 
+- The gate (`cargo xtask ci`) runs `cargo semver-checks` on every
+  published crate (`scripts/semver.sh`; a crate not yet on crates.io is
+  named and skipped), and CI tests on Linux aarch64 as well.
 - **Breaking:** a connector's client certificate must be an X.509-SVID
   for the SPIFFE ID it registers; otherwise the gateway refuses it with
   `TW-R003`. Until now the claimed ID was never checked against the
