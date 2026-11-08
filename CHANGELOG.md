@@ -39,6 +39,14 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 - Release packaging: the build step failed on the `LICENSES/` directory,
   so the first v0.0.1 release run published nothing. Archives now carry
   `LICENSES/` alongside `LICENSE`.
+- Release notes: What's Changed titles are set in backticks, and the
+  Checksums block lists every attached asset, `SHA256SUMS` included,
+  as the release standard asks.
+
+### Changed
+
+- Releases attach `SHA256SUMS.sigstore.json`, a keyless cosign
+  signature of `SHA256SUMS` tied to the release workflow run.
 
 ## [0.0.2]
 
