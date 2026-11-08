@@ -41,6 +41,16 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 - MCP pass-through tests: `initialize` with its session header and a
   `tools/call` answered by an SSE stream reach the client byte for byte.
 
+### Fixed
+
+- README build badge: it now reads `ci.yml` on `main` only, labelled
+  `Build`, like the other repositories' badges, instead of the latest
+  run on any branch.
+- The OpenSSF Scorecard badge had no results to show: a Scorecard
+  workflow now scores the repository on every push to `main` and
+  weekly, publishes to scorecard.dev and uploads its findings to code
+  scanning.
+
 ## [0.0.8]
 
 ### Added
