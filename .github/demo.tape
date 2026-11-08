@@ -19,6 +19,8 @@ Type "export PS1='$ '" Enter
 Type "clear" Enter
 Show
 
+Type "tunnelward --version" Sleep 300ms Enter
+Sleep 1s
 Type "tunnelward dev --to http://127.0.0.1:8080 --admin 127.0.0.1:9000 &" Sleep 300ms Enter
 Sleep 2s
 Type "curl -s http://127.0.0.1:8000/" Sleep 300ms Enter

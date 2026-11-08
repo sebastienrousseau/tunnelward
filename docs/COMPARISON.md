@@ -3,6 +3,8 @@
 
 # Comparison
 
-Not written yet. Tunnelward carries no traffic in v0.0.1, so there is
-nothing to compare with evidence. This page is filled once the tunnel
-works, with every claim linked to its source.
+Not written yet. The tunnel has carried traffic since 0.0.4, so
+Tunnelward's side can be shown with its tests (the README lists them).
+The other side needs a sourced claim about each product compared
+(ngrok, Cloudflare Tunnel, agentgateway and others), and none is written
+here until it has one.

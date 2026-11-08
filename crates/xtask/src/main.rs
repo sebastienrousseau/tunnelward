@@ -81,6 +81,12 @@ const STEPS: &[Step] = &[
         env: &[],
     },
     Step {
+        name: "readme",
+        program: "bash",
+        args: &["scripts/readme-check.sh"],
+        env: &[],
+    },
+    Step {
         name: "semver",
         program: "bash",
         args: &["scripts/semver.sh"],
