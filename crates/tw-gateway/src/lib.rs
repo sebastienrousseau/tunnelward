@@ -29,6 +29,7 @@ mod kill;
 mod listener;
 mod observer;
 mod pool;
+mod provenance;
 pub mod proxy_protocol;
 mod ratelimit;
 mod registry;

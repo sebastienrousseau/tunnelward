@@ -9,6 +9,8 @@ use std::time::Duration;
 
 use http::{Method, StatusCode, Uri};
 
+use tunnelward_mcp::Envelope;
+
 use crate::ClientAddr;
 
 /// One ingress request, as observers see it.
@@ -23,6 +25,15 @@ pub struct RequestInfo {
     pub uri: Uri,
     /// Who sent it (FR-11).
     pub client: ClientAddr,
+    /// The request's id, a ULID: sent to the connector and back to the
+    /// client in `tw-request-id`.
+    pub request_id: String,
+    /// `User-Agent`, as the client declares it (at most 256 bytes).
+    pub user_agent: Option<String>,
+    /// A well-formed W3C `traceparent` header, when the client sent one.
+    pub traceparent: Option<String>,
+    /// The MCP session (`Mcp-Session-Id`), when the client sent one.
+    pub mcp_session: Option<String>,
 }
 
 /// Called at each step of an ingress request. Every method has an empty
@@ -31,6 +42,10 @@ pub struct RequestInfo {
 pub trait ProxyObserver: fmt::Debug + Send + Sync {
     /// The request arrived, before any check.
     fn on_request(&self, _info: &RequestInfo) {}
+
+    /// The body is an MCP envelope (a JSON POST that parsed as JSON-RPC
+    /// 2.0): the methods and tools it calls, and what the client declares.
+    fn on_envelope(&self, _info: &RequestInfo, _envelope: &Envelope) {}
 
     /// The response headers are ready: from a connector, or from the
     /// gateway itself for a refused request.

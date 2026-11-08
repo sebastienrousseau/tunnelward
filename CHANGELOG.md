@@ -7,6 +7,26 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.9]
+
+### Added
+
+- `tunnelward-mcp` parses MCP envelopes (FR-2, FR-4 groundwork): from a
+  JSON POST body of at most 1 MiB, each JSON-RPC 2.0 message's kind, id
+  and method, the tool a `tools/call` names, the declared `clientInfo`
+  of `initialize`, and `params._meta.traceparent`. Arguments are never
+  kept. A `tools/call` that does not name its tool as a string is
+  refused, so no call can hide its tool from per-tool policy. A fuzz
+  target, `envelope`, joins the CI replay. The crate is published.
+- Provenance, first part (FR-14): every ingress request gets a ULID
+  request id, sent to the connector and back to the client in
+  `tw-request-id` (a client cannot choose it), refusals included.
+  `RequestInfo` records the declared `User-Agent`, a well-formed W3C
+  `traceparent` and the `Mcp-Session-Id`; observers get each JSON POST's
+  envelope through `ProxyObserver::on_envelope`.
+- MCP pass-through tests: `initialize` with its session header and a
+  `tools/call` answered by an SSE stream reach the client byte for byte.
+
 ## [0.0.8]
 
 ### Added

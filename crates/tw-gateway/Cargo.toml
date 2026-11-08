@@ -16,6 +16,7 @@ keywords = ["tunnel", "mcp", "reverse-proxy", "gateway", "http2"]
 categories = ["network-programming", "web-programming::http-server"]
 
 [dependencies]
+aws-lc-rs.workspace = true
 bytes.workspace = true
 h2.workspace = true
 http.workspace = true
@@ -27,6 +28,7 @@ serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt", "time"] }
 tokio-rustls.workspace = true
 tunnelward-crypto.workspace = true
+tunnelward-mcp.workspace = true
 tunnelward-proto = { workspace = true, features = ["io"] }
 
 [dev-dependencies]
