@@ -269,6 +269,24 @@ async fn open_unread(ingress: &str) -> Res<Response<Incoming>> {
     Ok(sender.send_request(get("/sse/events")?).await?)
 }
 
+/// Waits until `produced` stops growing for 300 ms and returns its value.
+/// How long that takes depends on the platform's socket buffers (Windows
+/// grows them while data flows), so this polls instead of sleeping a fixed
+/// time; production that never stops fails after twice [`WAIT`].
+async fn wait_for_stall(produced: &AtomicU64) -> Res<u64> {
+    let deadline = tokio::time::Instant::now() + 2 * WAIT;
+    let mut last = produced.load(Ordering::SeqCst);
+    while tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let now = produced.load(Ordering::SeqCst);
+        if now == last {
+            return Ok(now);
+        }
+        last = now;
+    }
+    Err(format!("production never stopped: {last} bytes and counting").into())
+}
+
 /// Reads until the producer runs again; at most `buffered` bytes plus 1 MiB.
 async fn read_until_resumed(
     mut body: Incoming,
@@ -295,15 +313,8 @@ async fn a_slow_client_holds_back_an_endless_stream() -> Res<()> {
     let produced = start_endless(&connectors).await?;
     let response = open_unread(&ingress).await?;
     assert_eq!(response.status(), StatusCode::OK);
-    // Read nothing for a second: the stream must stall, not fill memory.
-    tokio::time::sleep(Duration::from_secs(1)).await;
-    let stalled = produced.load(Ordering::SeqCst);
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    assert_eq!(
-        stalled,
-        produced.load(Ordering::SeqCst),
-        "production stopped while the client was not reading"
-    );
+    // Read nothing: the stream must stall, not fill memory.
+    let stalled = wait_for_stall(&produced).await?;
     assert!(
         stalled < 32 * 1024 * 1024,
         "{stalled} bytes buffered for a client that read nothing"
