@@ -27,6 +27,10 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 - The crates are renamed `tunnelward-*` (the binary crate is
   `tunnelward`), and the five with code are published on crates.io from
   this release. Directories keep their `crates/tw-*` names.
+- The release workflow builds `-p tunnelward`, and a `crates` job
+  publishes to crates.io through trusted publishing once the repository
+  variable `CRATES_IO_TRUSTED_PUBLISHING` is `true`; it skips a version
+  crates.io already has. `DEVELOPMENT.md` describes the release steps.
 - `serde_json` joins the gateway's dependencies for the admin API; its
   publishers were already trusted under the cargo-vet policy.
 
