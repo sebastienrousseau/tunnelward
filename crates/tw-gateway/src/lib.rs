@@ -17,14 +17,20 @@
 //! agent-facing ingress arrive in later releases (v0.0.5 to v0.0.10).
 
 mod admit;
+mod cidr;
 mod config;
+mod drain;
 mod error;
+mod kill;
 mod pool;
 mod registry;
 mod resolver;
+mod retry;
 mod route;
 
+pub use cidr::{Cidr, CidrError};
 pub use config::Config;
+pub use drain::{DrainReport, DrainTarget};
 pub use error::{AdmitError, SendError};
 pub use pool::ResponseBody;
 pub use resolver::{LongestFirst, RouteResolver, Target};
@@ -38,10 +44,26 @@ use hyper::{Request, Response};
 use tokio::net::TcpListener;
 use tokio::time::{Instant, timeout_at};
 use tokio_rustls::TlsAcceptor;
-use tw_proto::ConnectorId;
 
 use pool::Lease;
 use registry::{Pick, Registry};
+
+/// How one attempt to send a request failed.
+enum Attempt {
+    /// The connector never saw the request: safe to send elsewhere.
+    Unprocessed(u64, hyper::Error),
+    /// Anything else.
+    Failed(SendError),
+}
+
+impl Attempt {
+    fn into_send_error(self) -> SendError {
+        match self {
+            Self::Unprocessed(_, e) => SendError::Http(e),
+            Self::Failed(e) => e,
+        }
+    }
+}
 
 /// A gateway. Cloning is cheap and shares the same registry.
 #[derive(Clone)]
@@ -77,10 +99,23 @@ impl Gateway {
     /// The listener's accept error.
     pub async fn serve_connectors(&self, listener: TcpListener) -> std::io::Result<()> {
         loop {
-            let (tcp, _) = listener.accept().await?;
+            let (tcp, peer) = listener.accept().await?;
+            if !self.allows(peer.ip()) {
+                // Closed before any TLS work: an unlisted source costs one accept.
+                continue;
+            }
             let gateway = self.clone();
-            tokio::spawn(async move { gateway.admit(tcp).await });
+            tokio::spawn(async move { gateway.admit_from(tcp, Some(peer.ip())).await });
         }
+    }
+
+    /// Whether the connector allowlist admits `ip`. An empty list admits
+    /// every address. Embedders that accept connections themselves call this
+    /// before [`Gateway::admit`].
+    #[must_use]
+    pub fn allows(&self, ip: std::net::IpAddr) -> bool {
+        let allow = &self.inner.config.connector_allow;
+        allow.is_empty() || allow.iter().any(|range| range.contains(ip))
     }
 
     /// The routes of every live connector, sorted.
@@ -122,12 +157,41 @@ impl Gateway {
     ) -> Result<Response<ResponseBody>, SendError> {
         let request = route::absolute(request)?;
         let target = Target::of(&request);
-        let Lease { mut sender, slot } = self.acquire(&target).await?;
-        sender.ready().await.map_err(SendError::Http)?;
-        let response = sender
-            .send_request(request)
+        let spare = retry::copy(&request);
+        match self.attempt(&target, request).await {
+            Err(Attempt::Unprocessed(session, _)) => {
+                // That connection is going away: stop choosing it, try another.
+                self.inner.registry.mark_draining(|e| e.session == session);
+                self.attempt(&target, spare)
+                    .await
+                    .map_err(Attempt::into_send_error)
+            }
+            other => other.map_err(Attempt::into_send_error),
+        }
+    }
+
+    async fn attempt(
+        &self,
+        target: &Target,
+        request: Request<Full<Bytes>>,
+    ) -> Result<Response<ResponseBody>, Attempt> {
+        let Lease {
+            session,
+            mut sender,
+            slot,
+        } = self.acquire(target).await.map_err(Attempt::Failed)?;
+        // A connection that cannot take a request has sent nothing yet.
+        sender
+            .ready()
             .await
-            .map_err(SendError::Http)?;
+            .map_err(|e| Attempt::Unprocessed(session, e))?;
+        let response = sender.send_request(request).await.map_err(|e| {
+            if retry::unprocessed(&e) {
+                Attempt::Unprocessed(session, e)
+            } else {
+                Attempt::Failed(SendError::Http(e))
+            }
+        })?;
         Ok(response.map(|body| ResponseBody::new(body, slot)))
     }
 
@@ -180,9 +244,9 @@ impl Gateway {
         }
     }
 
-    fn remove(&self, id: ConnectorId) {
+    fn remove(&self, session: u64) {
         self.inner
             .registry
-            .remove(id, self.inner.config.routes_keep_time);
+            .remove(session, self.inner.config.routes_keep_time);
     }
 }

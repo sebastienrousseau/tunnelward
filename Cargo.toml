@@ -23,7 +23,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.5"
+version = "0.0.6"
 edition = "2024"
 # The MSRV floor. See docs/POLICIES.md before changing it.
 rust-version = "1.89"
@@ -41,6 +41,7 @@ rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs
 tokio = { version = "1.54.1", default-features = false }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs"] }
 hyper = { version = "1.12.0", default-features = false }
+h2 = { version = "0.4.20", default-features = false }
 hyper-util = { version = "0.1.21", default-features = false, features = ["tokio"] }
 http-body-util = { version = "0.1.5", default-features = false }
 bytes = { version = "1.12.1", default-features = false, features = ["std"] }

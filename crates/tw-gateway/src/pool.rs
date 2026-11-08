@@ -8,6 +8,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use std::collections::hash_map::RandomState;
 use std::hash::BuildHasher;
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -16,11 +17,21 @@ use http_body_util::Full;
 use hyper::body::{Body, Frame, Incoming, SizeHint};
 use hyper::client::conn::http2::SendRequest;
 use tokio::sync::Notify;
+
+use crate::kill::KillSwitch;
 use tw_proto::ConnectorId;
 
 /// One admitted connector.
 pub(crate) struct Entry {
+    /// One connection; a connector with several connections has several.
+    pub(crate) session: u64,
     pub(crate) id: ConnectorId,
+    /// The connector's address, when the listener knew it.
+    pub(crate) peer: Option<IpAddr>,
+    /// Set by a drain or an expired lease: no new requests.
+    pub(crate) draining: bool,
+    /// Cuts the connection, resetting whatever is still open.
+    pub(crate) kill: Arc<KillSwitch>,
     pub(crate) routes: Vec<String>,
     pub(crate) domains: Vec<String>,
     /// Most concurrent requests: the smaller of the connector's capacity
@@ -35,8 +46,10 @@ impl Entry {
         self.in_flight.load(Ordering::Acquire)
     }
 
+    /// A draining connector stays in its pool, so requests wait for a
+    /// replacement instead of failing, but it never takes a new one.
     pub(crate) fn has_room(&self) -> bool {
-        self.load() < self.capacity
+        !self.draining && self.load() < self.capacity
     }
 
     /// Takes a slot. The caller holds the registry lock, so the check in
@@ -45,6 +58,7 @@ impl Entry {
     pub(crate) fn lease(&self, changed: Arc<Notify>) -> Lease {
         self.in_flight.fetch_add(1, Ordering::AcqRel);
         Lease {
+            session: self.session,
             sender: self.sender.clone(),
             slot: Slot {
                 count: self.in_flight.clone(),
@@ -56,6 +70,7 @@ impl Entry {
 
 /// A connection with one slot taken on it.
 pub(crate) struct Lease {
+    pub(crate) session: u64,
     pub(crate) sender: SendRequest<Full<Bytes>>,
     pub(crate) slot: Slot,
 }

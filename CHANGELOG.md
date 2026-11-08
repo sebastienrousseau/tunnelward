@@ -7,6 +7,39 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.6]
+
+### Added
+
+- `tw_connector::Connector`: keeps `connections_per_gateway` (default 2)
+  connections to every gateway (FR-1), from a fixed list or a DNS name
+  looked up again on an interval (G6); TLS verifies the configured name,
+  never the IP. Failed connections are retried with decorrelated-jitter
+  backoff (250 ms to 30 s). Leases are renewed make-before-break at 70%
+  to 90% of their length (ADR 0005). `Connector::events` streams
+  `ConnectorEvent`s (G8); `Connector::shutdown(deadline)` sends GOAWAY,
+  lets requests finish and reports whether they did (G7).
+- `Forward::with_request_hook`: change requests before they reach the
+  target (G8).
+- `Gateway::drain` by connector, route or peer address (FR-7): no new
+  requests, in-flight ones finish until the deadline, the rest are
+  reset. A lease that ends drains its connection (`lease_secs`, default
+  1 h; `drain_grace`, default 30 s).
+- The gateway retries a request once on another connection when the
+  first refused it unprocessed (GOAWAY or `REFUSED_STREAM`), so lease
+  renewal loses no request.
+- HTTP/2 keep-alive pings (`keep_alive`, default 20 s) drop a connector
+  that stops answering without closing its socket.
+- `Config::connector_allow`: CIDR allowlist for connector sources,
+  checked before TLS (G9).
+- ADR 0004 (state shared across gateways, design) and ADR 0005 (leases
+  renew by reconnecting).
+
+### Changed
+
+- Each connection is its own registry session; `Gateway::admit_from`
+  records the connector's address.
+
 ## [0.0.5]
 
 ### Added
@@ -160,6 +193,7 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 - Licence GPL-3.0-only, REUSE metadata, security policy, contribution
   guide, code of conduct and agent instructions.
 
+[0.0.6]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.2...v0.0.3
