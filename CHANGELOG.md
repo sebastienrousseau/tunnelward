@@ -18,6 +18,16 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   (G15), and `POST /drain` by connector, route or address. With
   `AdminConfig::token` set every request needs that bearer token;
   without one only loopback clients are served.
+- The `tunnelward` command gets its first commands. `tunnelward dev
+  --to http://host:port` runs a gateway and a connector in one process
+  in front of a local service, over the same mutual TLS as a real
+  deployment, with throwaway self-signed certificates made at startup
+  (no keys on disk or in the package), on loopback only.
+  `tunnelward gateway --config <file>` runs a gateway from a TOML file
+  (listeners, TLS, ingress, connector allowlist, admin token from an
+  environment variable). `tunnelward config check <file>` lists every
+  problem in a file, and `tunnelward doctor` checks the clock, the
+  post-quantum group, the file and whether its listeners are free.
 - Stable error ids (`TW-R`, `TW-A`, `TW-S`, `TW-I`, `TW-C` and three
   digits) on every error type, with `id()` and `docs_url()`, explained in
   `docs/errors.md`. Ingress refusals carry the id in a `tw-error` header
@@ -36,8 +46,16 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   publishes to crates.io through trusted publishing once the repository
   variable `CRATES_IO_TRUSTED_PUBLISHING` is `true`; it skips a version
   crates.io already has. `DEVELOPMENT.md` describes the release steps.
-- `serde_json` joins the gateway's dependencies for the admin API; its
-  publishers were already trusted under the cargo-vet policy.
+- `serde_json` joins the gateway's dependencies for the admin API, and
+  `toml` the CLI's for its configuration file. Their publishers (dtolnay,
+  BurntSushi, epage) meet rule 2 of the cargo-vet policy; the exemption
+  count is unchanged.
+
+### Notes
+
+- The CLI stops at once on Ctrl-C rather than draining first: graceful
+  shutdown on a signal needs tokio's `signal` feature, whose
+  `signal-hook-registry` dependency is not yet vetted.
 
 ## [0.0.7]
 

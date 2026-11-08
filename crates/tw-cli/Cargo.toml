@@ -19,5 +19,22 @@ categories = ["command-line-utilities", "network-programming"]
 name = "tunnelward"
 path = "src/main.rs"
 
+[dependencies]
+aws-lc-rs.workspace = true
+bytes.workspace = true
+http-body-util.workspace = true
+hyper = { workspace = true, features = ["server", "http1"] }
+hyper-util.workspace = true
+serde.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "time"] }
+toml.workspace = true
+tunnelward-connector.workspace = true
+tunnelward-crypto.workspace = true
+tunnelward-gateway.workspace = true
+tunnelward-proto.workspace = true
+
+[dev-dependencies]
+tunnelward-testpki.workspace = true
+
 [lints]
 workspace = true
