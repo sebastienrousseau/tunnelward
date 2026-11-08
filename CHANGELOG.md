@@ -53,6 +53,14 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 - MCP pass-through tests: `initialize` with its session header and a
   `tools/call` answered by an SSE stream reach the client byte for byte.
 
+### Notes
+
+- MCP pass-through is tested against a minimal MCP server written for
+  the test (JSON answers, a session header, an SSE stream); the official
+  MCP conformance suite has not been run through the gateway yet.
+- `tunnelward-mcp` is new on crates.io, and trusted publishing cannot
+  create a crate, so 0.0.9's first publish is by hand like 0.0.8's.
+
 ### Fixed
 
 - README build badge: it now reads `ci.yml` on `main` only, labelled

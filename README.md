@@ -83,7 +83,7 @@ tunnelward-gateway = "0.0.8"     # embed a gateway in your server
 ```
 
 `tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
-the TLS configuration underneath. API documentation is on
+the TLS configuration underneath; `tunnelward-mcp` parses MCP envelopes. API documentation is on
 [docs.rs](https://docs.rs/tunnelward-connector).
 
 ---
@@ -184,9 +184,12 @@ The workspace has no Cargo features yet.
 ## Configuration
 
 `tunnelward gateway --config tunnelward.toml` runs a gateway from a TOML
-file: its listeners, its TLS certificates, the agent ingress, the
-connector allowlist and the admin token. The format, with every key, is
-documented at the top of [`crates/tw-cli/src/config.rs`](crates/tw-cli/src/config.rs).
+file: its listeners, its TLS certificates (picked up again when renewed),
+the agent ingress with CORS rules, the connector allowlist and the admin
+token. `tunnelward connector --config connector.toml` runs a connector
+in front of a local service. Each format, with every key, is documented
+at the top of [`config.rs`](crates/tw-cli/src/config.rs) and
+[`connector.rs`](crates/tw-cli/src/connector.rs).
 Check a file before deploying it:
 
 ```bash
