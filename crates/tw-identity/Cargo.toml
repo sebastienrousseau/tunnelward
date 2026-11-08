@@ -3,7 +3,7 @@
 
 [package]
 name = "tunnelward-identity"
-description = "Tunnelward workload identity: SPIFFE SVIDs and enrolment tokens"
+description = "Tunnelward workload identity: the SPIFFE ID in an X.509-SVID"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,8 +11,15 @@ license = "MIT OR Apache-2.0"
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-# Not published until the crate has an API worth depending on.
-publish = false
+readme.workspace = true
+keywords = ["spiffe", "svid", "x509", "identity", "mtls"]
+categories = ["authentication", "cryptography", "network-programming"]
+
+[dependencies]
+tunnelward-proto.workspace = true
+
+[dev-dependencies]
+tunnelward-testpki.workspace = true
 
 [lints]
 workspace = true

@@ -783,6 +783,10 @@ dependencies = [
 [[package]]
 name = "tunnelward-identity"
 version = "0.0.10"
+dependencies = [
+ "tunnelward-proto",
+ "tunnelward-testpki",
+]
 
 [[package]]
 name = "tunnelward-mcp"

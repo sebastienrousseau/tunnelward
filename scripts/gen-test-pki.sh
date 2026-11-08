@@ -10,7 +10,11 @@
 # Two CAs ("ours" and "other"), each P-256, valid for 100 years:
 #   ca.der             our CA certificate
 #   gateway.{der,key}  server leaf, SAN DNS:gateway.test, serverAuth
-#   connector.{der,key} client leaf, SAN DNS:connector.test, clientAuth
+#   connector.{der,key} client leaf, an X.509-SVID: SAN
+#                      URI:spiffe://example.org/connector and DNS:connector.test
+#   rival.{der,key}    client leaf, SVID for spiffe://example.org/rival
+#   plain.{der,key}    client leaf with a DNS name and no SPIFFE ID
+#   two-ids.{der,key}  client leaf with two SPIFFE IDs (not a valid SVID)
 #   other-ca.der       a CA nobody trusts
 #   intruder.{der,key} client leaf issued by the other CA
 # Keys are PKCS#8 DER.
@@ -36,10 +40,10 @@ ca() { # name subject
   rm -f "$1.key"
 }
 
-leaf() { # name dns usage ca
+leaf() { # name cn usage ca san
   key "$1"
-  printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=%s\nsubjectAltName=DNS:%s\n' \
-    "$3" "$2" > "$tmp/$1.ext"
+  printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=%s\nsubjectAltName=%s\n' \
+    "$3" "$5" > "$tmp/$1.ext"
   openssl req -new -key "$tmp/$1.pem" -subj "/CN=$2" -out "$tmp/$1.csr"
   openssl x509 -req -in "$tmp/$1.csr" -CA "$tmp/$4.crt" -CAkey "$tmp/$4.pem" \
     -CAcreateserial -days "$days" -extfile "$tmp/$1.ext" -outform DER -out "$1.der"
@@ -47,7 +51,12 @@ leaf() { # name dns usage ca
 
 ca ca "Tunnelward Test CA"
 ca other-ca "Untrusted Test CA"
-leaf gateway gateway.test serverAuth ca
-leaf connector connector.test clientAuth ca
-leaf intruder intruder.test clientAuth other-ca
+leaf gateway gateway.test serverAuth ca DNS:gateway.test
+leaf connector connector.test clientAuth ca \
+  URI:spiffe://example.org/connector,DNS:connector.test
+leaf rival rival.test clientAuth ca URI:spiffe://example.org/rival
+leaf plain plain.test clientAuth ca DNS:plain.test
+leaf two-ids two-ids.test clientAuth ca \
+  URI:spiffe://example.org/one,URI:spiffe://example.org/two
+leaf intruder intruder.test clientAuth other-ca DNS:intruder.test
 ls -1

@@ -24,10 +24,31 @@ pub const GATEWAY: Pair = (
     include_bytes!("../pki/gateway.der"),
     include_bytes!("../pki/gateway.key"),
 );
-/// Client leaf for `connector.test`, issued by [`CA`].
+/// Client leaf issued by [`CA`]: an X.509-SVID for [`CONNECTOR_ID`], also
+/// naming `connector.test`.
 pub const CONNECTOR: Pair = (
     include_bytes!("../pki/connector.der"),
     include_bytes!("../pki/connector.key"),
+);
+/// The SPIFFE ID in [`CONNECTOR`]'s certificate.
+pub const CONNECTOR_ID: &str = "spiffe://example.org/connector";
+/// Client leaf issued by [`CA`]: an X.509-SVID for [`RIVAL_ID`].
+pub const RIVAL: Pair = (
+    include_bytes!("../pki/rival.der"),
+    include_bytes!("../pki/rival.key"),
+);
+/// The SPIFFE ID in [`RIVAL`]'s certificate.
+pub const RIVAL_ID: &str = "spiffe://example.org/rival";
+/// Client leaf issued by [`CA`] with a DNS name and no SPIFFE ID.
+pub const PLAIN: Pair = (
+    include_bytes!("../pki/plain.der"),
+    include_bytes!("../pki/plain.key"),
+);
+/// Client leaf issued by [`CA`] naming two SPIFFE IDs, which an
+/// X.509-SVID may not.
+pub const TWO_IDS: Pair = (
+    include_bytes!("../pki/two-ids.der"),
+    include_bytes!("../pki/two-ids.key"),
 );
 /// Client leaf for `intruder.test`, issued by [`OTHER_CA`].
 pub const INTRUDER: Pair = (
