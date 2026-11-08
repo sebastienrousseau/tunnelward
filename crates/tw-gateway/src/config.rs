@@ -73,6 +73,9 @@ pub struct IngressConfig {
     pub legacy_forwarded: bool,
     /// Hooks called for every request (G11).
     pub observers: Vec<Arc<dyn ProxyObserver>>,
+    /// CORS rules per path (G17). Empty: no CORS headers, and browsers
+    /// keep their same-origin rule.
+    pub cors: Vec<crate::CorsRule>,
 }
 
 impl Default for IngressConfig {
@@ -92,6 +95,7 @@ impl Default for IngressConfig {
             via_name: "tunnelward".to_owned(),
             legacy_forwarded: true,
             observers: Vec::new(),
+            cors: Vec::new(),
         }
     }
 }

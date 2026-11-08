@@ -43,6 +43,13 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   (a fixed address, or a name looked up again every minute), its CA and
   server name, the connector's certificate and SPIFFE ID, and its routes
   and domains. `tunnelward config check` checks a connector's file too.
+- CORS per path (G17) for browser-based MCP clients:
+  `IngressConfig::cors` rules, and `[[ingress.cors]]` in the gateway's
+  file. An allowed origin's preflight is answered by the gateway (204,
+  the MCP request headers allowed); its real responses can be read, with
+  `Mcp-Session-Id`, `tw-request-id` and `tw-error` exposed. A preflight
+  from any other origin gets 403 (`TW-I007`). Credentials are never
+  allowed: MCP clients use bearer tokens.
 - MCP pass-through tests: `initialize` with its session header and a
   `tools/call` answered by an SSE stream reach the client byte for byte.
 

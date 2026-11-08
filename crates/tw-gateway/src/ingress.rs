@@ -25,6 +25,7 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::{Body, Frame, Incoming, SizeHint};
 
+use crate::cors::{self, Cors};
 use crate::forwarding::{Stamp, rewrite};
 use crate::provenance;
 use crate::{ClientAddr, Gateway, RequestInfo, ResponseBody, SendError};
@@ -115,10 +116,22 @@ impl Ingress {
         for o in &ingress.observers {
             o.on_request(&info);
         }
-        match self.forward(request, &info).await {
-            Ok(response) => self.observed(response, info, started),
-            Err(refusal) => self.refuse(&info, &refusal, started),
+        let cors = cors::decide(&ingress.cors, &request);
+        let mut response = match cors {
+            Cors::Preflight(ref headers) => preflight(headers, &info),
+            Cors::Refused => {
+                let refusal = Refusal::new("TW-I007", StatusCode::FORBIDDEN, "origin not allowed");
+                self.refuse(&info, &refusal, started)
+            }
+            Cors::None | Cors::Allowed(_) => match self.forward(request, &info).await {
+                Ok(response) => self.observed(response, info, started),
+                Err(refusal) => self.refuse(&info, &refusal, started),
+            },
+        };
+        if let Cors::Allowed(headers) = cors {
+            response.headers_mut().extend(headers);
         }
+        response
     }
 
     async fn forward(
@@ -306,6 +319,16 @@ impl Ingress {
         }
         response
     }
+}
+
+/// The gateway's own answer to an allowed CORS preflight: 204, the CORS
+/// headers, and the request id. The connector never sees it.
+fn preflight(headers: &http::HeaderMap, info: &RequestInfo) -> Response<IngressBody> {
+    let mut response = Response::new(Full::new(Bytes::new()).map_err(|e| match e {}).boxed());
+    *response.status_mut() = StatusCode::NO_CONTENT;
+    response.headers_mut().extend(headers.clone());
+    stamp_request_id(response.headers_mut(), info);
+    response
 }
 
 /// Names the request's id in its response (`tw-request-id`), replacing
