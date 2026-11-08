@@ -18,9 +18,11 @@ use tunnelward_proto::{
     ALPN, Accept, ConnectorId, Frame, MAX_REASON_LEN, Register, Reject, RejectCode,
 };
 
+use crate::claims::Rules;
 use crate::kill::Killable;
 use crate::registry::{Link, Reservation};
 use crate::{AdmitError, Gateway};
+use tunnelward_identity::spiffe_id;
 
 /// What a decoded first frame turned into.
 enum Outcome {
@@ -89,7 +91,7 @@ impl Gateway {
             return Err(AdmitError::Alpn);
         }
         let outcome = match read_frame(&mut tls, &self.inner.config.limits).await {
-            Ok(Frame::Register(r)) => Outcome::Admit(r),
+            Ok(Frame::Register(r)) => proven(&tls, r),
             Ok(_) => Outcome::Refuse(RejectCode::Malformed, "expected a Register frame".into()),
             Err(ReadError::Decode(e)) => Outcome::Refuse(e.reject_code(), e.to_string()),
             Err(e) => return Err(AdmitError::Read(e)),
@@ -98,8 +100,8 @@ impl Gateway {
     }
 
     /// Admits a decoded registration unless its source is over its rate
-    /// or its domains would take the gateway past `max_domains`. The
-    /// reservation holds those domains until the connector is registered.
+    /// or its claims do not fit ([`crate::claims::check`]). The
+    /// reservation holds its claims until the connector is registered.
     fn decide(
         &self,
         outcome: Outcome,
@@ -114,14 +116,14 @@ impl Gateway {
             let reason = format!("more than {per_minute} registrations a minute from this source");
             return Err((RejectCode::RateLimited, reason));
         }
-        let max = self.inner.config.limits.max_domains;
-        match self.inner.registry.reserve(&register.domains, max) {
-            Some(reservation) => Ok((register, reservation)),
-            None => Err((
-                RejectCode::Overloaded,
-                format!("the gateway already serves its maximum of {max} domains"),
-            )),
-        }
+        let config = &self.inner.config;
+        let rules = Rules {
+            max_domains: config.limits.max_domains,
+            max_routes_per_identity: config.limits.max_routes_per_identity,
+            owners: &config.route_owners,
+        };
+        let reservation = self.inner.registry.reserve(&register, &rules)?;
+        Ok((register, reservation))
     }
 
     async fn refuse<IO>(
@@ -196,6 +198,22 @@ impl Gateway {
             }
         }
         self.remove(session);
+    }
+}
+
+/// Admits `register` only if its SPIFFE ID is the one in the client
+/// certificate, an X.509-SVID the handshake verified.
+fn proven<IO>(tls: &TlsStream<IO>, register: Register) -> Outcome {
+    let cert = tls.get_ref().1.peer_certificates().and_then(<[_]>::first);
+    let proven = cert.map(|c| spiffe_id(c.as_ref()));
+    match proven {
+        Some(Ok(id)) if id == register.spiffe_id => Outcome::Admit(register),
+        Some(Ok(id)) => Outcome::Refuse(
+            RejectCode::IdentityMismatch,
+            format!("the certificate is {id}, not {}", register.spiffe_id),
+        ),
+        Some(Err(e)) => Outcome::Refuse(RejectCode::IdentityMismatch, e.to_string()),
+        None => Outcome::Refuse(RejectCode::IdentityMismatch, "no client certificate".into()),
     }
 }
 

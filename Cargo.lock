@@ -723,6 +723,7 @@ dependencies = [
  "tunnelward-connector",
  "tunnelward-crypto",
  "tunnelward-gateway",
+ "tunnelward-identity",
  "tunnelward-proto",
  "tunnelward-testpki",
 ]
@@ -775,6 +776,7 @@ dependencies = [
  "tokio-rustls",
  "tunnelward-connector",
  "tunnelward-crypto",
+ "tunnelward-identity",
  "tunnelward-mcp",
  "tunnelward-proto",
  "tunnelward-testpki",

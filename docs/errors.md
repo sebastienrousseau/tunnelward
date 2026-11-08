@@ -31,19 +31,26 @@ gateway does not. Upgrade the older side.
 
 ### TW-R003
 
-**Identity mismatch.** The SPIFFE ID in the frame does not match the
-connector's client certificate. Fix the connector's configured identity
-or its certificate.
+**Identity mismatch.** The SPIFFE ID in the frame is not the one in the
+connector's client certificate, or the certificate is not an X.509-SVID
+(no URI, more than one URI, or a URI that is not a SPIFFE ID). The
+reason names which. Fix the connector's `[identity] spiffe_id` or issue
+it an SVID; `tunnelward config check` catches a mismatch before
+connecting.
 
 ### TW-R004
 
-**Route owned.** A claimed route belongs to another identity. Claim a
+**Route owned.** A claimed route belongs to another identity: one named
+for it in `[[connectors.owners]]`, or, for a route not listed there, the
+identity that holds it now or held it within `routes_keep_time`. Claim a
 different route, or move ownership in the gateway's configuration.
 
 ### TW-R005
 
 **Invalid.** A claimed route, domain or other field breaks the rules in
-`tunnelward-proto` (`is_route`, `is_domain`). The reason names the field.
+`tunnelward-proto` (`is_route`, `is_domain`), or the registration would
+take its identity past `Limits::max_routes_per_identity` (64) distinct
+routes across its connections. The reason names which.
 
 ### TW-R006
 

@@ -26,6 +26,8 @@ pub(crate) struct Entry {
     /// One connection; a connector with several connections has several.
     pub(crate) session: u64,
     pub(crate) id: ConnectorId,
+    /// The SPIFFE ID its certificate proved.
+    pub(crate) spiffe_id: String,
     /// The connector's address, when the listener knew it.
     pub(crate) peer: Option<IpAddr>,
     /// Set by a drain or an expired lease: no new requests.

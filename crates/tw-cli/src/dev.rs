@@ -29,6 +29,8 @@ use crate::serve::{Listeners, bind, until_one_stops};
 const GATEWAY_NAME: &str = "gateway.dev.tunnelward.invalid";
 /// The name in the development connector's certificate.
 const CONNECTOR_NAME: &str = "connector.dev.tunnelward.invalid";
+/// The dev connector's SPIFFE ID, in its certificate and its registration.
+const CONNECTOR_ID: &str = "spiffe://dev.tunnelward.invalid/connector";
 /// How long the connector may take to register before `dev` gives up.
 const READY_WITHIN: Duration = Duration::from_secs(10);
 
@@ -95,7 +97,7 @@ fn connector(
         register: Register {
             version: PROTOCOL_VERSION,
             connector_id: connector_id()?,
-            spiffe_id: "spiffe://dev.tunnelward.invalid/connector".into(),
+            spiffe_id: CONNECTOR_ID.into(),
             routes: vec![dev.route.clone()],
             domains: Vec::new(),
             mcp: None,
@@ -115,7 +117,7 @@ fn connector(
 fn gateway(
     connector_cert: CertificateDer<'static>,
 ) -> Result<(Gateway, CertificateDer<'static>), Error> {
-    let (identity, cert) = self_signed(GATEWAY_NAME)?;
+    let (identity, cert) = self_signed(GATEWAY_NAME, None)?;
     let auth = ClientAuth::Required(trusting(connector_cert)?);
     let tls = server_config(identity, auth, KeyExchange::default(), &[ALPN])?;
     Ok((Gateway::new(Config::new(Arc::new(tls))), cert))
@@ -183,7 +185,7 @@ async fn start_connector(
 pub(crate) async fn run(dev: Dev) -> Result<(), Error> {
     let to = target_addr(&dev.to)?;
     loopback_only(&dev)?;
-    let (connector_identity, connector_cert) = self_signed(CONNECTOR_NAME)?;
+    let (connector_identity, connector_cert) = self_signed(CONNECTOR_NAME, Some(CONNECTOR_ID))?;
     let (gateway, gateway_cert) = gateway(connector_cert)?;
     let (listeners, at, agents) = listeners(&dev).await?;
     let serving = gateway.clone();

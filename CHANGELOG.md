@@ -9,6 +9,28 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 
 ## [0.0.10]
 
+### Added
+
+- Connector identity (FR-3 groundwork): `tunnelward-identity` reads the
+  SPIFFE ID in an X.509-SVID (exactly one URI SAN, a SPIFFE ID), with an
+  in-house DER reader and a fuzz target, `svid`. The crate is published.
+- Route ownership (FR-3). `Config::route_owners` (`[[connectors.owners]]`
+  in the gateway file) names the identities allowed to claim a route; a
+  route not listed belongs to the identity holding it, live or kept. Any
+  other identity's claim is refused with `TW-R004`.
+- `Limits::max_routes_per_identity` (64) is enforced across all of an
+  identity's connections, refused with `TW-R005`.
+
+### Changed
+
+- **Breaking:** a connector's client certificate must be an X.509-SVID
+  for the SPIFFE ID it registers; otherwise the gateway refuses it with
+  `TW-R003`. Until now the claimed ID was never checked against the
+  certificate, so any trusted certificate could claim any identity.
+  `tunnelward dev` now issues its connector an SVID, and
+  `tunnelward config check` reports a connector file whose `spiffe_id`
+  is not its certificate's.
+
 ### Fixed
 
 - Two limits in `Limits` were declared but not enforced. A gateway now

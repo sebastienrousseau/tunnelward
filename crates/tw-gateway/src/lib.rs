@@ -19,6 +19,7 @@
 mod admin;
 mod admit;
 mod cidr;
+mod claims;
 mod client_addr;
 mod config;
 mod cors;
@@ -42,7 +43,7 @@ mod tls;
 pub use admin::{AdminConfig, Connection, Inventory, Redaction};
 pub use cidr::{Cidr, CidrError};
 pub use client_addr::ClientAddr;
-pub use config::{Config, IngressConfig};
+pub use config::{Config, IngressConfig, RouteOwner};
 pub use cors::CorsRule;
 pub use drain::{DrainReport, DrainTarget};
 pub use error::{AdmitError, SendError};
