@@ -88,7 +88,9 @@ fn write_config(dir: &Path, extra: &str) -> Res<PathBuf> {
 #[test]
 fn a_good_config_checks_ok() -> Res<()> {
     let dir = pki_dir("good")?;
-    let path = write_config(&dir, "")?;
+    let owners = "[[connectors.owners]]\nroute = \"mcp\"\n\
+                  identities = [\"spiffe://example.org/connector\"]\n";
+    let path = write_config(&dir, owners)?;
     let out = tunnelward(&["config", "check", &path.to_string_lossy()])?;
     assert!(out.status.success(), "{}", text(&out.stderr));
     assert!(text(&out.stdout).ends_with(": ok\n"));
@@ -100,7 +102,9 @@ fn a_bad_config_lists_every_problem() -> Res<()> {
     let dir = pki_dir("bad")?;
     let extra = "[ingress]\ncert = \"gateway.crt\"\ntrusted_proxies = [\"10.0.0.0/33\"]\n\
                  [[ingress.cors]]\npath = \"mcp\"\norigins = [\"https://app.example/x\"]\n\
-                 [connectors]\nallow = [\"nonsense\"]\n";
+                 [connectors]\nallow = [\"nonsense\"]\n\
+                 [[connectors.owners]]\nroute = \"/bad/\"\nidentities = [\"nobody\"]\n\
+                 [[connectors.owners]]\nroute = \"/bad/\"\nidentities = []\n";
     let path = write_config(&dir, extra)?;
     let out = tunnelward(&["config", "check", &path.to_string_lossy()])?;
     assert_eq!(out.status.code(), Some(1));
@@ -111,6 +115,10 @@ fn a_bad_config_lists_every_problem() -> Res<()> {
         "nonsense",
         "start it with /",
         "give scheme://host",
+        "[[connectors.owners]] route \"/bad/\" is not a route",
+        "\"nobody\" is not a SPIFFE ID",
+        "\"/bad/\" is listed twice",
+        "name at least one identity",
     ] {
         assert!(
             errors.contains(expected),
@@ -325,6 +333,25 @@ fn a_connector_file_checks_ok_or_lists_its_problems() -> Res<()> {
             "{expected} missing from: {errors}"
         );
     }
+    Ok(std::fs::remove_dir_all(dir)?)
+}
+
+#[test]
+fn a_connector_file_must_claim_its_certificates_identity() -> Res<()> {
+    let dir = pki_dir("connector-identity")?;
+    let path = connector_file(&dir, "127.0.0.1:7443", "http://127.0.0.1:8080", "\"mcp\"")?;
+    let claimed = std::fs::read_to_string(&path)?.replace(
+        "spiffe://example.org/connector",
+        "spiffe://example.org/someone-else",
+    );
+    std::fs::write(&path, claimed)?;
+    let out = tunnelward(&["config", "check", &path.to_string_lossy()])?;
+    let errors = text(&out.stderr);
+    assert!(!out.status.success(), "a borrowed identity passed");
+    assert!(
+        errors.contains("spiffe://example.org/connector"),
+        "the certificate's identity missing from: {errors}"
+    );
     Ok(std::fs::remove_dir_all(dir)?)
 }
 

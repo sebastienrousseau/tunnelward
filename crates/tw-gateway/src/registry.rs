@@ -16,12 +16,14 @@ use hyper::client::conn::http2::SendRequest;
 use tokio::sync::Notify;
 use tunnelward_proto::{ConnectorId, Register};
 
+use crate::claims::{Holding, Refusal, Rules, check};
 use crate::kill::KillSwitch;
 use crate::pool::{Entry, Lease, choose};
 use crate::{DrainTarget, RouteResolver, Target};
 
 /// A route remembered after its last connector left (G4).
 struct Kept {
+    spiffe_id: String,
     routes: Vec<String>,
     domains: Vec<String>,
     until: Instant,
@@ -35,6 +37,44 @@ struct State {
     /// Dark targets (G14): matching connections stay connected but take
     /// no new request.
     dark: Vec<DrainTarget>,
+    /// Claims of registrations being admitted, by ticket.
+    reserved: HashMap<u64, Reserved>,
+}
+
+impl State {
+    /// Everything held or promised: live connections, kept routes and
+    /// admissions in progress. Drops what has closed or expired first.
+    fn holdings(&mut self) -> Vec<Holding<'_>> {
+        let now = Instant::now();
+        self.entries.retain(|e| !e.sender.is_closed());
+        self.kept.retain(|k| k.until > now);
+        let live = self.entries.iter().map(|e| Holding {
+            spiffe_id: &e.spiffe_id,
+            routes: &e.routes,
+            domains: &e.domains,
+            live: true,
+        });
+        let kept = self.kept.iter().map(|k| Holding {
+            spiffe_id: &k.spiffe_id,
+            routes: &k.routes,
+            domains: &k.domains,
+            live: false,
+        });
+        let admitting = self.reserved.values().map(|r| Holding {
+            spiffe_id: &r.spiffe_id,
+            routes: &r.routes,
+            domains: &r.domains,
+            live: true,
+        });
+        live.chain(kept).chain(admitting).collect()
+    }
+}
+
+/// What a registration being admitted holds until it is registered.
+struct Reserved {
+    spiffe_id: String,
+    routes: Vec<String>,
+    domains: Vec<String>,
 }
 
 /// What a request can do now.
@@ -111,6 +151,7 @@ impl Registry {
         self.lock().entries.push(Entry {
             session,
             id: register.connector_id,
+            spiffe_id: register.spiffe_id,
             peer: link.peer,
             draining: false,
             kill: link.kill,
@@ -122,6 +163,30 @@ impl Registry {
         });
         self.changed.notify_waiters();
         session
+    }
+
+    /// Promises `claim`'s routes and domains to its identity if they fit
+    /// beside everything held ([`check`]). The promise lasts until the
+    /// returned [`Reservation`] drops, by which time an admitted
+    /// connector's claims are in the registry.
+    pub(crate) fn reserve(
+        &self,
+        claim: &Register,
+        rules: &Rules<'_>,
+    ) -> Result<Reservation<'_>, Refusal> {
+        let mut state = self.lock();
+        check(&state.holdings(), claim, rules)?;
+        let ticket = self.next_session.fetch_add(1, Ordering::Relaxed);
+        let reserved = Reserved {
+            spiffe_id: claim.spiffe_id.clone(),
+            routes: claim.routes.clone(),
+            domains: claim.domains.clone(),
+        };
+        state.reserved.insert(ticket, reserved);
+        Ok(Reservation {
+            registry: self,
+            ticket,
+        })
     }
 
     /// Marks every session `select` picks as draining; returns them.
@@ -168,6 +233,7 @@ impl Registry {
         state.entries = live;
         let until = Instant::now() + keep;
         state.kept.extend(gone.into_iter().map(|e| Kept {
+            spiffe_id: e.spiffe_id,
             routes: e.routes,
             domains: e.domains,
             until,
@@ -303,6 +369,18 @@ fn kept_queue(resolver: &dyn RouteResolver, kept: &[Kept], target: &Target) -> P
         .filter_map(|k| best(resolver, &k.routes, &k.domains, target))
         .max_by_key(|(rank, _)| *rank)
         .map_or(Pick::None, |(_, route)| Pick::Wait(route.to_owned()))
+}
+
+/// Domains promised to one registration, given back on drop.
+pub(crate) struct Reservation<'a> {
+    registry: &'a Registry,
+    ticket: u64,
+}
+
+impl Drop for Reservation<'_> {
+    fn drop(&mut self) {
+        self.registry.lock().reserved.remove(&self.ticket);
+    }
 }
 
 /// A place in a route's wait queue, given back on drop.

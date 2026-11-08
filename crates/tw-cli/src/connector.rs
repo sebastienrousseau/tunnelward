@@ -35,7 +35,7 @@ use tunnelward_connector::{
     Config as Session, Connector, ConnectorConfig, Forward, Gateways, Target,
 };
 use tunnelward_crypto::rustls::pki_types::ServerName;
-use tunnelward_crypto::{KeyExchange, client_config};
+use tunnelward_crypto::{Identity, KeyExchange, client_config};
 use tunnelward_proto::{
     ALPN, ConnectorId, Limits, PROTOCOL_VERSION, Register, is_domain, is_route, is_spiffe_id,
 };
@@ -169,6 +169,7 @@ fn session(base: &Path, file: &File, register: Register) -> Result<Session, Stri
         &resolve(base, &file.identity.cert),
         &resolve(base, &file.identity.key),
     )?;
+    claims_its_certificate(&id, &register.spiffe_id)?;
     let tls = client_config(
         roots(&resolve(base, &g.ca))?,
         Some(id),
@@ -186,6 +187,19 @@ fn session(base: &Path, file: &File, register: Register) -> Result<Session, Stri
         limits: Limits::default(),
         handshake_timeout: Duration::from_secs(10),
     })
+}
+
+/// Fails unless `claimed` is the SPIFFE ID in `id`'s leaf certificate,
+/// which the gateway checks too (TW-R003).
+fn claims_its_certificate(id: &Identity, claimed: &str) -> Result<(), String> {
+    let leaf = id.chain.first().ok_or("[identity] cert: no certificate")?;
+    match tunnelward_identity::spiffe_id(leaf.as_ref()) {
+        Ok(proven) if proven == claimed => Ok(()),
+        Ok(proven) => Err(format!(
+            "[identity] spiffe_id {claimed:?} is not the certificate's, {proven:?}"
+        )),
+        Err(e) => Err(format!("[identity] cert: {e}")),
+    }
 }
 
 /// A file that passed every check.

@@ -25,9 +25,12 @@ cargo xtask ci
 
 Runs, in order and stopping at the first failure: `cargo fmt --check`,
 `cargo clippy` with warnings denied, `cargo test`, `cargo doc` with
-warnings denied, `cargo deny check`, `cargo vet`, `reuse lint` and
-`scripts/complexity.sh`. CI runs this command and nothing else on Linux,
-so passing it locally means the Linux job passes.
+warnings denied, `cargo deny check`, `scripts/licence-boundary.sh`,
+`cargo vet`, `reuse lint`, `scripts/semver.sh` (`cargo semver-checks`
+against crates.io, so it needs the network and `cargo install
+cargo-semver-checks --locked`) and `scripts/complexity.sh`. CI runs this
+command and nothing else on Linux x86_64, so passing it locally means
+that job passes; the test job adds macOS, Windows and Linux aarch64.
 
 ## Nightly-only checks
 

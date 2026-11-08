@@ -81,6 +81,12 @@ const STEPS: &[Step] = &[
         env: &[],
     },
     Step {
+        name: "semver",
+        program: "bash",
+        args: &["scripts/semver.sh"],
+        env: &[],
+    },
+    Step {
         name: "complexity",
         program: "bash",
         args: &["scripts/complexity.sh"],
@@ -103,7 +109,7 @@ const MIRI: &[Step] = &[Step {
 }];
 
 /// Fuzz targets, each with a committed seed corpus in `fuzz/seeds/<name>`.
-const FUZZ_TARGETS: &[&str] = &["decode", "envelope", "proxy"];
+const FUZZ_TARGETS: &[&str] = &["decode", "envelope", "proxy", "svid"];
 
 /// Seconds each target runs when `cargo xtask fuzz` is given no time.
 const DEFAULT_FUZZ_SECS: u32 = 60;

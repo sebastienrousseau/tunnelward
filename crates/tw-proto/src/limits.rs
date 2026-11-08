@@ -48,13 +48,18 @@ pub struct Limits {
     pub max_routes_per_identity: u16,
     /// Domains one connector identity may claim.
     pub max_domains_per_identity: u16,
-    /// Domains one gateway serves.
+    /// Distinct domains one gateway serves, counting routes kept after
+    /// their connectors left. A registration that would go past it is
+    /// refused with [`RejectCode::Overloaded`](crate::RejectCode::Overloaded).
     pub max_domains: u32,
     /// Requests waiting for a free connector, per route.
     pub max_waiting_per_route: u32,
     /// Bytes of a JSON-RPC body parsed for a policy decision.
     pub max_policy_body: u32,
-    /// Registration attempts accepted per source per minute.
+    /// Registration attempts accepted per source address per minute; the
+    /// rest are refused with
+    /// [`RejectCode::RateLimited`](crate::RejectCode::RateLimited). Zero
+    /// turns the limit off.
     pub registrations_per_minute: u32,
     /// HTTP/2 limits granted to each connector connection.
     pub stream: StreamLimits,

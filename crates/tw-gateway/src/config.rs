@@ -40,8 +40,21 @@ pub struct Config {
     /// Source addresses connectors may connect from (G9). Empty admits
     /// every address; mutual TLS still applies either way.
     pub connector_allow: Vec<Cidr>,
+    /// Routes that belong to named identities (FR-3). A route not listed
+    /// belongs to whichever identity holds it, while connected or kept.
+    pub route_owners: Vec<RouteOwner>,
     /// The agent-facing ingress.
     pub ingress: IngressConfig,
+}
+
+/// The identities allowed to claim one route (FR-3). Any other identity
+/// claiming it is refused with `RouteOwned` (TW-R004).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteOwner {
+    /// The route, exactly as connectors claim it.
+    pub route: String,
+    /// SPIFFE IDs allowed to claim it.
+    pub identities: Vec<String>,
 }
 
 /// How the agent-facing ingress behaves (G12, G13).
@@ -103,7 +116,7 @@ impl Default for IngressConfig {
 impl Config {
     /// Defaults: [`Limits::default`], 1 h lease with 30 s to drain, 10 s registration
     /// timeout, 2 s `max_wait`, routes kept for 2 h, [`LongestFirst`], every
-    /// source address allowed.
+    /// source address allowed, no configured route owners.
     #[must_use]
     pub fn new(tls: Arc<ServerConfig>) -> Self {
         Self {
@@ -117,6 +130,7 @@ impl Config {
             routes_keep_time: Duration::from_secs(2 * 60 * 60),
             resolver: Arc::new(LongestFirst),
             connector_allow: Vec::new(),
+            route_owners: Vec::new(),
             ingress: IngressConfig::default(),
         }
     }

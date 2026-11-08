@@ -31,6 +31,7 @@ toml.workspace = true
 tunnelward-connector.workspace = true
 tunnelward-crypto.workspace = true
 tunnelward-gateway.workspace = true
+tunnelward-identity.workspace = true
 tunnelward-proto.workspace = true
 
 [dev-dependencies]

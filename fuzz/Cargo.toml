@@ -19,6 +19,7 @@ libfuzzer-sys = "0.4.13"
 tunnelward-proto = { path = "../crates/tw-proto" }
 tunnelward-gateway = { path = "../crates/tw-gateway" }
 tunnelward-mcp = { path = "../crates/tw-mcp" }
+tunnelward-identity = { path = "../crates/tw-identity" }
 
 [workspace]
 
@@ -39,6 +40,13 @@ bench = false
 [[bin]]
 name = "envelope"
 path = "fuzz_targets/envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "svid"
+path = "fuzz_targets/svid.rs"
 test = false
 doc = false
 bench = false

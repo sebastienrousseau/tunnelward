@@ -8,7 +8,7 @@ use http_body_util::Full;
 use hyper::client::conn::http2;
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use std::net::IpAddr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
@@ -18,9 +18,11 @@ use tunnelward_proto::{
     ALPN, Accept, ConnectorId, Frame, MAX_REASON_LEN, Register, Reject, RejectCode,
 };
 
+use crate::claims::Rules;
 use crate::kill::Killable;
-use crate::registry::Link;
+use crate::registry::{Link, Reservation};
 use crate::{AdmitError, Gateway};
+use tunnelward_identity::spiffe_id;
 
 /// What a decoded first frame turned into.
 enum Outcome {
@@ -60,12 +62,15 @@ impl Gateway {
         IO: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
         let config = &self.inner.config;
+        // Counted on arrival, so attempts that fail later count too.
+        let limited =
+            peer.is_some_and(|ip| self.inner.registrations.check(ip, Instant::now()).is_err());
         let (mut tls, outcome) = timeout(config.registration_timeout, self.handshake(io))
             .await
             .map_err(|_| AdmitError::Timeout)??;
-        let register = match outcome {
-            Outcome::Admit(r) => r,
-            Outcome::Refuse(code, reason) => return self.refuse(&mut tls, code, reason).await,
+        let (register, _reservation) = match self.decide(outcome, limited) {
+            Ok(admitted) => admitted,
+            Err((code, reason)) => return self.refuse(&mut tls, code, reason).await,
         };
         let accept = Frame::Accept(Accept {
             lease_secs: config.lease_secs,
@@ -86,12 +91,39 @@ impl Gateway {
             return Err(AdmitError::Alpn);
         }
         let outcome = match read_frame(&mut tls, &self.inner.config.limits).await {
-            Ok(Frame::Register(r)) => Outcome::Admit(r),
+            Ok(Frame::Register(r)) => proven(&tls, r),
             Ok(_) => Outcome::Refuse(RejectCode::Malformed, "expected a Register frame".into()),
             Err(ReadError::Decode(e)) => Outcome::Refuse(e.reject_code(), e.to_string()),
             Err(e) => return Err(AdmitError::Read(e)),
         };
         Ok((tls, outcome))
+    }
+
+    /// Admits a decoded registration unless its source is over its rate
+    /// or its claims do not fit ([`crate::claims::check`]). The
+    /// reservation holds its claims until the connector is registered.
+    fn decide(
+        &self,
+        outcome: Outcome,
+        limited: bool,
+    ) -> Result<(Register, Reservation<'_>), (RejectCode, String)> {
+        let register = match outcome {
+            Outcome::Admit(r) => r,
+            Outcome::Refuse(code, reason) => return Err((code, reason)),
+        };
+        if limited {
+            let per_minute = self.inner.config.limits.registrations_per_minute;
+            let reason = format!("more than {per_minute} registrations a minute from this source");
+            return Err((RejectCode::RateLimited, reason));
+        }
+        let config = &self.inner.config;
+        let rules = Rules {
+            max_domains: config.limits.max_domains,
+            max_routes_per_identity: config.limits.max_routes_per_identity,
+            owners: &config.route_owners,
+        };
+        let reservation = self.inner.registry.reserve(&register, &rules)?;
+        Ok((register, reservation))
     }
 
     async fn refuse<IO>(
@@ -166,6 +198,22 @@ impl Gateway {
             }
         }
         self.remove(session);
+    }
+}
+
+/// Admits `register` only if its SPIFFE ID is the one in the client
+/// certificate, an X.509-SVID the handshake verified.
+fn proven<IO>(tls: &TlsStream<IO>, register: Register) -> Outcome {
+    let cert = tls.get_ref().1.peer_certificates().and_then(<[_]>::first);
+    let proven = cert.map(|c| spiffe_id(c.as_ref()));
+    match proven {
+        Some(Ok(id)) if id == register.spiffe_id => Outcome::Admit(register),
+        Some(Ok(id)) => Outcome::Refuse(
+            RejectCode::IdentityMismatch,
+            format!("the certificate is {id}, not {}", register.spiffe_id),
+        ),
+        Some(Err(e)) => Outcome::Refuse(RejectCode::IdentityMismatch, e.to_string()),
+        None => Outcome::Refuse(RejectCode::IdentityMismatch, "no client certificate".into()),
     }
 }
 

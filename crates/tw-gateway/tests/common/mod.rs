@@ -53,7 +53,15 @@ pub async fn start(config: Config) -> Res<(Gateway, String)> {
 }
 
 pub fn tls_client(alpn: &[&[u8]]) -> Res<Arc<tunnelward_crypto::rustls::ClientConfig>> {
-    let id = Some(pki::identity(pki::CONNECTOR));
+    tls_client_as(pki::CONNECTOR, alpn)
+}
+
+/// A client presenting `pair`'s certificate.
+pub fn tls_client_as(
+    pair: pki::Pair,
+    alpn: &[&[u8]],
+) -> Res<Arc<tunnelward_crypto::rustls::ClientConfig>> {
+    let id = Some(pki::identity(pair));
     Ok(Arc::new(client_config(
         pki::roots(pki::CA)?,
         id,
@@ -84,6 +92,17 @@ pub fn connector_config(addr: &str, register: Register) -> Res<ConnectorConfig> 
         limits: Limits::default(),
         handshake_timeout: WAIT,
     })
+}
+
+/// [`connector_config`] presenting `pair`'s certificate.
+pub fn connector_config_as(
+    addr: &str,
+    register: Register,
+    pair: pki::Pair,
+) -> Res<ConnectorConfig> {
+    let mut config = connector_config(addr, register)?;
+    config.tls = tls_client_as(pair, &[ALPN])?;
+    Ok(config)
 }
 
 /// Answers every request with `<name> <method> <path>`.

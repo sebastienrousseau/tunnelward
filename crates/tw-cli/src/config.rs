@@ -30,6 +30,10 @@
 //! allow = ["10.1.0.0/16"]       # empty: any source
 //! lease_secs = 3600
 //!
+//! [[connectors.owners]]         # optional (FR-3); unlisted routes belong
+//! route = "mcp/payments"        # to whichever identity holds them
+//! identities = ["spiffe://example.org/ns/prod/sa/payments"]
+//!
 //! [admin]
 //! token_env = "TUNNELWARD_ADMIN_TOKEN"   # required unless admin is loopback
 //! ```
@@ -43,8 +47,8 @@ use tunnelward_crypto::rustls::RootCertStore;
 use tunnelward_crypto::rustls::pki_types::pem::PemObject;
 use tunnelward_crypto::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tunnelward_crypto::{ClientAuth, Identity, KeyExchange, server_config};
-use tunnelward_gateway::{AdminConfig, Cidr, Config, CorsRule};
-use tunnelward_proto::ALPN;
+use tunnelward_gateway::{AdminConfig, Cidr, Config, CorsRule, RouteOwner};
+use tunnelward_proto::{ALPN, is_route, is_spiffe_id};
 
 /// The whole file.
 #[derive(Debug, Deserialize)]
@@ -130,6 +134,43 @@ struct Connectors {
     #[serde(default)]
     allow: Vec<String>,
     lease_secs: Option<u32>,
+    #[serde(default)]
+    owners: Vec<OwnerPart>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OwnerPart {
+    route: String,
+    identities: Vec<String>,
+}
+
+/// The `[[connectors.owners]]` entries, each route named once, valid
+/// routes and SPIFFE IDs only.
+fn owners(parts: &[OwnerPart], problems: &mut Problems) -> Vec<RouteOwner> {
+    let mut seen = std::collections::HashSet::new();
+    for part in parts {
+        let route = &part.route;
+        let at = format!("[[connectors.owners]] route {route:?}");
+        if !is_route(route) {
+            problems.push(format!("{at} is not a route"));
+        }
+        if !seen.insert(route) {
+            problems.push(format!("{at}: {route:?} is listed twice"));
+        }
+        if part.identities.is_empty() {
+            problems.push(format!("{at}: name at least one identity"));
+        }
+        let bad = part.identities.iter().filter(|id| !is_spiffe_id(id));
+        problems.extend(bad.map(|id| format!("{at}: {id:?} is not a SPIFFE ID")));
+    }
+    parts
+        .iter()
+        .map(|p| RouteOwner {
+            route: p.route.clone(),
+            identities: p.identities.clone(),
+        })
+        .collect()
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -271,11 +312,13 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
     let allow = cidrs("[connectors] allow", &file.connectors.allow, &mut problems);
     let admin = admin(&file.listen, &file.admin, &mut problems);
     let cors = cors(&file.ingress.cors, &mut problems);
+    let owners = owners(&file.connectors.owners, &mut problems);
     let (Some(tls), Some(ingress_tls), true) = (tls, ingress_tls, problems.is_empty()) else {
         return Err(problems);
     };
     let mut gateway = Config::new(Arc::new(tls));
     gateway.connector_allow = allow;
+    gateway.route_owners = owners;
     gateway.ingress.tls = ingress_tls.map(Arc::new);
     gateway.ingress.trusted_proxies = trusted;
     gateway.ingress.proxy_protocol = file.ingress.proxy_protocol;

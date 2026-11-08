@@ -109,9 +109,13 @@ fn utc_time(at: SystemTime) -> Result<Vec<u8>, DevCertError> {
     Ok(tlv(0x17, text.as_bytes()))
 }
 
-/// The extensions: the DNS name and both TLS usages.
-fn extensions(dns: &str) -> Vec<u8> {
-    let san = seq(&[&tlv(0x82, dns.as_bytes())]);
+/// The extensions: the DNS name, the SPIFFE ID when given (which makes
+/// the certificate an X.509-SVID), and both TLS usages.
+fn extensions(dns: &str, spiffe_id: Option<&str>) -> Vec<u8> {
+    let uri = spiffe_id
+        .map(|id| tlv(0x86, id.as_bytes()))
+        .unwrap_or_default();
+    let san = seq(&[&tlv(0x82, dns.as_bytes()), &uri]);
     let eku = seq(&[&oid(SERVER_AUTH), &oid(CLIENT_AUTH)]);
     let list = seq(&[
         &seq(&[&oid(SUBJECT_ALT_NAME), &tlv(0x04, &san)]),
@@ -120,9 +124,10 @@ fn extensions(dns: &str) -> Vec<u8> {
     tlv(0xa3, &list)
 }
 
-/// The to-be-signed part of a certificate for `dns` and `public_key`.
+/// The to-be-signed part of a certificate for `dns` (and `spiffe_id`)
+/// and `public_key`.
 fn tbs(
-    dns: &str,
+    (dns, spiffe_id): (&str, Option<&str>),
     public_key: &[u8],
     serial: &[u8],
     now: SystemTime,
@@ -142,13 +147,17 @@ fn tbs(
         &validity,
         &subject,
         &spki,
-        &extensions(dns),
+        &extensions(dns, spiffe_id),
     ]))
 }
 
 /// A fresh key and a self-signed certificate for `dns`, as a rustls
-/// [`Identity`], with the certificate alone for the peer to trust.
-pub(crate) fn self_signed(dns: &str) -> Result<(Identity, CertificateDer<'static>), DevCertError> {
+/// [`Identity`], with the certificate alone for the peer to trust. With
+/// `spiffe_id` the certificate is also an X.509-SVID for it.
+pub(crate) fn self_signed(
+    dns: &str,
+    spiffe_id: Option<&str>,
+) -> Result<(Identity, CertificateDer<'static>), DevCertError> {
     let rng = SystemRandom::new();
     let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &rng)
         .map_err(|_| DevCertError("key generation failed"))?;
@@ -158,7 +167,12 @@ pub(crate) fn self_signed(dns: &str) -> Result<(Identity, CertificateDer<'static
     rng.fill(&mut serial)
         .map_err(|_| DevCertError("no randomness for the serial"))?;
     serial[0] = (serial[0] & 0x7f) | 0x40; // positive, and no leading zero byte
-    let tbs = tbs(dns, key.public_key().as_ref(), &serial, SystemTime::now())?;
+    let tbs = tbs(
+        (dns, spiffe_id),
+        key.public_key().as_ref(),
+        &serial,
+        SystemTime::now(),
+    )?;
     let signature = key
         .sign(&rng, &tbs)
         .map_err(|_| DevCertError("signing failed"))?;
@@ -271,11 +285,11 @@ mod tests {
     #[test]
     fn two_self_signed_certificates_complete_mutual_tls() -> Result<(), Box<dyn std::error::Error>>
     {
-        let server = self_signed("gateway.dev.tunnelward.invalid")?;
+        let server = self_signed("gateway.dev.tunnelward.invalid", None)?;
         let server_cert = server.1.clone();
         let (client_tls, server_tls) = configs(
             server,
-            self_signed("connector.dev.tunnelward.invalid")?,
+            self_signed("connector.dev.tunnelward.invalid", None)?,
             server_cert,
         )?;
         handshake(client_tls, server_tls, "gateway.dev.tunnelward.invalid")
@@ -283,13 +297,13 @@ mod tests {
 
     #[test]
     fn another_certificate_is_not_trusted() -> Result<(), Box<dyn std::error::Error>> {
-        let server = self_signed("gateway.dev.tunnelward.invalid")?;
-        let (stranger, _) = self_signed("gateway.dev.tunnelward.invalid")?;
-        let (_, other_cert) = self_signed("gateway.dev.tunnelward.invalid")?;
+        let server = self_signed("gateway.dev.tunnelward.invalid", None)?;
+        let (stranger, _) = self_signed("gateway.dev.tunnelward.invalid", None)?;
+        let (_, other_cert) = self_signed("gateway.dev.tunnelward.invalid", None)?;
         drop(stranger);
         let (client_tls, server_tls) = configs(
             server,
-            self_signed("connector.dev.tunnelward.invalid")?,
+            self_signed("connector.dev.tunnelward.invalid", None)?,
             other_cert,
         )?;
         assert!(handshake(client_tls, server_tls, "gateway.dev.tunnelward.invalid").is_err());
@@ -298,14 +312,27 @@ mod tests {
 
     #[test]
     fn the_wrong_name_is_not_accepted() -> Result<(), Box<dyn std::error::Error>> {
-        let server = self_signed("gateway.dev.tunnelward.invalid")?;
+        let server = self_signed("gateway.dev.tunnelward.invalid", None)?;
         let server_cert = server.1.clone();
         let (client_tls, server_tls) = configs(
             server,
-            self_signed("connector.dev.tunnelward.invalid")?,
+            self_signed("connector.dev.tunnelward.invalid", None)?,
             server_cert,
         )?;
         assert!(handshake(client_tls, server_tls, "elsewhere.invalid").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn a_spiffe_id_makes_it_an_svid() -> Result<(), Box<dyn std::error::Error>> {
+        let id = "spiffe://dev.tunnelward.invalid/connector";
+        let (_, svid) = self_signed("connector.dev.tunnelward.invalid", Some(id))?;
+        assert_eq!(tunnelward_identity::spiffe_id(svid.as_ref())?, id);
+        let (_, plain) = self_signed("gateway.dev.tunnelward.invalid", None)?;
+        assert_eq!(
+            tunnelward_identity::spiffe_id(plain.as_ref()),
+            Err(tunnelward_identity::SvidError::NoSpiffeId)
+        );
         Ok(())
     }
 

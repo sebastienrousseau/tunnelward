@@ -7,6 +7,51 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.10]
+
+### Added
+
+- Connector identity (FR-3 groundwork): `tunnelward-identity` reads the
+  SPIFFE ID in an X.509-SVID (exactly one URI SAN, a SPIFFE ID), with an
+  in-house DER reader and a fuzz target, `svid`. The crate is published.
+- Route ownership (FR-3). `Config::route_owners` (`[[connectors.owners]]`
+  in the gateway file) names the identities allowed to claim a route; a
+  route not listed belongs to the identity holding it, live or kept. Any
+  other identity's claim is refused with `TW-R004`.
+- `Limits::max_routes_per_identity` (64) is enforced across all of an
+  identity's connections, refused with `TW-R005`.
+
+### Changed
+
+- The gate (`cargo xtask ci`) runs `cargo semver-checks` on every
+  published crate (`scripts/semver.sh`; a crate not yet on crates.io is
+  named and skipped), and CI tests on Linux aarch64 as well.
+- **Breaking:** a connector's client certificate must be an X.509-SVID
+  for the SPIFFE ID it registers; otherwise the gateway refuses it with
+  `TW-R003`. Until now the claimed ID was never checked against the
+  certificate, so any trusted certificate could claim any identity.
+  `tunnelward dev` now issues its connector an SVID, and
+  `tunnelward config check` reports a connector file whose `spiffe_id`
+  is not its certificate's.
+
+### Fixed
+
+- Two limits in `Limits` were declared but not enforced. A gateway now
+  refuses a registration from a source address past
+  `registrations_per_minute` (default 60, counted on arrival, so failed
+  attempts count) with `TW-R009`, and one whose new domains would take
+  it past `max_domains` (default 1,024 distinct domains, kept routes
+  included) with `TW-R010`. Domains are reserved while a registration is
+  admitted, so concurrent registrations cannot overshoot the cap.
+- CI: the CLA workflow grants nothing at the top level; its one
+  job asks for the four scopes it needs.
+- The release workflow's `crates` job resumes instead of failing on a
+  rerun: a crate crates.io already has at the version is skipped. A crate
+  crates.io has never seen stops the job before anything is published,
+  since trusted publishing cannot create one.
+- A Windows-only flaky test (`a_slow_client_holds_back_an_endless_stream`)
+  now waits for production to stall instead of sleeping a fixed second.
+
 ## [0.0.9]
 
 ### Added
