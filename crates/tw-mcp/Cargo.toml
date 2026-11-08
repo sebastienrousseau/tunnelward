@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 
 [package]
-name = "tw-mcp"
+name = "tunnelward-mcp"
 description = "Tunnelward MCP envelope parsing for Streamable HTTP and SSE"
 version.workspace = true
 edition.workspace = true

@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::Semaphore;
-use tw_gateway::{Config, DrainTarget, Gateway, SendError};
-use tw_proto::ConnectorId;
+use tunnelward_gateway::{Config, DrainTarget, Gateway, SendError};
+use tunnelward_proto::ConnectorId;
 
 use common::{
     Res, WAIT, eventually, gateway_config, get, registration, send, start, start_connector,
@@ -49,7 +49,7 @@ async fn one_request_held() -> Res<(
 fn drain_in_background(
     gateway: &Gateway,
     target: DrainTarget,
-) -> tokio::task::JoinHandle<tw_gateway::DrainReport> {
+) -> tokio::task::JoinHandle<tunnelward_gateway::DrainReport> {
     let g = gateway.clone();
     tokio::spawn(async move { g.drain(&target, WAIT).await })
 }

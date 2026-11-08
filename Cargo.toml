@@ -23,7 +23,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.7"
+version = "0.0.8"
 edition = "2024"
 # The MSRV floor. See docs/POLICIES.md before changing it.
 rust-version = "1.89"
@@ -34,6 +34,13 @@ homepage = "https://satellion.com/tunnelward/"
 readme = "README.md"
 
 [workspace.dependencies]
+# Workspace crates. The version pins what a published crate depends on;
+# it moves with workspace.package.version on every release.
+tunnelward-proto = { path = "crates/tw-proto", version = "=0.0.8" }
+tunnelward-crypto = { path = "crates/tw-crypto", version = "=0.0.8" }
+tunnelward-connector = { path = "crates/tw-connector", version = "=0.0.8" }
+tunnelward-gateway = { path = "crates/tw-gateway", version = "=0.0.8" }
+tunnelward-testpki = { path = "crates/tw-testpki" }
 cbor4ii = { version = "1.2.4", default-features = false, features = ["serde1", "use_std"] }
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
 serde_bytes = { version = "0.11.19", default-features = false, features = ["std"] }

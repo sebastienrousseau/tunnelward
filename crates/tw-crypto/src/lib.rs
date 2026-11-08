@@ -10,7 +10,7 @@
 //! negotiate a group a quantum computer could break.
 //!
 //! ```
-//! use tw_crypto::{KeyExchange, negotiated_group, provider};
+//! use tunnelward_crypto::{KeyExchange, negotiated_group, provider};
 //!
 //! let p = provider(KeyExchange::HybridOnly);
 //! assert_eq!(p.kx_groups.len(), 1);

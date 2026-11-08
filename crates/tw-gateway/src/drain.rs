@@ -7,7 +7,7 @@ use std::net::IpAddr;
 use std::time::Duration;
 
 use tokio::time::{Instant, timeout_at};
-use tw_proto::ConnectorId;
+use tunnelward_proto::ConnectorId;
 
 use crate::Gateway;
 use crate::pool::Entry;

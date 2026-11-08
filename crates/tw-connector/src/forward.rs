@@ -34,8 +34,8 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_rustls::TlsConnector;
-use tw_crypto::rustls::ClientConfig;
-use tw_crypto::rustls::pki_types::ServerName;
+use tunnelward_crypto::rustls::ClientConfig;
+use tunnelward_crypto::rustls::pki_types::ServerName;
 
 /// The body [`Forward`] answers with.
 pub type ForwardBody = BoxBody<Bytes, hyper::Error>;
@@ -56,7 +56,7 @@ pub enum Target {
         addr: String,
         /// The name the target's certificate must carry.
         server_name: ServerName<'static>,
-        /// TLS configuration, typically from `tw_crypto::client_config`
+        /// TLS configuration, typically from `tunnelward_crypto::client_config`
         /// with ALPN `http/1.1`.
         tls: Arc<ClientConfig>,
     },

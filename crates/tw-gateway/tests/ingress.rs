@@ -22,11 +22,11 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
-use tw_connector::register;
-use tw_crypto::rustls::pki_types::ServerName;
-use tw_crypto::{ClientAuth, KeyExchange, client_config, server_config};
-use tw_gateway::{Config, Gateway, IngressConfig, ProxyObserver, RateLimit, RequestInfo};
-use tw_testpki as pki;
+use tunnelward_connector::register;
+use tunnelward_crypto::rustls::pki_types::ServerName;
+use tunnelward_crypto::{ClientAuth, KeyExchange, client_config, server_config};
+use tunnelward_gateway::{Config, Gateway, IngressConfig, ProxyObserver, RateLimit, RequestInfo};
+use tunnelward_testpki as pki;
 
 use common::{
     Res, WAIT, connector_config, eventually, gateway_config, registration, start, start_connector,
@@ -44,7 +44,7 @@ async fn start_ingress(config: Config) -> Res<(Gateway, String, String)> {
 }
 
 /// 127.0.0.0/8, where the tests' clients connect from.
-fn loopback() -> tw_gateway::Cidr {
+fn loopback() -> tunnelward_gateway::Cidr {
     "127.0.0.0/8"
         .parse()
         .unwrap_or_else(|_| unreachable!("a valid range"))

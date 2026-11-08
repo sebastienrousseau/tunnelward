@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use http_body_util::BodyExt;
 use tokio::sync::Semaphore;
-use tw_gateway::{Config, Gateway, LongestFirst, RouteResolver, SendError, Target};
+use tunnelward_gateway::{Config, Gateway, LongestFirst, RouteResolver, SendError, Target};
 
 use common::{
     Res, eventually, gateway_config, get, registration, send, start, start_connector,
@@ -66,7 +66,7 @@ async fn the_less_loaded_connector_takes_the_next_request() -> Res<()> {
 async fn a_full_connector_makes_requests_wait_for_a_slot() -> Res<()> {
     let (gateway, addr) = start(config(5000, 0)?).await?;
     let gate = Arc::new(Semaphore::new(0));
-    let one_slot = tw_proto::Register {
+    let one_slot = tunnelward_proto::Register {
         capacity: 1,
         ..registration(1, &["mcp"], &[])
     };
@@ -86,7 +86,7 @@ async fn a_full_connector_makes_requests_wait_for_a_slot() -> Res<()> {
 async fn waiting_past_max_wait_is_unavailable_with_retry_after() -> Res<()> {
     let (gateway, addr) = start(config(100, 0)?).await?;
     let gate = Arc::new(Semaphore::new(0));
-    let one_slot = tw_proto::Register {
+    let one_slot = tunnelward_proto::Register {
         capacity: 1,
         ..registration(1, &["mcp"], &[])
     };
@@ -111,7 +111,7 @@ async fn the_wait_queue_is_bounded() -> Res<()> {
     cfg.limits.max_waiting_per_route = 1;
     let (gateway, addr) = start(cfg).await?;
     let gate = Arc::new(Semaphore::new(0));
-    let one_slot = tw_proto::Register {
+    let one_slot = tunnelward_proto::Register {
         capacity: 1,
         ..registration(1, &["mcp"], &[])
     };

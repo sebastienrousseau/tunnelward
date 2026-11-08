@@ -5,7 +5,7 @@
 //! panic or read past its limit.
 
 use proptest::prelude::*;
-use tw_proto::{
+use tunnelward_proto::{
     Accept, ConnectorId, Decoded, Frame, LENGTH_PREFIX_LEN, Limits, McpDescriptor,
     PROTOCOL_VERSION, Register, Reject, RejectCode, StreamLimits, decode, encode,
 };

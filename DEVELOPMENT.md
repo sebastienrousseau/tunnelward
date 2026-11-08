@@ -34,7 +34,7 @@ so passing it locally means the Linux job passes.
 ```bash
 rustup toolchain install nightly --component miri
 cargo install cargo-fuzz --locked
-cargo xtask miri        # tw-proto's tests under Miri
+cargo xtask miri        # tunnelward-proto's tests under Miri
 cargo xtask fuzz 60     # replay seeds, then 60 s per fuzz target
 ```
 

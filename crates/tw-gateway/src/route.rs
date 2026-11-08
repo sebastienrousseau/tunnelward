@@ -7,7 +7,7 @@ use bytes::Bytes;
 use http::uri::{Authority, Scheme, Uri};
 use http_body_util::Full;
 use hyper::Request;
-use tw_proto::CATCH_ALL_ROUTE;
+use tunnelward_proto::CATCH_ALL_ROUTE;
 
 use crate::{SendError, Target};
 

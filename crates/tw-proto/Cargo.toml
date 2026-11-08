@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 
 [package]
-name = "tw-proto"
+name = "tunnelward-proto"
 description = "Tunnelward wire protocol: register frames, limits and error codes"
 version.workspace = true
 edition.workspace = true
@@ -11,8 +11,9 @@ license = "MIT OR Apache-2.0"
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-# Not published until the crate has an API worth depending on.
-publish = false
+readme.workspace = true
+keywords = ["tunnel", "protocol", "mcp", "reverse-proxy", "cbor"]
+categories = ["network-programming", "encoding"]
 
 [dependencies]
 cbor4ii.workspace = true
@@ -28,6 +29,10 @@ io = ["dep:tokio"]
 cbor4ii.workspace = true
 proptest.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "rt"] }
+
+[package.metadata.docs.rs]
+# Document the tokio helpers behind the `io` feature too.
+all-features = true
 
 [lints]
 workspace = true

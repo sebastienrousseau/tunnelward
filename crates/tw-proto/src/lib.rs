@@ -11,7 +11,7 @@
 //! the hard limits.
 //!
 //! ```
-//! use tw_proto::{decode, encode, ConnectorId, Decoded, Frame, Limits, Register, PROTOCOL_VERSION};
+//! use tunnelward_proto::{decode, encode, ConnectorId, Decoded, Frame, Limits, Register, PROTOCOL_VERSION};
 //!
 //! let limits = Limits::default();
 //! let frame = Frame::Register(Register {

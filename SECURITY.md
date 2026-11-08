@@ -31,7 +31,7 @@ mechanically.
 
 - **No `unsafe` code in Tunnelward crates.** `unsafe_code = "forbid"`
   in `[workspace.lints.rust]` (`Cargo.toml`), applied to every crate.
-- **TLS 1.3 only, hybrid post-quantum key exchange first.** `tw-crypto`
+- **TLS 1.3 only, hybrid post-quantum key exchange first.** `tunnelward-crypto`
   builds every TLS configuration; TLS 1.2 is not compiled in. The
   handshake tests assert `X25519MLKEM768` is negotiated, that
   `HybridOnly` refuses a classical-only peer, and that mutual TLS rejects

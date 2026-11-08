@@ -16,12 +16,12 @@ use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
-use tw_connector::{Config as ConnectorConfig, register};
-use tw_crypto::rustls::pki_types::ServerName;
-use tw_crypto::{ClientAuth, KeyExchange, client_config, server_config};
-use tw_gateway::{Config, Gateway};
-use tw_proto::{ALPN, ConnectorId, Limits, PROTOCOL_VERSION, Register};
-use tw_testpki as pki;
+use tunnelward_connector::{Config as ConnectorConfig, register};
+use tunnelward_crypto::rustls::pki_types::ServerName;
+use tunnelward_crypto::{ClientAuth, KeyExchange, client_config, server_config};
+use tunnelward_gateway::{Config, Gateway};
+use tunnelward_proto::{ALPN, ConnectorId, Limits, PROTOCOL_VERSION, Register};
+use tunnelward_testpki as pki;
 
 pub type Res<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -48,7 +48,7 @@ pub async fn start(config: Config) -> Res<(Gateway, String)> {
     Ok((gateway, addr))
 }
 
-pub fn tls_client(alpn: &[&[u8]]) -> Res<Arc<tw_crypto::rustls::ClientConfig>> {
+pub fn tls_client(alpn: &[&[u8]]) -> Res<Arc<tunnelward_crypto::rustls::ClientConfig>> {
     let id = Some(pki::identity(pki::CONNECTOR));
     Ok(Arc::new(client_config(
         pki::roots(pki::CA)?,
@@ -151,7 +151,7 @@ pub async fn get(gateway: &Gateway, uri: &str) -> Res<(StatusCode, String)> {
 pub async fn send(
     gateway: &Gateway,
     uri: &str,
-) -> Res<Result<Response<tw_gateway::ResponseBody>, tw_gateway::SendError>> {
+) -> Res<Result<Response<tunnelward_gateway::ResponseBody>, tunnelward_gateway::SendError>> {
     let sent = tokio::time::timeout(WAIT, gateway.send(get_request(uri)?)).await;
     sent.map_err(|_| format!("send {uri} timed out").into())
 }

@@ -642,20 +642,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
-name = "tw-attest"
-version = "0.0.7"
+name = "tunnelward"
+version = "0.0.8"
 
 [[package]]
-name = "tw-audit"
-version = "0.0.7"
+name = "tunnelward-attest"
+version = "0.0.8"
 
 [[package]]
-name = "tw-cli"
-version = "0.0.7"
+name = "tunnelward-audit"
+version = "0.0.8"
 
 [[package]]
-name = "tw-connector"
-version = "0.0.7"
+name = "tunnelward-connector"
+version = "0.0.8"
 dependencies = [
  "bytes",
  "http",
@@ -664,21 +664,21 @@ dependencies = [
  "hyper-util",
  "tokio",
  "tokio-rustls",
- "tw-crypto",
- "tw-proto",
+ "tunnelward-crypto",
+ "tunnelward-proto",
 ]
 
 [[package]]
-name = "tw-crypto"
-version = "0.0.7"
+name = "tunnelward-crypto"
+version = "0.0.8"
 dependencies = [
  "rustls",
- "tw-testpki",
+ "tunnelward-testpki",
 ]
 
 [[package]]
-name = "tw-gateway"
-version = "0.0.7"
+name = "tunnelward-gateway"
+version = "0.0.8"
 dependencies = [
  "bytes",
  "h2",
@@ -688,27 +688,27 @@ dependencies = [
  "hyper-util",
  "tokio",
  "tokio-rustls",
- "tw-connector",
- "tw-crypto",
- "tw-proto",
- "tw-testpki",
+ "tunnelward-connector",
+ "tunnelward-crypto",
+ "tunnelward-proto",
+ "tunnelward-testpki",
 ]
 
 [[package]]
-name = "tw-identity"
-version = "0.0.7"
+name = "tunnelward-identity"
+version = "0.0.8"
 
 [[package]]
-name = "tw-mcp"
-version = "0.0.7"
+name = "tunnelward-mcp"
+version = "0.0.8"
 
 [[package]]
-name = "tw-policy"
-version = "0.0.7"
+name = "tunnelward-policy"
+version = "0.0.8"
 
 [[package]]
-name = "tw-proto"
-version = "0.0.7"
+name = "tunnelward-proto"
+version = "0.0.8"
 dependencies = [
  "cbor4ii",
  "proptest",
@@ -718,10 +718,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "tw-testpki"
-version = "0.0.7"
+name = "tunnelward-testpki"
+version = "0.0.8"
 dependencies = [
- "tw-crypto",
+ "tunnelward-crypto",
 ]
 
 [[package]]
@@ -847,7 +847,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "xtask"
-version = "0.0.7"
+version = "0.0.8"
 
 [[package]]
 name = "zeroize"

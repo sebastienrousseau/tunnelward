@@ -4,9 +4,9 @@
 //! Tunnelward gateway: admits connectors and sends requests through them.
 //!
 //! A connector dials in over TLS with ALPN `tw/1` and sends one
-//! [`Register`](tw_proto::Register) frame. [`Gateway::admit`] reads it
-//! under a timeout, answers [`Accept`](tw_proto::Accept) or
-//! [`Reject`](tw_proto::Reject), and on acceptance becomes the HTTP/2
+//! [`Register`](tunnelward_proto::Register) frame. [`Gateway::admit`] reads it
+//! under a timeout, answers [`Accept`](tunnelward_proto::Accept) or
+//! [`Reject`](tunnelward_proto::Reject), and on acceptance becomes the HTTP/2
 //! client on that same connection (ADR 0001). [`Gateway::send`] then routes
 //! a request to a connector by host and path.
 //!

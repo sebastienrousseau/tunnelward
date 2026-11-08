@@ -91,7 +91,14 @@ const STEPS: &[Step] = &[
 const MIRI: &[Step] = &[Step {
     name: "miri",
     program: "cargo",
-    args: &["+nightly", "miri", "test", "-p", "tw-proto", "--locked"],
+    args: &[
+        "+nightly",
+        "miri",
+        "test",
+        "-p",
+        "tunnelward-proto",
+        "--locked",
+    ],
     env: &[("MIRIFLAGS", "-Zmiri-strict-provenance")],
 }];
 

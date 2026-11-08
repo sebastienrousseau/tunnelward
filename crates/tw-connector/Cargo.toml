@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 
 [package]
-name = "tw-connector"
+name = "tunnelward-connector"
 description = "Tunnelward connector: outbound registration and stdio bridge"
 version.workspace = true
 edition.workspace = true
@@ -11,8 +11,9 @@ license = "MIT OR Apache-2.0"
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-# Not published until the crate has an API worth depending on.
-publish = false
+readme.workspace = true
+keywords = ["tunnel", "mcp", "reverse-proxy", "http2", "firewall"]
+categories = ["network-programming", "web-programming::http-client"]
 
 [dependencies]
 bytes.workspace = true
@@ -22,8 +23,8 @@ hyper = { workspace = true, features = ["client", "http1", "http2", "server"] }
 hyper-util.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt", "sync", "time"] }
 tokio-rustls.workspace = true
-tw-crypto = { path = "../tw-crypto" }
-tw-proto = { path = "../tw-proto", features = ["io"] }
+tunnelward-crypto.workspace = true
+tunnelward-proto = { workspace = true, features = ["io"] }
 
 [lints]
 workspace = true

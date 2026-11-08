@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 [package]
-name = "tw-audit"
+name = "tunnelward-audit"
 description = "Tunnelward hash-chained audit log with an offline verifier"
 version.workspace = true
 edition.workspace = true

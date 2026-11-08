@@ -16,8 +16,8 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4.13"
-tw-proto = { path = "../crates/tw-proto" }
-tw-gateway = { path = "../crates/tw-gateway" }
+tunnelward-proto = { path = "../crates/tw-proto" }
+tunnelward-gateway = { path = "../crates/tw-gateway" }
 
 [workspace]
 

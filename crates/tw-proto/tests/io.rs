@@ -6,8 +6,8 @@
 #![cfg(feature = "io")]
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
-use tw_proto::io::{ReadError, read_frame, write_frame};
-use tw_proto::{
+use tunnelward_proto::io::{ReadError, read_frame, write_frame};
+use tunnelward_proto::{
     Accept, ConnectorId, DecodeError, Frame, Limits, PROTOCOL_VERSION, Register, StreamLimits,
 };
 

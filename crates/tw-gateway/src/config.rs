@@ -6,8 +6,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use tw_crypto::rustls::ServerConfig;
-use tw_proto::Limits;
+use tunnelward_crypto::rustls::ServerConfig;
+use tunnelward_proto::Limits;
 
 use crate::{Cidr, LongestFirst, ProxyObserver, RateLimit, RouteResolver};
 
@@ -15,7 +15,7 @@ use crate::{Cidr, LongestFirst, ProxyObserver, RateLimit, RouteResolver};
 /// gives the defaults; every field is public to change one.
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// TLS for the connector listener: from `tw_crypto::server_config`
+    /// TLS for the connector listener: from `tunnelward_crypto::server_config`
     /// with client certificates required and ALPN `tw/1`.
     pub tls: Arc<ServerConfig>,
     /// Frame, HTTP/2 and queue limits.
@@ -47,7 +47,7 @@ pub struct Config {
 /// How the agent-facing ingress behaves (G12, G13).
 #[derive(Debug, Clone)]
 pub struct IngressConfig {
-    /// TLS for agents, from `tw_crypto::server_config` with no client
+    /// TLS for agents, from `tunnelward_crypto::server_config` with no client
     /// certificates and ALPN `h2` and `http/1.1`. `None` serves plain
     /// HTTP/1.1, for a gateway behind a TLS-terminating load balancer.
     pub tls: Option<Arc<ServerConfig>>,

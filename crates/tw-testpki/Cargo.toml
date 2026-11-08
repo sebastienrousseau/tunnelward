@@ -5,7 +5,7 @@
 # normal dependency of any crate.
 
 [package]
-name = "tw-testpki"
+name = "tunnelward-testpki"
 description = "TEST-ONLY certificates and keys for Tunnelward's tests"
 version.workspace = true
 edition.workspace = true
@@ -14,7 +14,7 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-tw-crypto = { path = "../tw-crypto" }
+tunnelward-crypto.workspace = true
 
 [lints]
 workspace = true

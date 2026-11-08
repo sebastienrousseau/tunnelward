@@ -1,24 +1,24 @@
 // SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! In-memory handshakes between configurations built by tw-crypto, with
+//! In-memory handshakes between configurations built by tunnelward-crypto, with
 //! certificates from a throwaway CA.
 
 use std::sync::Arc;
 
-use tw_crypto::rustls::pki_types::ServerName;
-use tw_crypto::rustls::{
+use tunnelward_crypto::rustls::pki_types::ServerName;
+use tunnelward_crypto::rustls::{
     ClientConfig, ClientConnection, Connection, NamedGroup, ProtocolVersion, ServerConfig,
     ServerConnection,
 };
-use tw_crypto::{ClientAuth, KeyExchange, client_config, negotiated_group, server_config};
+use tunnelward_crypto::{ClientAuth, KeyExchange, client_config, negotiated_group, server_config};
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
 const ALPN: &[&[u8]] = &[b"tw/1"];
 const SERVER_NAME: &str = "gateway.test";
 
-use tw_testpki::{self as pki, identity, roots};
+use tunnelward_testpki::{self as pki, identity, roots};
 
 fn mtls() -> Res<ClientAuth> {
     Ok(ClientAuth::Required(roots(pki::CA)?))
@@ -93,14 +93,14 @@ fn hybrid_only_on_both_sides_still_negotiates() -> Res<()> {
 
 /// A peer without post-quantum support: a server offering only X25519.
 fn classical_server() -> Res<ServerConfig> {
-    use tw_crypto::rustls::crypto::{CryptoProvider, aws_lc_rs};
+    use tunnelward_crypto::rustls::crypto::{CryptoProvider, aws_lc_rs};
     let provider = CryptoProvider {
         kx_groups: vec![aws_lc_rs::kx_group::X25519],
         ..aws_lc_rs::default_provider()
     };
     let id = identity(pki::GATEWAY);
     Ok(ServerConfig::builder_with_provider(Arc::new(provider))
-        .with_protocol_versions(&[&tw_crypto::rustls::version::TLS13])?
+        .with_protocol_versions(&[&tunnelward_crypto::rustls::version::TLS13])?
         .with_no_client_auth()
         .with_single_cert(id.chain, id.key)?)
 }

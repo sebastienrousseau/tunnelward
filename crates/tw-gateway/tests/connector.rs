@@ -18,9 +18,9 @@ use hyper::body::Incoming;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use tokio::sync::{Semaphore, broadcast};
-use tw_connector::{Connector, ConnectorConfig, ConnectorEvent, Gateways};
-use tw_gateway::{Config, DrainTarget};
-use tw_proto::ConnectorId;
+use tunnelward_connector::{Connector, ConnectorConfig, ConnectorEvent, Gateways};
+use tunnelward_gateway::{Config, DrainTarget};
+use tunnelward_proto::ConnectorId;
 
 use common::{
     Res, WAIT, connector_config, echo, eventually, gateway_config, get, registration, start,
@@ -76,8 +76,11 @@ fn addr(text: &str) -> Res<SocketAddr> {
 }
 
 /// Two gateways and one supervised connector for both.
-async fn two_gateways_one_connector() -> Res<(tw_gateway::Gateway, tw_gateway::Gateway, Connector)>
-{
+async fn two_gateways_one_connector() -> Res<(
+    tunnelward_gateway::Gateway,
+    tunnelward_gateway::Gateway,
+    Connector,
+)> {
     let (a, a_addr) = start(gateway_config()?).await?;
     let (b, b_addr) = start(gateway_config()?).await?;
     let connector = start_supervised(&[&a_addr, &b_addr])?;

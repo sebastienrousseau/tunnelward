@@ -19,7 +19,7 @@ use hyper::client::conn::http2::SendRequest;
 use tokio::sync::Notify;
 
 use crate::kill::KillSwitch;
-use tw_proto::ConnectorId;
+use tunnelward_proto::ConnectorId;
 
 /// One admitted connector.
 pub(crate) struct Entry {

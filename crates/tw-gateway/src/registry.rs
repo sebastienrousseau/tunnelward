@@ -14,7 +14,7 @@ use bytes::Bytes;
 use http_body_util::Full;
 use hyper::client::conn::http2::SendRequest;
 use tokio::sync::Notify;
-use tw_proto::Register;
+use tunnelward_proto::Register;
 
 use crate::kill::KillSwitch;
 use crate::pool::{Entry, Lease, choose};

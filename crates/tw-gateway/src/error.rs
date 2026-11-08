@@ -6,8 +6,8 @@
 use core::fmt;
 use std::io;
 
-use tw_proto::RejectCode;
-use tw_proto::io::{ReadError, WriteError};
+use tunnelward_proto::RejectCode;
+use tunnelward_proto::io::{ReadError, WriteError};
 
 /// A connector connection was not admitted, or its session ended badly.
 #[derive(Debug)]

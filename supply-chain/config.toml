@@ -33,7 +33,7 @@ notes = "proptest dependency, tests only. No peer audit of 2.13; publisher KodrA
 [[exemptions.cbor4ii]]
 version = "1.2.4"
 criteria = "safe-to-deploy"
-notes = "CBOR codec for tw-proto (ADR 0003). Needs a real audit before v0.1.0: about 4k lines, MIT, by quininer."
+notes = "CBOR codec for tunnelward-proto (ADR 0003). Needs a real audit before v0.1.0: about 4k lines, MIT, by quininer."
 
 [[exemptions.r-efi]]
 version = "6.0.0"

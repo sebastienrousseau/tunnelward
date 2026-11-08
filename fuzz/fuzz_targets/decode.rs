@@ -8,7 +8,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use tw_proto::{Decoded, Limits, decode, encode};
+use tunnelward_proto::{Decoded, Limits, decode, encode};
 
 fuzz_target!(|data: &[u8]| {
     let limits = Limits::default();
