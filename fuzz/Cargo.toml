@@ -18,6 +18,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4.13"
 tunnelward-proto = { path = "../crates/tw-proto" }
 tunnelward-gateway = { path = "../crates/tw-gateway" }
+tunnelward-mcp = { path = "../crates/tw-mcp" }
 
 [workspace]
 
@@ -31,6 +32,13 @@ bench = false
 [[bin]]
 name = "proxy"
 path = "fuzz_targets/proxy.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "envelope"
+path = "fuzz_targets/envelope.rs"
 test = false
 doc = false
 bench = false

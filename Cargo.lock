@@ -785,6 +785,11 @@ version = "0.0.8"
 [[package]]
 name = "tunnelward-mcp"
 version = "0.0.8"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "tunnelward-policy"
