@@ -51,6 +51,14 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   BurntSushi, epage) meet rule 2 of the cargo-vet policy; the exemption
   count is unchanged.
 
+### Deferred
+
+- Dark mode (G14) and certificate reload without a restart (G16), which
+  the plan put in this release, move to 0.0.9, as does a `tunnelward
+  connector` command.
+- M1's exit test, the five Cranker defect reproducers rewritten as
+  Tunnelward tests, is not written yet; FR-1's test, the other half, is.
+
 ### Notes
 
 - The CLI stops at once on Ctrl-C rather than draining first: graceful
