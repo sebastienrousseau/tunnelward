@@ -59,6 +59,16 @@ impl Limiter {
         }
     }
 
+    /// `count` attempts per address per minute, all usable at once, for
+    /// the default number of addresses; zero turns limiting off.
+    pub(crate) fn per_minute(count: u32) -> Self {
+        Self::new(RateLimit {
+            per_second: f64::from(count) / 60.0,
+            burst: count,
+            ..RateLimit::default()
+        })
+    }
+
     /// Takes a token for `ip` at `now`, or says how long until one is free.
     pub(crate) fn check(&self, ip: IpAddr, now: Instant) -> Result<(), Duration> {
         if self.config.per_second <= 0.0 {

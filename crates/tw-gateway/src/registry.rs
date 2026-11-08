@@ -4,7 +4,7 @@
 //! Live connectors, routes kept after their connectors leave, and how
 //! many requests wait for each route.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -35,6 +35,25 @@ struct State {
     /// Dark targets (G14): matching connections stay connected but take
     /// no new request.
     dark: Vec<DrainTarget>,
+    /// Domains promised to registrations being admitted, by ticket.
+    reserved: HashMap<u64, Vec<String>>,
+}
+
+impl State {
+    /// Domains served or promised: live connectors, kept routes and
+    /// registrations being admitted. Drops what has closed or expired.
+    fn held_domains(&mut self) -> HashSet<String> {
+        let now = Instant::now();
+        self.entries.retain(|e| !e.sender.is_closed());
+        self.kept.retain(|k| k.until > now);
+        let live = self.entries.iter().map(|e| &e.domains);
+        let kept = self.kept.iter().map(|k| &k.domains);
+        live.chain(kept)
+            .chain(self.reserved.values())
+            .flatten()
+            .cloned()
+            .collect()
+    }
 }
 
 /// What a request can do now.
@@ -122,6 +141,26 @@ impl Registry {
         });
         self.changed.notify_waiters();
         session
+    }
+
+    /// Promises `domains` to a registration if the gateway then serves at
+    /// most `max` distinct domains; `None` if it would serve more. Domains
+    /// already served do not count again. The promise lasts until the
+    /// returned [`Reservation`] drops, by which time an admitted
+    /// connector's domains are in the registry.
+    pub(crate) fn reserve(&self, domains: &[String], max: u32) -> Option<Reservation<'_>> {
+        let mut state = self.lock();
+        let mut held = state.held_domains();
+        held.extend(domains.iter().cloned());
+        if held.len() > usize::try_from(max).unwrap_or(usize::MAX) {
+            return None;
+        }
+        let ticket = self.next_session.fetch_add(1, Ordering::Relaxed);
+        state.reserved.insert(ticket, domains.to_vec());
+        Some(Reservation {
+            registry: self,
+            ticket,
+        })
     }
 
     /// Marks every session `select` picks as draining; returns them.
@@ -303,6 +342,18 @@ fn kept_queue(resolver: &dyn RouteResolver, kept: &[Kept], target: &Target) -> P
         .filter_map(|k| best(resolver, &k.routes, &k.domains, target))
         .max_by_key(|(rank, _)| *rank)
         .map_or(Pick::None, |(_, route)| Pick::Wait(route.to_owned()))
+}
+
+/// Domains promised to one registration, given back on drop.
+pub(crate) struct Reservation<'a> {
+    registry: &'a Registry,
+    ticket: u64,
+}
+
+impl Drop for Reservation<'_> {
+    fn drop(&mut self) {
+        self.registry.lock().reserved.remove(&self.ticket);
+    }
 }
 
 /// A place in a route's wait queue, given back on drop.

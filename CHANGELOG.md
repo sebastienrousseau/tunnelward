@@ -7,6 +7,22 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.10]
+
+### Fixed
+
+- Two limits in `Limits` were declared but not enforced. A gateway now
+  refuses a registration from a source address past
+  `registrations_per_minute` (default 60, counted on arrival, so failed
+  attempts count) with `TW-R009`, and one whose new domains would take
+  it past `max_domains` (default 1,024 distinct domains, kept routes
+  included) with `TW-R010`. Domains are reserved while a registration is
+  admitted, so concurrent registrations cannot overshoot the cap.
+- CI: the CLA workflow grants nothing at the top level; its one
+  job asks for the four scopes it needs.
+- A Windows-only flaky test (`a_slow_client_holds_back_an_endless_stream`)
+  now waits for production to stall instead of sleeping a fixed second.
+
 ## [0.0.9]
 
 ### Added

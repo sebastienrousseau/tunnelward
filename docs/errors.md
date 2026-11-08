@@ -62,13 +62,19 @@ fronts.
 
 ### TW-R009
 
-**Rate limited.** Too many registration attempts from this source. The
-connector backs off and retries on its own.
+**Rate limited.** Too many registration attempts from this source
+address: more than `Limits::registrations_per_minute` (60 by default),
+counting attempts that failed. The connector backs off and retries on
+its own. Many connectors behind one NAT address share the limit; raise
+it for that deployment.
 
 ### TW-R010
 
-**Overloaded.** The gateway is at capacity. The connector retries; add
-gateway capacity if it persists.
+**Overloaded.** The gateway is at capacity: the registration's new
+domains would take it past `Limits::max_domains` (1,024 by default),
+counting routes kept after their connectors left. A domain the gateway
+already serves never counts twice. The connector retries; add gateway
+capacity if it persists.
 
 ### TW-R011
 

@@ -96,6 +96,8 @@ struct Inner {
     ingress_tls: std::sync::RwLock<Option<TlsAcceptor>>,
     registry: Registry,
     limiter: ratelimit::Limiter,
+    /// Registration attempts per source address.
+    registrations: ratelimit::Limiter,
     next_request: std::sync::atomic::AtomicU64,
     /// Whether connectors can register, for the admin API's `/readyz`.
     ready: std::sync::atomic::AtomicBool,
@@ -108,6 +110,7 @@ impl Gateway {
         let acceptor = std::sync::RwLock::new(TlsAcceptor::from(config.tls.clone()));
         let ingress_tls = std::sync::RwLock::new(config.ingress.tls.clone().map(TlsAcceptor::from));
         let limiter = ratelimit::Limiter::new(config.ingress.rate_limit);
+        let registrations = ratelimit::Limiter::per_minute(config.limits.registrations_per_minute);
         Self {
             inner: Arc::new(Inner {
                 config,
@@ -115,6 +118,7 @@ impl Gateway {
                 ingress_tls,
                 registry: Registry::default(),
                 limiter,
+                registrations,
                 next_request: std::sync::atomic::AtomicU64::new(0),
                 ready: std::sync::atomic::AtomicBool::new(false),
             }),
