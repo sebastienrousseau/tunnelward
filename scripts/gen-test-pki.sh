@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 #
 # Regenerates the TEST-ONLY certificates and keys in
-# crates/tw-crypto/tests/pki/. They exist so the handshake tests need no
+# crates/tw-testpki/pki/. They exist so the handshake tests need no
 # certificate-generation crate (rcgen would add 36 crates to cargo-vet).
 # The keys protect nothing and must never be used outside tests.
 #
@@ -15,7 +15,7 @@
 #   intruder.{der,key} client leaf issued by the other CA
 # Keys are PKCS#8 DER.
 set -euo pipefail
-cd "$(dirname "$0")/../crates/tw-crypto/tests/pki"
+cd "$(dirname "$0")/../crates/tw-testpki/pki"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

@@ -37,6 +37,12 @@ mechanically.
   `HybridOnly` refuses a classical-only peer, and that mutual TLS rejects
   a missing or foreign client certificate
   (`crates/tw-crypto/tests/handshake.rs`).
+- **A connector is admitted only through a bounded handshake.** The
+  gateway closes a connection that does not negotiate ALPN `tw/1`,
+  refuses a frame whose length prefix is over the limit before reading
+  its body, answers an invalid frame with `Reject`, and drops a
+  connection that sends nothing within the registration timeout
+  (`crates/tw-gateway/tests/tunnel.rs`).
 - **No panicking shortcuts outside tests.** `unwrap_used`, `expect_used`
   and `panic` are denied in `[workspace.lints.clippy]`.
 - **Dependencies are checked for advisories, licences and sources** by

@@ -21,6 +21,10 @@ pub const MAX_SEGMENT_LEN: usize = 63;
 pub const MAX_MCP_NAME_LEN: usize = 128;
 /// Longest MCP server version, in bytes.
 pub const MAX_MCP_VERSION_LEN: usize = 64;
+/// Longest domain name, in bytes (RFC 1035, without the trailing dot).
+pub const MAX_DOMAIN_LEN: usize = 253;
+/// The route claim that serves every path.
+pub const CATCH_ALL_ROUTE: &str = "*";
 /// Longest rejection reason, in bytes.
 pub const MAX_REASON_LEN: usize = 1024;
 
@@ -73,15 +77,29 @@ fn validate_register(r: &Register, limits: &Limits) -> Result<(), Invalid> {
         });
     }
     check(is_spiffe_id(&r.spiffe_id), "spiffe_id is not a SPIFFE ID")?;
-    check(!r.routes.is_empty(), "no routes claimed")?;
+    check(r.capacity > 0, "capacity is zero")?;
+    validate_routes(&r.routes, limits)?;
+    validate_domains(&r.domains, limits)?;
+    r.mcp.as_ref().map_or(Ok(()), validate_mcp)
+}
+
+fn validate_routes(routes: &[String], limits: &Limits) -> Result<(), Invalid> {
+    check(!routes.is_empty(), "no routes claimed")?;
     check(
-        r.routes.len() <= usize::from(limits.max_routes_per_identity),
+        routes.len() <= usize::from(limits.max_routes_per_identity),
         "too many routes",
     )?;
-    check(r.routes.iter().all(|x| is_route(x)), "route is not valid")?;
-    check(has_no_duplicates(&r.routes), "route claimed twice")?;
-    check(r.capacity > 0, "capacity is zero")?;
-    r.mcp.as_ref().map_or(Ok(()), validate_mcp)
+    check(routes.iter().all(|x| is_route(x)), "route is not valid")?;
+    check(has_no_duplicates(routes), "route claimed twice")
+}
+
+fn validate_domains(domains: &[String], limits: &Limits) -> Result<(), Invalid> {
+    check(
+        domains.len() <= usize::from(limits.max_domains_per_identity),
+        "too many domains",
+    )?;
+    check(domains.iter().all(|x| is_domain(x)), "domain is not valid")?;
+    check(has_no_duplicates(domains), "domain claimed twice")
 }
 
 fn validate_mcp(m: &McpDescriptor) -> Result<(), Invalid> {
@@ -111,8 +129,8 @@ fn validate_reject(r: &Reject) -> Result<(), Invalid> {
     )
 }
 
-fn has_no_duplicates(routes: &[String]) -> bool {
-    let mut seen: Vec<&str> = routes.iter().map(String::as_str).collect();
+fn has_no_duplicates(items: &[String]) -> bool {
+    let mut seen: Vec<&str> = items.iter().map(String::as_str).collect();
     seen.sort_unstable();
     seen.windows(2).all(|w| w[0] != w[1])
 }
@@ -122,10 +140,14 @@ fn is_text(s: &str, max: usize) -> bool {
     !s.is_empty() && s.len() <= max && !s.chars().any(char::is_control)
 }
 
-/// A route claim: 1 to 8 `/`-separated segments, each 1 to 63 bytes of
-/// `[a-z0-9-]` starting with a letter or digit; 255 bytes at most.
+/// A route claim: [`CATCH_ALL_ROUTE`], or 1 to 8 `/`-separated segments,
+/// each 1 to 63 bytes of `[a-z0-9-]` starting with a letter or digit;
+/// 255 bytes at most.
 #[must_use]
 pub fn is_route(route: &str) -> bool {
+    if route == CATCH_ALL_ROUTE {
+        return true;
+    }
     let segments = route.split('/').count();
     route.len() <= MAX_ROUTE_LEN
         && segments <= MAX_ROUTE_SEGMENTS
@@ -137,6 +159,31 @@ fn is_route_segment(seg: &str) -> bool {
     !b.is_empty()
         && b.len() <= MAX_SEGMENT_LEN
         && b[0].is_ascii_alphanumeric()
+        && b.iter()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
+}
+
+/// A lowercase DNS name: dot-separated labels of 1 to 63 bytes of
+/// `[a-z0-9-]` that neither start nor end with `-`, 253 bytes at most, no
+/// trailing dot. A leading `*.` matches one or more labels and needs at
+/// least two labels after it.
+#[must_use]
+pub fn is_domain(domain: &str) -> bool {
+    match domain.strip_prefix("*.") {
+        Some(rest) => rest.split('.').count() >= 2 && is_hostname(rest),
+        None => is_hostname(domain),
+    }
+}
+
+fn is_hostname(name: &str) -> bool {
+    name.len() <= MAX_DOMAIN_LEN && name.split('.').all(is_label)
+}
+
+fn is_label(label: &str) -> bool {
+    let b = label.as_bytes();
+    (1..=MAX_SEGMENT_LEN).contains(&b.len())
+        && b.first() != Some(&b'-')
+        && b.last() != Some(&b'-')
         && b.iter()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
 }
@@ -235,6 +282,53 @@ mod tests {
             &long,
         ] {
             assert!(!is_spiffe_id(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn catch_all_route() {
+        assert!(is_route("*"));
+        for bad in ["*/x", "mcp/*", "**", "* "] {
+            assert!(!is_route(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn domains() {
+        let label63 = "a".repeat(63);
+        let long_ok = [label63.as_str(); 3].join(".") + "." + &"b".repeat(61);
+        for ok in [
+            "localhost",
+            "mcp.example.org",
+            "*.example.org",
+            "a-1.b2.c",
+            long_ok.as_str(),
+        ] {
+            assert!(is_domain(ok), "{ok}");
+        }
+        let too_long = long_ok.clone() + "c";
+        let label64 = "a".repeat(64) + ".org";
+        for bad in [
+            "",
+            ".",
+            "example.org.",
+            ".example.org",
+            "Example.org",
+            "-a.org",
+            "a-.org",
+            "a..org",
+            "*.org",
+            "*",
+            "a.*.org",
+            "*.*.org",
+            "x*.example.org",
+            "exa mple.org",
+            "é.org",
+            "example.org:443",
+            too_long.as_str(),
+            label64.as_str(),
+        ] {
+            assert!(!is_domain(bad), "{bad}");
         }
     }
 

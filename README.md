@@ -96,15 +96,17 @@ cargo xtask ci
 ```
 
 The binary reports its version and usage, and `cargo xtask ci` runs
-every check CI runs. v0.0.2 adds the wire protocol (`tw-proto`); the
-tunnel itself lands from v0.0.4.
+every check CI runs. Since v0.0.4 a connector can register with a gateway
+and serve requests through its outbound connection; the
+`tunnelward` subcommands that run them arrive in v0.0.8. Until then they
+are libraries: see `crates/tw-gateway/tests/tunnel.rs`.
 
 ---
 
 ## The Tunnelward ecosystem
 
 One crate per concern, so the protocol core can be fuzzed and audited on
-its own. `tw-proto`, `tw-crypto` and `tw-cli` have code; the others are placeholders
+its own. `tw-proto`, `tw-crypto`, `tw-gateway`, `tw-connector` and `tw-cli` have code; the others are placeholders
 until the release the plan gives them.
 
 | Component | Purpose | Use case |
@@ -128,7 +130,8 @@ until the release the plan gives them.
 | :--- | :--- | :--- |
 | CLI | `tunnelward --version`, `--help` | Shipped in 0.0.1 |
 | Protocol | Register, Accept, Reject frames; length-prefixed CBOR codec | Shipped in 0.0.2 |
-| Transport | Reverse HTTP/2 over outbound TLS | Planned for 0.0.4 |
+| Transport | Reverse HTTP/2 over the connector's outbound TLS connection | Shipped in 0.0.4 |
+| Routing | Domain (exact or `*.` wildcard), longest route, catch-all `*` | Shipped in 0.0.4 |
 | Crypto | TLS 1.3 only; hybrid PQ key exchange (X25519MLKEM768) first, optional hybrid-only; mutual TLS | Shipped in 0.0.3 |
 
 ---
@@ -177,7 +180,7 @@ No examples yet; the first, a gateway and connector on one machine, comes with `
 
 ## When not to use Tunnelward
 
-- Today, for anything: no release carries traffic yet.
+- In production, yet: identity checks beyond mutual TLS, pools, reconnects and the agent-facing ingress are still to come (see the plan).
 - For LLM routing, prompt guardrails or token accounting: use an MCP or LLM gateway such as agentgateway in front of it.
 - As a general-purpose VPN or mesh.
 - If you want a vendor edge to run the data plane for you: Tunnelward is self-hosted.

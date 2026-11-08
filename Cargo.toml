@@ -18,11 +18,12 @@ members = [
   "crates/tw-mcp",
   "crates/tw-policy",
   "crates/tw-proto",
+  "crates/tw-testpki",
   "crates/xtask",
 ]
 
 [workspace.package]
-version = "0.0.3"
+version = "0.0.4"
 edition = "2024"
 # The MSRV floor. See docs/POLICIES.md before changing it.
 rust-version = "1.89"
@@ -37,6 +38,13 @@ cbor4ii = { version = "1.2.4", default-features = false, features = ["serde1", "
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
 serde_bytes = { version = "0.11.19", default-features = false, features = ["std"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "prefer-post-quantum", "std"] }
+tokio = { version = "1.54.1", default-features = false }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs"] }
+hyper = { version = "1.12.0", default-features = false }
+hyper-util = { version = "0.1.21", default-features = false, features = ["tokio"] }
+http-body-util = { version = "0.1.5", default-features = false }
+bytes = { version = "1.12.1", default-features = false, features = ["std"] }
+http = { version = "1.5.0", default-features = false, features = ["std"] }
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 
 [workspace.lints.rust]

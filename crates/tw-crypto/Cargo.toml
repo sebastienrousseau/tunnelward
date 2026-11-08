@@ -17,5 +17,8 @@ publish = false
 [dependencies]
 rustls.workspace = true
 
+[dev-dependencies]
+tw-testpki = { path = "../tw-testpki" }
+
 [lints]
 workspace = true

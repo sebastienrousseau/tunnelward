@@ -18,10 +18,16 @@ publish = false
 cbor4ii.workspace = true
 serde.workspace = true
 serde_bytes.workspace = true
+tokio = { workspace = true, optional = true, features = ["io-util"] }
+
+[features]
+# Async frame reading and writing over tokio streams.
+io = ["dep:tokio"]
 
 [dev-dependencies]
 cbor4ii.workspace = true
 proptest.workspace = true
+tokio = { workspace = true, features = ["io-util", "macros", "rt"] }
 
 [lints]
 workspace = true

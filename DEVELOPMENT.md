@@ -43,7 +43,7 @@ commit that input to `fuzz/seeds/<target>/` so every run replays it.
 
 ## Test certificates
 
-`crates/tw-crypto/tests/pki/` holds TEST-ONLY certificates and keys,
+`crates/tw-testpki/pki/` holds TEST-ONLY certificates and keys,
 written by `scripts/gen-test-pki.sh` (needs the `openssl` CLI). They are
 valid for 100 years; regenerate them only if a test needs a new one.
 
@@ -51,8 +51,8 @@ valid for 100 years; regenerate them only if a test needs a new one.
 
 `cargo vet` must pass, and `scripts/vet.sh` fails if the number of
 exempted crates changes without `supply-chain/exemptions-baseline.txt`
-changing with it. A new dependency comes with an audit
-(`cargo vet certify`) or a trust entry, never a new exemption.
+changing with it. How a dependency gets vetted, and the maintainer's
+trust decisions, are in [supply-chain/README.md](supply-chain/README.md).
 
 ## Testing the MSRV on macOS
 

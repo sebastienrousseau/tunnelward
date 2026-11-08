@@ -35,7 +35,7 @@ SPDX-License-Identifier = "GPL-3.0-only"
 # TEST-ONLY certificates and keys, written by scripts/gen-test-pki.sh.
 # DER has no comment syntax. The keys protect nothing.
 [[annotations]]
-path = ["crates/tw-crypto/tests/pki/**"]
+path = ["crates/tw-testpki/pki/**"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>"
 SPDX-License-Identifier = "GPL-3.0-only"
