@@ -101,6 +101,20 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   reaches it on UEFI hosts, so the exemption baseline is 3 for the
   same three crates.
 
+### Fixed
+
+- Release packaging: the build step failed on the `LICENSES/` directory,
+  so the first v0.0.1 release run published nothing. Archives now carry
+  `LICENSES/` alongside `LICENSE`.
+- Release notes: What's Changed titles are set in backticks, and the
+  Checksums block lists every attached asset, `SHA256SUMS` included,
+  as the release standard asks.
+
+### Changed
+
+- Releases attach `SHA256SUMS.sigstore.json`, a keyless cosign
+  signature of `SHA256SUMS` tied to the release workflow run.
+
 ## [0.0.2]
 
 ### Added
@@ -115,6 +129,13 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   a weekly 30-minute fuzz run.
 - ADRs 0001 (reverse HTTP/2), 0002 (hybrid PQ by default) and 0003
   (cbor4ii for the register frames).
+- Release tooling: a signed tag `vX.Y.Z` builds `tunnelward` for five
+  platforms and publishes a GitHub Release with SHA-256 checksums, a
+  CycloneDX SBOM, SLSA provenance and a rendered Homebrew formula, plus a
+  cosign-signed container image on GHCR (`.github/workflows/release.yml`).
+  `scripts/release-preflight.sh` blocks a tag while any alert or issue
+  is open. Notes Highlights live in `docs/releases/`.
+- CodeQL code scanning for Rust and the workflows.
 - cargo-vet imports from seven peer organisations, publisher trust
   matching kyberlib's, and a ratchet that stops exemptions growing.
 
