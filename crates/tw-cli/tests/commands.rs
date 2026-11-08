@@ -161,6 +161,52 @@ fn agent_auth_checks_ok_or_lists_its_problems() -> Res<()> {
 }
 
 #[test]
+fn a_signed_provider_snapshot_checks_ok_and_a_tampered_one_does_not() -> Res<()> {
+    let dir = pki_dir("providers")?;
+    let key = dir.join("signing.key");
+    let public = keygen(&key)?;
+    let snapshot = dir.join("providers.json");
+    write_snapshot(&snapshot, "192.0.2.0/24")?;
+    let signed = tunnelward(&[
+        "providers",
+        "sign",
+        "--key",
+        &key.to_string_lossy(),
+        &snapshot.to_string_lossy(),
+    ])?;
+    assert!(signed.status.success(), "{}", text(&signed.stderr));
+    let section = format!("[providers]\nsnapshot = \"providers.json\"\nkeys = [\"{public}\"]\n");
+    let path = write_config(&dir, &section)?;
+    let ok = tunnelward(&["config", "check", &path.to_string_lossy()])?;
+    assert!(ok.status.success(), "{}", text(&ok.stderr));
+    write_snapshot(&snapshot, "0.0.0.0/0")?;
+    let tampered = tunnelward(&["config", "check", &path.to_string_lossy()])?;
+    assert!(!tampered.status.success());
+    let errors = text(&tampered.stderr);
+    assert!(errors.contains("no trusted key signed"), "{errors}");
+    Ok(std::fs::remove_dir_all(dir)?)
+}
+
+/// `tunnelward providers keygen` into `key`; its public key, after
+/// checking a second run refuses to overwrite it.
+fn keygen(key: &Path) -> Res<String> {
+    let out = tunnelward(&["providers", "keygen", "--out", &key.to_string_lossy()])?;
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let again = tunnelward(&["providers", "keygen", "--out", &key.to_string_lossy()])?;
+    assert!(!again.status.success(), "keygen never overwrites a key");
+    let public = text(&out.stdout).trim().to_owned();
+    assert_eq!(public.len(), 64, "a hex Ed25519 public key");
+    Ok(public)
+}
+
+fn write_snapshot(path: &Path, range: &str) -> Res<()> {
+    let json = format!(
+        r#"{{"version":1,"providers":[{{"provider":"test","agent":"a","ranges":["{range}"]}}]}}"#
+    );
+    Ok(std::fs::write(path, json)?)
+}
+
+#[test]
 fn an_unknown_key_names_its_line() -> Res<()> {
     let dir = pki_dir("unknown")?;
     let path = write_config(&dir, "[admin]\ntoken = \"inline\"\n")?;

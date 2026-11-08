@@ -126,20 +126,27 @@ fn fixed(path: &Path) -> Result<Arc<KeySet>, String> {
         .map_err(|e| format!("jwks {}: {e}", path.display()))
 }
 
-/// The roots `jwks_uri` fetches trust: `ca`, else `SSL_CERT_FILE`, else
-/// the first system bundle found.
+/// The roots `jwks_uri` fetches trust: `ca`, else the system's.
 fn ca_roots(
     base: &Path,
     agents: &Agents,
 ) -> Result<Arc<tunnelward_crypto::rustls::RootCertStore>, String> {
-    let path = match (&agents.ca, std::env::var_os("SSL_CERT_FILE")) {
-        (Some(ca), _) => resolve(base, ca),
+    system_roots(agents.ca.as_ref().map(|ca| resolve(base, ca)))
+}
+
+/// `explicit`, else `SSL_CERT_FILE`, else the first system CA bundle
+/// found, as a root store for HTTPS fetches.
+pub(crate) fn system_roots(
+    explicit: Option<PathBuf>,
+) -> Result<Arc<tunnelward_crypto::rustls::RootCertStore>, String> {
+    let path = match (explicit, std::env::var_os("SSL_CERT_FILE")) {
+        (Some(path), _) => path,
         (None, Some(env)) => PathBuf::from(env),
         (None, None) => SYSTEM_BUNDLES
             .iter()
             .map(PathBuf::from)
             .find(|p| p.is_file())
-            .ok_or("no CA bundle found; set [agents] ca")?,
+            .ok_or("no CA bundle found; set [agents] ca or SSL_CERT_FILE")?,
     };
     roots(&path)
 }

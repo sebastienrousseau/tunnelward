@@ -11,6 +11,7 @@ mod dev;
 mod devcert;
 mod doctor;
 mod gateway;
+mod providers;
 mod serve;
 mod svid;
 
@@ -39,6 +40,12 @@ Commands:
                  Check a gateway's or a connector's file and list every problem
   doctor [--config <file>]
                  Check this machine and, given a file, its configuration
+  providers keygen --out <file>
+                 Make an Ed25519 key for signing provider snapshots
+  providers build --out <file> [--version <n>]
+                 Fetch providers' published egress ranges into a snapshot
+  providers sign --key <file> <snapshot>
+                 Sign a snapshot; writes <snapshot>.sig
 
 Options:
   -h, --help     Print this help
@@ -149,10 +156,54 @@ fn doctor(args: &[String]) -> Result<(), Outcome> {
     }
 }
 
+fn providers(args: &[String]) -> Result<(), Outcome> {
+    let args = Args::parse(args, &["out", "version", "key"])?;
+    match args.positional.as_slice() {
+        [command] if command == "keygen" => providers_keygen(&args),
+        [command] if command == "build" => providers_build(&args),
+        [command, snapshot] if command == "sign" => providers_sign(&args, snapshot),
+        _ => Err(providers_usage().into()),
+    }
+}
+
+fn providers_usage() -> UsageError {
+    UsageError("usage: tunnelward providers keygen|build|sign (see --help)".into())
+}
+
+fn providers_keygen(args: &Args) -> Result<(), Outcome> {
+    let out = args.get("out").ok_or_else(providers_usage)?;
+    println!(
+        "{}",
+        providers::keygen(Path::new(out)).map_err(Outcome::Failed)?
+    );
+    Ok(())
+}
+
+fn providers_build(args: &Args) -> Result<(), Outcome> {
+    let out = args.get("out").ok_or_else(providers_usage)?;
+    let version = args
+        .parsed("version")?
+        .unwrap_or_else(providers::default_version);
+    let roots = agents::system_roots(None).map_err(Outcome::Failed)?;
+    let snapshot = runtime()?
+        .block_on(providers::build(version, roots))
+        .map_err(Outcome::Failed)?;
+    std::fs::write(out, snapshot).map_err(|e| Outcome::Failed(format!("{out}: {e}")))?;
+    println!("{out}: version {version}");
+    Ok(())
+}
+
+fn providers_sign(args: &Args, snapshot: &str) -> Result<(), Outcome> {
+    let key = args.get("key").ok_or_else(providers_usage)?;
+    let sig = providers::sign(Path::new(key), Path::new(snapshot)).map_err(Outcome::Failed)?;
+    println!("{}", sig.display());
+    Ok(())
+}
+
 type Command = fn(&[String]) -> Result<(), Outcome>;
 
 /// Every command, by the names that call it.
-const COMMANDS: [(&[&str], Command); 7] = [
+const COMMANDS: [(&[&str], Command); 8] = [
     (&["-h", "--help"], |_| {
         print!("{USAGE}");
         Ok(())
@@ -166,6 +217,7 @@ const COMMANDS: [(&[&str], Command); 7] = [
     (&["connector"], connector),
     (&["config"], config_check),
     (&["doctor"], doctor),
+    (&["providers"], providers),
 ];
 
 fn dispatch(args: &[String]) -> Outcome {

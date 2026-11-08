@@ -92,6 +92,8 @@ pub struct IngressConfig {
     /// Bearer tokens agents must present (MCP authorisation). `None`
     /// lets every request through, as before.
     pub agent_auth: Option<crate::AgentAuth>,
+    /// Published provider ranges; requests from them are tagged (FR-12).
+    pub providers: Option<std::sync::Arc<crate::Providers>>,
 }
 
 impl Default for IngressConfig {
@@ -113,6 +115,7 @@ impl Default for IngressConfig {
             observers: Vec::new(),
             cors: Vec::new(),
             agent_auth: None,
+            providers: None,
         }
     }
 }

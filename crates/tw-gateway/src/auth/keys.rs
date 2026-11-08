@@ -7,24 +7,14 @@
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::{Duration, Instant};
 
-use bytes::Bytes;
 use http::Uri;
-use http_body_util::{BodyExt, Full, Limited};
-use hyper::Request;
-use hyper_util::rt::TokioIo;
-use tokio::net::TcpStream;
 use tokio::sync::Notify;
-use tokio_rustls::TlsConnector;
 use tunnelward_crypto::rustls::RootCertStore;
-use tunnelward_crypto::rustls::pki_types::ServerName;
-use tunnelward_crypto::{KeyExchange, client_config};
 
 use super::jwk::{Alg, Key, parse_set};
 
 /// Largest JWK Set read, in bytes.
 const MAX_JWKS: usize = 64 * 1024;
-/// Longest a fetch may take.
-const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 /// Least time between fetches asked for by an unknown key id.
 const MIN_REFETCH: Duration = Duration::from_secs(30);
 
@@ -137,9 +127,9 @@ impl KeySet {
             .last_fetch
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(Instant::now());
-        let body = tokio::time::timeout(FETCH_TIMEOUT, fetch(uri, roots.clone()))
+        let body = crate::https_get(&uri.to_string(), roots.clone(), MAX_JWKS)
             .await
-            .map_err(|_| KeyError::Fetch("timed out".into()))??;
+            .map_err(KeyError::Fetch)?;
         let keys = parse_set(&body).ok_or(KeyError::NotAJwkSet)?;
         let count = keys.len();
         *self.keys.write().unwrap_or_else(PoisonError::into_inner) = keys;
@@ -181,63 +171,4 @@ impl KeySet {
         }
         found
     }
-}
-
-fn fail(what: &str, e: &dyn std::fmt::Display) -> KeyError {
-    KeyError::Fetch(format!("{what}: {e}"))
-}
-
-/// GETs `uri` over HTTPS (HTTP/1.1, TLS 1.3) and returns the body.
-async fn fetch(uri: &Uri, roots: Arc<RootCertStore>) -> Result<Vec<u8>, KeyError> {
-    let mut sender = connect(uri, roots).await?;
-    let host = uri.host().unwrap_or_default();
-    let authority = uri.authority().map_or(host, http::uri::Authority::as_str);
-    let request = Request::get(uri.path_and_query().map_or("/", |p| p.as_str()))
-        .header(http::header::HOST, authority)
-        .header(http::header::ACCEPT, "application/json")
-        .body(Full::new(Bytes::new()))
-        .map_err(|e| fail("request", &e))?;
-    let response = sender
-        .send_request(request)
-        .await
-        .map_err(|e| fail("HTTP", &e))?;
-    if response.status() != http::StatusCode::OK {
-        return Err(KeyError::Fetch(format!("status {}", response.status())));
-    }
-    let body = Limited::new(response.into_body(), MAX_JWKS)
-        .collect()
-        .await
-        .map_err(|e| fail("body", &*e))?;
-    Ok(body.to_bytes().to_vec())
-}
-
-/// An HTTP/1.1 connection to `uri`'s host over TLS 1.3, trusting `roots`.
-async fn connect(
-    uri: &Uri,
-    roots: Arc<RootCertStore>,
-) -> Result<hyper::client::conn::http1::SendRequest<Full<Bytes>>, KeyError> {
-    let stream = tls(uri, roots).await?;
-    let (sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
-        .await
-        .map_err(|e| fail("HTTP", &e))?;
-    tokio::spawn(conn);
-    Ok(sender)
-}
-
-/// A TLS 1.3 stream to `uri`'s host and port, trusting `roots`.
-async fn tls(
-    uri: &Uri,
-    roots: Arc<RootCertStore>,
-) -> Result<tokio_rustls::client::TlsStream<TcpStream>, KeyError> {
-    let host = uri.host().unwrap_or_default().trim_matches(['[', ']']);
-    let config = client_config(roots, None, KeyExchange::default(), &[b"http/1.1"])
-        .map_err(|e| fail("TLS", &e))?;
-    let name = ServerName::try_from(host.to_owned()).map_err(|e| fail("host", &e))?;
-    let tcp = TcpStream::connect((host, uri.port_u16().unwrap_or(443)))
-        .await
-        .map_err(|e| fail("connect", &e))?;
-    TlsConnector::from(Arc::new(config))
-        .connect(name, tcp)
-        .await
-        .map_err(|e| fail("TLS", &e))
 }

@@ -109,6 +109,10 @@ impl Ingress {
         let inner = &self.gateway.inner;
         let ingress = &inner.config.ingress;
         let client = ClientAddr::resolve(self.peer, request.headers(), &ingress.trusted_proxies);
+        let provider = ingress
+            .providers
+            .as_ref()
+            .and_then(|p| p.lookup(client.client));
         let headers = request.headers();
         let info = RequestInfo {
             id: inner.next_request.fetch_add(1, Ordering::Relaxed),
@@ -120,6 +124,7 @@ impl Ingress {
             traceparent: provenance::traceparent(headers),
             mcp_session: provenance::declared(headers, tunnelward_mcp::SESSION_HEADER),
             client_id: None,
+            provider,
         };
         for o in &ingress.observers {
             o.on_request(&info);

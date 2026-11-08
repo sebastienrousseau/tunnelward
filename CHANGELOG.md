@@ -37,6 +37,17 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   `tunnelward_identity::workload` (gRPC over a Unix socket on hyper, an
   in-house protobuf reader; Unix only) and
   `tunnelward_crypto::{RotatingIdentity, client_config_rotating}`.
+- Provider identification at the network level (FR-12). A gateway with
+  `[providers]` loads a snapshot of AI providers' published egress
+  ranges, signed with Ed25519 by a key it trusts, and tags each request
+  whose client address is in one (`RequestInfo::provider`: provider,
+  agent, `level = "network"`, snapshot version). A snapshot is accepted
+  whole or not at all and never replaces a newer one; the gateway looks
+  for a newer one every 5 minutes. `tunnelward providers build` fetches
+  each provider's own list (Anthropic's outbound ranges from its IP
+  addresses page; OpenAI's chatgpt-user, chatgpt-actions, searchbot and
+  gptbot files), `keygen` and `sign` make and sign it. An address match
+  says where a request came from, not who sent it.
 
 ## [0.0.10]
 

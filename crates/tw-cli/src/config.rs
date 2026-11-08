@@ -38,6 +38,9 @@
 //! token_env = "TUNNELWARD_ADMIN_TOKEN"   # required unless admin is loopback
 //!
 //! [agents]                      # optional: bearer tokens (see agents.rs)
+//!
+//! [providers]                   # optional: tag requests by provider
+//!                               # (see providers.rs)
 //! ```
 
 use std::net::SocketAddr;
@@ -65,6 +68,7 @@ pub(crate) struct File {
     #[serde(default)]
     admin: Admin,
     agents: Option<crate::agents::Agents>,
+    providers: Option<crate::providers::Section>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -198,6 +202,8 @@ pub(crate) struct Checked {
     /// Agent-auth key sets fetched from a `jwks_uri`, and how often.
     pub(crate) key_sets: Vec<std::sync::Arc<tunnelward_gateway::KeySet>>,
     pub(crate) key_refresh: std::time::Duration,
+    /// The provider snapshot, to reload when it changes (FR-12).
+    pub(crate) providers: Option<crate::providers::Loaded>,
 }
 
 /// Reads and parses `path`. A parse error names the line and column.
@@ -314,6 +320,21 @@ fn with_agents(
     }
 }
 
+/// The file and every certificate and key it names, to watch for
+/// renewal (G16).
+fn watched(path: &Path, base: &Path, file: &File) -> Vec<PathBuf> {
+    let tls = &file.tls;
+    let mut watched = vec![path.to_owned()];
+    watched.extend([&tls.cert, &tls.key, &tls.client_ca].map(|p| resolve(base, p)));
+    watched.extend(
+        [&file.ingress.cert, &file.ingress.key]
+            .into_iter()
+            .flatten()
+            .map(|p| resolve(base, p)),
+    );
+    watched
+}
+
 /// Runs every check on `file` (read from `path`) and builds the gateway
 /// configuration, or lists every problem found.
 pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
@@ -338,6 +359,10 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         .agents
         .as_ref()
         .and_then(|a| crate::agents::check(base, a, &mut problems));
+    let providers = file
+        .providers
+        .as_ref()
+        .and_then(|p| crate::providers::check(base, p, &mut problems));
     let (Some(tls), Some(ingress_tls), true) = (tls, ingress_tls, problems.is_empty()) else {
         return Err(problems);
     };
@@ -345,6 +370,7 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
     gateway.connector_allow = allow;
     gateway.route_owners = owners;
     let (key_sets, key_refresh) = with_agents(&mut gateway, agents);
+    gateway.ingress.providers = providers.as_ref().map(|p| p.providers.clone());
     gateway.ingress.tls = ingress_tls.map(Arc::new);
     gateway.ingress.trusted_proxies = trusted;
     gateway.ingress.proxy_protocol = file.ingress.proxy_protocol;
@@ -352,16 +378,8 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
     if let Some(secs) = file.connectors.lease_secs {
         gateway.lease_secs = secs;
     }
-    let tls = &file.tls;
-    let mut watched = vec![path.to_owned()];
-    watched.extend([&tls.cert, &tls.key, &tls.client_ca].map(|p| resolve(base, p)));
-    watched.extend(
-        [&file.ingress.cert, &file.ingress.key]
-            .into_iter()
-            .flatten()
-            .map(|p| resolve(base, p)),
-    );
-    let reload_every = std::time::Duration::from_secs(tls.reload_secs.unwrap_or(10).max(1));
+    let watched = watched(path, base, &file);
+    let reload_every = std::time::Duration::from_secs(file.tls.reload_secs.unwrap_or(10).max(1));
     Ok(Checked {
         listen: file.listen,
         gateway,
@@ -370,5 +388,6 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         reload_every,
         key_sets,
         key_refresh,
+        providers,
     })
 }

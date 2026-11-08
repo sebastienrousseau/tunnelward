@@ -80,7 +80,7 @@ fn name(cn: &str) -> Vec<u8> {
 
 /// Days since 1970-01-01 to (year, month, day), proleptic Gregorian
 /// (Howard Hinnant's `civil_from_days`).
-fn civil(days: u64) -> (u64, u64, u64) {
+pub(crate) fn civil(days: u64) -> (u64, u64, u64) {
     let z = days + 719_468;
     let era = z / 146_097;
     let doe = z - era * 146_097;
