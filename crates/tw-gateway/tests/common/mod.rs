@@ -5,6 +5,8 @@
 
 #![allow(dead_code, unreachable_pub)] // each test file uses a different subset
 
+pub mod ingress;
+
 use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;

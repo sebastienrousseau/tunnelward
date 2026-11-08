@@ -18,6 +18,11 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   (G15), and `POST /drain` by connector, route or address. With
   `AdminConfig::token` set every request needs that bearer token;
   without one only loopback clients are served.
+- Stable error ids (`TW-R`, `TW-A`, `TW-S`, `TW-I`, `TW-C` and three
+  digits) on every error type, with `id()` and `docs_url()`, explained in
+  `docs/errors.md`. Ingress refusals carry the id in a `tw-error` header
+  and in the body with its link. A test keeps the catalogue and the code
+  in step.
 - FR-1's acceptance test: a gateway killed under load fails only its
   own in-flight requests, and new requests succeed on the other gateway
   within one backoff window.

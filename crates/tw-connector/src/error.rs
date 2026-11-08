@@ -31,6 +31,30 @@ pub enum Error {
     Http(hyper::Error),
 }
 
+impl Error {
+    /// The error's stable id, explained at [`Error::docs_url`]. A
+    /// rejection carries its [`RejectCode`](tunnelward_proto::RejectCode)'s id.
+    #[must_use]
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::Connect(_) => "TW-C001",
+            Self::Alpn => "TW-C002",
+            Self::Timeout => "TW-C003",
+            Self::Write(_) => "TW-C004",
+            Self::Read(_) => "TW-C005",
+            Self::Rejected(reject) => reject.code.id(),
+            Self::UnexpectedFrame => "TW-C006",
+            Self::Http(_) => "TW-C007",
+        }
+    }
+
+    /// Where this error is explained.
+    #[must_use]
+    pub fn docs_url(&self) -> String {
+        tunnelward_proto::error_url(self.id())
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

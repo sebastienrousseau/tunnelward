@@ -45,6 +45,29 @@ impl fmt::Display for AdmitError {
 
 impl std::error::Error for AdmitError {}
 
+impl AdmitError {
+    /// The error's stable id, explained at [`AdmitError::docs_url`]. A
+    /// rejection carries its [`RejectCode`]'s id.
+    #[must_use]
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::Tls(_) => "TW-A001",
+            Self::Alpn => "TW-A002",
+            Self::Timeout => "TW-A003",
+            Self::Read(_) => "TW-A004",
+            Self::Rejected(code) => code.id(),
+            Self::Write(_) => "TW-A005",
+            Self::Http(_) => "TW-A006",
+        }
+    }
+
+    /// Where this error is explained.
+    #[must_use]
+    pub fn docs_url(&self) -> String {
+        tunnelward_proto::error_url(self.id())
+    }
+}
+
 /// A request could not be sent through a connector.
 #[derive(Debug)]
 #[non_exhaustive]
@@ -63,6 +86,25 @@ pub enum SendError {
     BadRequest(http::Error),
     /// The request failed on the connector connection.
     Http(hyper::Error),
+}
+
+impl SendError {
+    /// The error's stable id, explained at [`SendError::docs_url`].
+    #[must_use]
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::NoRoute => "TW-S001",
+            Self::Unavailable { .. } => "TW-S002",
+            Self::BadRequest(_) => "TW-S003",
+            Self::Http(_) => "TW-S004",
+        }
+    }
+
+    /// Where this error is explained.
+    #[must_use]
+    pub fn docs_url(&self) -> String {
+        tunnelward_proto::error_url(self.id())
+    }
 }
 
 impl fmt::Display for SendError {
