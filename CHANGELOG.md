@@ -32,6 +32,12 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   Connections that arrive later and match are dark too. The internal
   inventory shows which connections are dark. Writing it to the audit
   log waits for the audit log (0.0.14).
+- Certificate reload without a restart (G16): `Gateway::set_tls` and
+  `Gateway::set_ingress_tls` apply to the next handshake; established
+  connections keep theirs. `tunnelward gateway` watches its file and the
+  certificates and keys it names (`[tls] reload_secs`, default 10) and
+  swaps them in after the whole file passes its checks again; a file
+  that fails keeps the running certificates and says why.
 - MCP pass-through tests: `initialize` with its session header and a
   `tools/call` answered by an SSE stream reach the client byte for byte.
 

@@ -218,3 +218,57 @@ fn dev_refuses_a_public_listener() -> Res<()> {
     assert!(errors.contains("loopback only"), "{errors}");
     Ok(())
 }
+
+/// Lines a child prints, on a channel, so a test can wait for one.
+fn lines(stream: impl Read + Send + 'static) -> std::sync::mpsc::Receiver<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stream).lines().map_while(Result::ok) {
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    rx
+}
+
+fn expect(rx: &Lines, wanted: &str) -> Res<()> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+        if rx.recv_timeout(left)?.contains(wanted) {
+            return Ok(());
+        }
+    }
+    Err(format!("no line containing {wanted:?}").into())
+}
+
+type Lines = std::sync::mpsc::Receiver<String>;
+
+/// `tunnelward gateway` on `config`, with its stdout and stderr lines.
+fn spawn_gateway(config: &Path) -> Res<(Running, Lines, Lines)> {
+    let mut child = Running(
+        Command::new(env!("CARGO_BIN_EXE_tunnelward"))
+            .args(["gateway", "--config", &config.to_string_lossy()])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?,
+    );
+    let out = lines(child.0.stdout.take().ok_or("no stdout")?);
+    let err = lines(child.0.stderr.take().ok_or("no stderr")?);
+    Ok((child, out, err))
+}
+
+#[test]
+fn the_gateway_reloads_renewed_certificates_and_keeps_good_ones() -> Res<()> {
+    let dir = pki_dir("reload")?;
+    let path = write_config(&dir, "reload_secs = 1\n")?;
+    let (child, out, err) = spawn_gateway(&path)?;
+    expect(&out, "tunnelward gateway: connectors on")?;
+
+    std::fs::write(dir.join("gateway.key"), "not a key")?;
+    expect(&err, "not reloaded, keeping the running certificates")?;
+    std::fs::write(dir.join("gateway.key"), pem("PRIVATE KEY", pki::GATEWAY.1))?;
+    expect(&out, "certificates reloaded")?;
+    drop(child);
+    Ok(std::fs::remove_dir_all(dir)?)
+}

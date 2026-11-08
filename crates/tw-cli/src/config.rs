@@ -14,6 +14,7 @@
 //! cert = "gateway.crt"          # PEM chain, leaf first
 //! key = "gateway.key"           # PEM private key
 //! client_ca = "connectors.crt"  # PEM roots connector certificates chain to
+//! reload_secs = 10              # how often to look for renewed files
 //!
 //! [ingress]                     # optional; plain HTTP without cert and key
 //! cert = "ingress.crt"
@@ -69,6 +70,7 @@ struct Tls {
     cert: PathBuf,
     key: PathBuf,
     client_ca: PathBuf,
+    reload_secs: Option<u64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -104,6 +106,11 @@ pub(crate) struct Checked {
     pub(crate) listen: Listen,
     pub(crate) gateway: Config,
     pub(crate) admin: AdminConfig,
+    /// The file and every certificate and key it names, to watch for
+    /// renewal (G16).
+    pub(crate) watched: Vec<PathBuf>,
+    /// How often to look at them.
+    pub(crate) reload_every: std::time::Duration,
 }
 
 /// Reads and parses `path`. A parse error names the line and column.
@@ -234,9 +241,21 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
     if let Some(secs) = file.connectors.lease_secs {
         gateway.lease_secs = secs;
     }
+    let tls = &file.tls;
+    let mut watched = vec![path.to_owned()];
+    watched.extend([&tls.cert, &tls.key, &tls.client_ca].map(|p| resolve(base, p)));
+    watched.extend(
+        [&file.ingress.cert, &file.ingress.key]
+            .into_iter()
+            .flatten()
+            .map(|p| resolve(base, p)),
+    );
+    let reload_every = std::time::Duration::from_secs(tls.reload_secs.unwrap_or(10).max(1));
     Ok(Checked {
         listen: file.listen,
         gateway,
         admin,
+        watched,
+        reload_every,
     })
 }
