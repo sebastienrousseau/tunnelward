@@ -36,6 +36,6 @@ criteria = "safe-to-deploy"
 notes = "CBOR codec for tw-proto (ADR 0003). Needs a real audit before v0.1.0: about 4k lines, MIT, by quininer."
 
 [[exemptions.r-efi]]
-version = "5.2.0"
-criteria = "safe-to-run"
-notes = "getrandom on UEFI targets only, via proptest; tests only. Never built for Tunnelward's targets."
+version = "6.0.0"
+criteria = "safe-to-deploy"
+notes = "getrandom on UEFI targets only (reached from rustls and aws-lc-rs through getrandom). Never built for Tunnelward's targets."

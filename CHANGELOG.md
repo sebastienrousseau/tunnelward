@@ -7,6 +7,47 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.3]
+
+### Added
+
+- `tw-crypto`: rustls server and client configurations on the AWS-LC
+  provider, TLS 1.3 only (TLS 1.2 is not compiled in), offering the
+  hybrid group `X25519MLKEM768` first. `KeyExchange::HybridOnly` drops
+  the classical fallback. Servers either require a client certificate
+  from given roots (connector listener) or ask for none (agent ingress).
+  `negotiated_group` reports the group a handshake used. `Identity`
+  never prints its key.
+- Handshake tests that assert the negotiated group, the X25519 fallback,
+  the hybrid-only refusal, and mutual-TLS acceptance and rejection,
+  against TEST-ONLY certificates from `scripts/gen-test-pki.sh`.
+
+### Notes
+
+- Checked against rustls 0.23.46: with the `aws_lc_rs` and
+  `prefer-post-quantum` features its default group list starts with
+  `X25519MLKEM768`. Tunnelward sets the list itself, so a change of
+  upstream default does not change what it offers.
+- cargo-vet: the rustls project's publishers (ctz, cpu, djc) are newly
+  trusted; the others match kyberlib's existing trust. The r-efi
+  exemption now covers safe-to-deploy, because aws-lc-sys's build
+  reaches it on UEFI hosts, so the exemption baseline is 3 for the
+  same three crates.
+
+### Fixed
+
+- Release packaging: the build step failed on the `LICENSES/` directory,
+  so the first v0.0.1 release run published nothing. Archives now carry
+  `LICENSES/` alongside `LICENSE`.
+- Release notes: What's Changed titles are set in backticks, and the
+  Checksums block lists every attached asset, `SHA256SUMS` included,
+  as the release standard asks.
+
+### Changed
+
+- Releases attach `SHA256SUMS.sigstore.json`, a keyless cosign
+  signature of `SHA256SUMS` tied to the release workflow run.
+
 ## [0.0.2]
 
 ### Added
@@ -52,5 +93,6 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 - Licence GPL-3.0-only, REUSE metadata, security policy, contribution
   guide, code of conduct and agent instructions.
 
+[0.0.3]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/sebastienrousseau/tunnelward/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/sebastienrousseau/tunnelward/releases/tag/v0.0.1

@@ -104,7 +104,7 @@ tunnel itself lands from v0.0.4.
 ## The Tunnelward ecosystem
 
 One crate per concern, so the protocol core can be fuzzed and audited on
-its own. `tw-proto` and `tw-cli` have code; the others are placeholders
+its own. `tw-proto`, `tw-crypto` and `tw-cli` have code; the others are placeholders
 until the release the plan gives them.
 
 | Component | Purpose | Use case |
@@ -129,7 +129,7 @@ until the release the plan gives them.
 | CLI | `tunnelward --version`, `--help` | Shipped in 0.0.1 |
 | Protocol | Register, Accept, Reject frames; length-prefixed CBOR codec | Shipped in 0.0.2 |
 | Transport | Reverse HTTP/2 over outbound TLS | Planned for 0.0.4 |
-| Crypto | Hybrid PQ TLS (X25519MLKEM768) | Planned for 0.0.3 |
+| Crypto | TLS 1.3 only; hybrid PQ key exchange (X25519MLKEM768) first, optional hybrid-only; mutual TLS | Shipped in 0.0.3 |
 
 ---
 
@@ -197,6 +197,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for the toolchain and what the gate runs.
 
 ## Security
 
+- TLS 1.3 only, with `X25519MLKEM768` offered first on every hop; a test asserts the negotiated group (`crates/tw-crypto/tests/handshake.rs`).
 - No `unsafe` code in any Tunnelward crate (`unsafe_code = "forbid"`).
 - No `unwrap`, `expect` or `panic!` outside tests (clippy, denied).
 - Dependencies checked by `cargo deny` and `cargo vet` on every pull request; Actions pinned by commit SHA.

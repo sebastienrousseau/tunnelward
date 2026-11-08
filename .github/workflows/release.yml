@@ -8,11 +8,14 @@
 # tags can be rebuilt with today's tooling.
 #
 #   build      tunnelward for five targets, packaged with licences
-#   publish    SHA256SUMS, CycloneDX SBOM, SLSA provenance, Homebrew
-#              formula, release notes, GitHub Release
+#   publish    SHA256SUMS (cosign-signed), CycloneDX SBOM, SLSA
+#              provenance, Homebrew formula, release notes, GitHub Release
 #   container  multi-arch distroless image on GHCR, cosign-signed
 #
 # Verify an asset:   gh attestation verify --owner sebastienrousseau <file>
+# Verify checksums:  cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
+#   --certificate-identity-regexp '^https://github\.com/sebastienrousseau/tunnelward/' \
+#   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 # Verify the image:  cosign verify ghcr.io/sebastienrousseau/tunnelward:<v> \
 #   --certificate-identity-regexp '^https://github\.com/sebastienrousseau/tunnelward/' \
 #   --certificate-oidc-issuer https://token.actions.githubusercontent.com
@@ -112,7 +115,7 @@ jobs:
           mkdir -p "dist/$name"
           exe=tunnelward
           [[ "$TARGET" == *windows* ]] && exe=tunnelward.exe
-          cp "target/$TARGET/release/$exe" README.md CHANGELOG.md LICENSE* "dist/$name/"
+          cp -R "target/$TARGET/release/$exe" README.md CHANGELOG.md LICENSE* "dist/$name/"
           cd dist
           if [[ "$TARGET" == *windows* ]]; then
             7z a -tzip "$name.zip" "$name" > /dev/null
@@ -171,8 +174,12 @@ jobs:
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/*
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign the checksums
+        # Keyless: the bundle ties SHA256SUMS to this workflow run.
+        run: cosign sign-blob --yes --bundle dist/SHA256SUMS.sigstore.json dist/SHA256SUMS
       - name: Release notes
-        run: bash tooling/scripts/release-notes.sh "$TAG" dist/SHA256SUMS tooling/docs/releases > notes.md
+        run: bash tooling/scripts/release-notes.sh "$TAG" dist tooling/docs/releases > notes.md
       - name: Create or update the release
         env:
           LATEST: ${{ needs.validate.outputs.latest }}

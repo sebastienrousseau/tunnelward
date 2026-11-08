@@ -41,6 +41,12 @@ cargo xtask fuzz 60     # replay seeds, then 60 s per fuzz target
 A fuzz crash leaves its input in `fuzz/artifacts/`. Fix the bug, then
 commit that input to `fuzz/seeds/<target>/` so every run replays it.
 
+## Test certificates
+
+`crates/tw-crypto/tests/pki/` holds TEST-ONLY certificates and keys,
+written by `scripts/gen-test-pki.sh` (needs the `openssl` CLI). They are
+valid for 100 years; regenerate them only if a test needs a new one.
+
 ## Supply chain
 
 `cargo vet` must pass, and `scripts/vet.sh` fails if the number of
