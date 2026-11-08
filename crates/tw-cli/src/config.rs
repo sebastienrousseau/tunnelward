@@ -36,6 +36,8 @@
 //!
 //! [admin]
 //! token_env = "TUNNELWARD_ADMIN_TOKEN"   # required unless admin is loopback
+//!
+//! [agents]                      # optional: bearer tokens (see agents.rs)
 //! ```
 
 use std::net::SocketAddr;
@@ -62,6 +64,7 @@ pub(crate) struct File {
     connectors: Connectors,
     #[serde(default)]
     admin: Admin,
+    agents: Option<crate::agents::Agents>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -192,6 +195,9 @@ pub(crate) struct Checked {
     pub(crate) watched: Vec<PathBuf>,
     /// How often to look at them.
     pub(crate) reload_every: std::time::Duration,
+    /// Agent-auth key sets fetched from a `jwks_uri`, and how often.
+    pub(crate) key_sets: Vec<std::sync::Arc<tunnelward_gateway::KeySet>>,
+    pub(crate) key_refresh: std::time::Duration,
 }
 
 /// Reads and parses `path`. A parse error names the line and column.
@@ -293,6 +299,21 @@ fn admin(listen: &Listen, admin: &Admin, problems: &mut Problems) -> AdminConfig
     }
 }
 
+/// Turns agent authorisation on when `[agents]` was given; returns the
+/// key sets to fetch and how often.
+fn with_agents(
+    gateway: &mut Config,
+    agents: Option<crate::agents::Checked>,
+) -> (Vec<Arc<tunnelward_gateway::KeySet>>, std::time::Duration) {
+    match agents {
+        Some(a) => {
+            gateway.ingress.agent_auth = Some(a.auth);
+            (a.fetched, a.refresh)
+        }
+        None => (Vec::new(), std::time::Duration::from_secs(600)),
+    }
+}
+
 /// Runs every check on `file` (read from `path`) and builds the gateway
 /// configuration, or lists every problem found.
 pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
@@ -313,12 +334,17 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
     let admin = admin(&file.listen, &file.admin, &mut problems);
     let cors = cors(&file.ingress.cors, &mut problems);
     let owners = owners(&file.connectors.owners, &mut problems);
+    let agents = file
+        .agents
+        .as_ref()
+        .and_then(|a| crate::agents::check(base, a, &mut problems));
     let (Some(tls), Some(ingress_tls), true) = (tls, ingress_tls, problems.is_empty()) else {
         return Err(problems);
     };
     let mut gateway = Config::new(Arc::new(tls));
     gateway.connector_allow = allow;
     gateway.route_owners = owners;
+    let (key_sets, key_refresh) = with_agents(&mut gateway, agents);
     gateway.ingress.tls = ingress_tls.map(Arc::new);
     gateway.ingress.trusted_proxies = trusted;
     gateway.ingress.proxy_protocol = file.ingress.proxy_protocol;
@@ -342,5 +368,7 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         admin,
         watched,
         reload_every,
+        key_sets,
+        key_refresh,
     })
 }

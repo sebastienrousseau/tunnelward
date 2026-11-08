@@ -34,8 +34,15 @@ pub(crate) async fn run(path: &Path) -> Result<(), String> {
     };
     println!("tunnelward gateway: {}", listeners.describe());
     let reload = tokio::spawn(reload(path.to_owned(), gateway.clone(), watch));
+    let every = checked.key_refresh;
+    let keys: Vec<_> = checked
+        .key_sets
+        .into_iter()
+        .map(|k| tokio::spawn(async move { k.keep_fresh(every).await }))
+        .collect();
     let stopped = until_one_stops(&gateway, listeners).await;
     reload.abort();
+    keys.iter().for_each(tokio::task::JoinHandle::abort);
     stopped
 }
 

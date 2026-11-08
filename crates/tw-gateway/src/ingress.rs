@@ -19,12 +19,16 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use http::header::{CONTENT_LENGTH, CONTENT_TYPE, HOST, RETRY_AFTER};
+use http::header::{
+    ACCESS_CONTROL_ALLOW_ORIGIN, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HOST, RETRY_AFTER,
+    WWW_AUTHENTICATE,
+};
 use http::{HeaderValue, Method, Request, Response, StatusCode, Version};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::{Body, Frame, Incoming, SizeHint};
 
+use crate::auth;
 use crate::cors::{self, Cors};
 use crate::forwarding::{Stamp, rewrite};
 use crate::provenance;
@@ -83,6 +87,8 @@ struct Refusal {
     status: StatusCode,
     reason: String,
     retry_after: Option<Duration>,
+    /// `WWW-Authenticate`, for an authorisation refusal.
+    challenge: Option<String>,
 }
 
 impl Refusal {
@@ -92,6 +98,7 @@ impl Refusal {
             status,
             reason: reason.into(),
             retry_after: None,
+            challenge: None,
         }
     }
 }
@@ -112,9 +119,15 @@ impl Ingress {
             user_agent: provenance::declared(headers, "user-agent"),
             traceparent: provenance::traceparent(headers),
             mcp_session: provenance::declared(headers, tunnelward_mcp::SESSION_HEADER),
+            client_id: None,
         };
         for o in &ingress.observers {
             o.on_request(&info);
+        }
+        if let Some(auth) = &ingress.agent_auth
+            && auth::is_metadata_request(auth, request.method(), request.uri().path())
+        {
+            return metadata(auth, &info);
         }
         let cors = cors::decide(&ingress.cors, &request);
         let mut response = match cors {
@@ -123,15 +136,30 @@ impl Ingress {
                 let refusal = Refusal::new("TW-I007", StatusCode::FORBIDDEN, "origin not allowed");
                 self.refuse(&info, &refusal, started)
             }
-            Cors::None | Cors::Allowed(_) => match self.forward(request, &info).await {
-                Ok(response) => self.observed(response, info, started),
-                Err(refusal) => self.refuse(&info, &refusal, started),
-            },
+            Cors::None | Cors::Allowed(_) => self.serve(request, info, started).await,
         };
         if let Cors::Allowed(headers) = cors {
             response.headers_mut().extend(headers);
         }
         response
+    }
+
+    /// Authorises, then forwards: the path of every request that is not
+    /// a CORS preflight or the metadata document.
+    async fn serve(
+        &self,
+        request: Request<Incoming>,
+        mut info: RequestInfo,
+        started: Instant,
+    ) -> Response<IngressBody> {
+        let outcome = match self.authorise(&request, &mut info) {
+            Ok(()) => self.forward(request, &info).await,
+            Err(refusal) => Err(refusal),
+        };
+        match outcome {
+            Ok(response) => self.observed(response, info, started),
+            Err(refusal) => self.refuse(&info, &refusal, started),
+        }
     }
 
     async fn forward(
@@ -153,6 +181,24 @@ impl Ingress {
                 "no response within the request timeout",
             )),
         }
+    }
+
+    /// With [`crate::AgentAuth`] on, admits only a request whose bearer
+    /// token passes, recording its client id.
+    fn authorise(
+        &self,
+        request: &Request<Incoming>,
+        info: &mut RequestInfo,
+    ) -> Result<(), Refusal> {
+        let Some(auth) = &self.gateway.inner.config.ingress.agent_auth else {
+            return Ok(());
+        };
+        let principal = auth::authorise(auth, request.headers()).map_err(|r| Refusal {
+            challenge: Some(r.challenge),
+            ..Refusal::new(r.id, r.status, r.reason)
+        })?;
+        info.client_id = principal.client_id;
+        Ok(())
     }
 
     /// Checks that cost nothing: URL length, declared body size, rate.
@@ -240,6 +286,10 @@ impl Ingress {
         };
         rewrite(request.headers_mut(), &stamp);
         stamp_request_id(request.headers_mut(), info);
+        if ingress.agent_auth.is_some() {
+            // The token is for the gateway; passing it on is forbidden.
+            request.headers_mut().remove(AUTHORIZATION);
+        }
         request
     }
 
@@ -311,6 +361,13 @@ impl Ingress {
             .headers_mut()
             .insert(TW_ERROR, HeaderValue::from_static(refusal.id));
         stamp_request_id(response.headers_mut(), info);
+        if let Some(value) = refusal
+            .challenge
+            .as_deref()
+            .and_then(|c| HeaderValue::from_str(c).ok())
+        {
+            response.headers_mut().insert(WWW_AUTHENTICATE, value);
+        }
         if let Some(wait) = refusal.retry_after {
             let secs = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
             response
@@ -328,6 +385,18 @@ fn preflight(headers: &http::HeaderMap, info: &RequestInfo) -> Response<IngressB
     *response.status_mut() = StatusCode::NO_CONTENT;
     response.headers_mut().extend(headers.clone());
     stamp_request_id(response.headers_mut(), info);
+    response
+}
+
+/// The protected-resource metadata, answered by the gateway itself and
+/// readable from any origin.
+fn metadata(auth: &crate::AgentAuth, info: &RequestInfo) -> Response<IngressBody> {
+    let body = Full::new(Bytes::from(auth::metadata(auth)));
+    let mut response = Response::new(body.map_err(|e| match e {}).boxed());
+    let headers = response.headers_mut();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    stamp_request_id(headers, info);
     response
 }
 

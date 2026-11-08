@@ -129,6 +129,38 @@ fn a_bad_config_lists_every_problem() -> Res<()> {
 }
 
 #[test]
+fn agent_auth_checks_ok_or_lists_its_problems() -> Res<()> {
+    let dir = pki_dir("agents")?;
+    std::fs::write(dir.join("keys.json"), r#"{"keys":[]}"#)?;
+    let good = "[agents]\nresource = \"https://mcp.example.org\"\nscopes = [\"mcp\"]\n\
+                [[agents.issuers]]\nissuer = \"https://as.example.org\"\njwks = \"keys.json\"\n";
+    let path = write_config(&dir, good)?;
+    let out = tunnelward(&["config", "check", &path.to_string_lossy()])?;
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let bad = "[agents]\nresource = \"mcp.example.org\"\n\
+               [[agents.issuers]]\nissuer = \"https://a\"\n\
+               [[agents.issuers]]\nissuer = \"https://b\"\njwks = \"keys.json\"\n\
+               jwks_uri = \"https://b/jwks\"\n\
+               [[agents.issuers]]\nissuer = \"https://c\"\njwks_uri = \"http://c/jwks\"\n";
+    let path = write_config(&dir, bad)?;
+    let out = tunnelward(&["config", "check", &path.to_string_lossy()])?;
+    let errors = text(&out.stderr);
+    assert_eq!(out.status.code(), Some(1));
+    for expected in [
+        "[agents] resource \"mcp.example.org\": give the https:// URL agents use",
+        "issuer \"https://a\": give jwks_uri or jwks",
+        "issuer \"https://b\": give jwks_uri or jwks, not both",
+        "issuer \"https://c\": jwks_uri",
+    ] {
+        assert!(
+            errors.contains(expected),
+            "{expected} missing from: {errors}"
+        );
+    }
+    Ok(std::fs::remove_dir_all(dir)?)
+}
+
+#[test]
 fn an_unknown_key_names_its_line() -> Res<()> {
     let dir = pki_dir("unknown")?;
     let path = write_config(&dir, "[admin]\ntoken = \"inline\"\n")?;

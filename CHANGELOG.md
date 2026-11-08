@@ -7,6 +7,25 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.11]
+
+### Added
+
+- Agent-side authorisation, per the MCP authorisation specification: with
+  `IngressConfig::agent_auth` (`[agents]` in the gateway file) the
+  gateway is an OAuth 2.1 resource server. Every request needs a bearer
+  JWT access token from a listed issuer, signed with one of its keys
+  (ES256, RS256, PS256 or EdDSA; never `none` or a shared secret), whose
+  `aud` is the gateway's resource (RFC 8707), in date, with the scopes
+  asked for. Otherwise 401 `TW-I008` or 403 `TW-I009`, with a
+  `WWW-Authenticate` challenge naming the metadata. The gateway serves
+  its protected-resource metadata (RFC 9728), strips the token before a
+  connector sees it, and records the token's `client_id` for observers.
+  Issuer keys come from a JWK Set file or are fetched from `jwks_uri`
+  over HTTPS, refreshed every 10 minutes and sooner for an unknown key
+  id; a failed fetch keeps the old keys. Token checks are in-house on
+  aws-lc-rs: no JWT or base64 crate joins cargo-vet.
+
 ## [0.0.10]
 
 ### Added

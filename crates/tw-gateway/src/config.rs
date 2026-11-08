@@ -89,6 +89,9 @@ pub struct IngressConfig {
     /// CORS rules per path (G17). Empty: no CORS headers, and browsers
     /// keep their same-origin rule.
     pub cors: Vec<crate::CorsRule>,
+    /// Bearer tokens agents must present (MCP authorisation). `None`
+    /// lets every request through, as before.
+    pub agent_auth: Option<crate::AgentAuth>,
 }
 
 impl Default for IngressConfig {
@@ -109,6 +112,7 @@ impl Default for IngressConfig {
             legacy_forwarded: true,
             observers: Vec::new(),
             cors: Vec::new(),
+            agent_auth: None,
         }
     }
 }

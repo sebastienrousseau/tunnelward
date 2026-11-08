@@ -185,6 +185,24 @@ by default). 413, before any of the body is read.
 `cors` rule allows for that path. 403; the connector never sees it. Add
 the origin to the path's rule if the page should reach the service.
 
+### TW-I008
+
+**Unauthorized.** Agent authorisation (`[agents]`) is on and the request
+has no bearer token, or its token fails a check: an issuer not listed, a
+signature no key of that issuer verifies, an `aud` that is not the
+gateway's `resource`, or an `exp` or `nbf` outside the 60 s leeway. 401
+with `WWW-Authenticate`, whose `error_description` names the check and
+whose `resource_metadata` points at the gateway's protected-resource
+metadata, where an MCP client finds the authorisation server. Get a token
+for the resource from one of the listed issuers.
+
+### TW-I009
+
+**Insufficient scope.** The token is valid but does not grant every scope
+in `[agents] scopes`. 403 with `WWW-Authenticate: Bearer
+error="insufficient_scope"` naming the scopes. Ask the authorisation
+server for a token with them.
+
 ## Connector (`TW-C`)
 
 A rejected registration reports its `TW-R` id instead.

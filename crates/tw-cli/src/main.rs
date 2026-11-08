@@ -3,6 +3,7 @@
 
 //! The `tunnelward` command-line tool.
 
+mod agents;
 mod args;
 mod config;
 mod connector;

@@ -18,6 +18,7 @@
 
 mod admin;
 mod admit;
+mod auth;
 mod cidr;
 mod claims;
 mod client_addr;
@@ -41,6 +42,7 @@ mod route;
 mod tls;
 
 pub use admin::{AdminConfig, Connection, Inventory, Redaction};
+pub use auth::{AgentAuth, Issuer, KeyError, KeySet};
 pub use cidr::{Cidr, CidrError};
 pub use client_addr::ClientAddr;
 pub use config::{Config, IngressConfig, RouteOwner};
