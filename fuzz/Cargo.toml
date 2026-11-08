@@ -17,12 +17,20 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4.13"
 tw-proto = { path = "../crates/tw-proto" }
+tw-gateway = { path = "../crates/tw-gateway" }
 
 [workspace]
 
 [[bin]]
 name = "decode"
 path = "fuzz_targets/decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "proxy"
+path = "fuzz_targets/proxy.rs"
 test = false
 doc = false
 bench = false

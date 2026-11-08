@@ -20,7 +20,7 @@ SPDX-License-Identifier = "GPL-3.0-only"
 # Files with no comment syntax, a binary, and the README, whose template
 # fixes its first line as the bare licence identifier.
 [[annotations]]
-path = [".gitignore", ".complexity-baseline", ".github/demo.gif", "README.md"]
+path = [".gitignore", ".gitattributes", ".complexity-baseline", ".github/demo.gif", "README.md"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>"
 SPDX-License-Identifier = "GPL-3.0-only"

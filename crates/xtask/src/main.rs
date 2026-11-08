@@ -96,7 +96,7 @@ const MIRI: &[Step] = &[Step {
 }];
 
 /// Fuzz targets, each with a committed seed corpus in `fuzz/seeds/<name>`.
-const FUZZ_TARGETS: &[&str] = &["decode"];
+const FUZZ_TARGETS: &[&str] = &["decode", "proxy"];
 
 /// Seconds each target runs when `cargo xtask fuzz` is given no time.
 const DEFAULT_FUZZ_SECS: u32 = 60;

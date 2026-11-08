@@ -43,6 +43,12 @@ mechanically.
   its body, answers an invalid frame with `Reject`, and drops a
   connection that sends nothing within the registration timeout
   (`crates/tw-gateway/tests/tunnel.rs`).
+- **A client cannot choose its own address.** The ingress believes
+  `Forwarded`, `X-Forwarded-For` and PROXY headers only from configured
+  trusted proxies, removes whatever forwarding headers a client sent,
+  and states the resolved client once (`crates/tw-gateway/tests/ingress.rs`,
+  `src/client_addr.rs`, `src/forwarding.rs`). The PROXY protocol parser is
+  fuzzed (`fuzz/fuzz_targets/proxy.rs`).
 - **No panicking shortcuts outside tests.** `unwrap_used`, `expect_used`
   and `panic` are denied in `[workspace.lints.clippy]`.
 - **Dependencies are checked for advisories, licences and sources** by

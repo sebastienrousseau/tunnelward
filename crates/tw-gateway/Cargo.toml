@@ -19,7 +19,7 @@ bytes.workspace = true
 h2.workspace = true
 http.workspace = true
 http-body-util.workspace = true
-hyper = { workspace = true, features = ["client", "http2"] }
+hyper = { workspace = true, features = ["client", "http1", "http2", "server"] }
 hyper-util.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt", "time"] }
 tokio-rustls.workspace = true
@@ -27,7 +27,7 @@ tw-crypto = { path = "../tw-crypto" }
 tw-proto = { path = "../tw-proto", features = ["io"] }
 
 [dev-dependencies]
-hyper = { workspace = true, features = ["http1", "server"] }
+hyper = { workspace = true, features = ["client", "http1", "http2", "server"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tw-connector = { path = "../tw-connector" }
 tw-testpki = { path = "../tw-testpki" }
