@@ -38,6 +38,11 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   certificates and keys it names (`[tls] reload_secs`, default 10) and
   swaps them in after the whole file passes its checks again; a file
   that fails keeps the running certificates and says why.
+- `tunnelward connector --config <file>`: a connector in front of a local
+  service (HTTP or a Unix socket), from a TOML file naming the gateway
+  (a fixed address, or a name looked up again every minute), its CA and
+  server name, the connector's certificate and SPIFFE ID, and its routes
+  and domains. `tunnelward config check` checks a connector's file too.
 - MCP pass-through tests: `initialize` with its session header and a
   `tools/call` answered by an SSE stream reach the client byte for byte.
 

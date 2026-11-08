@@ -5,6 +5,7 @@
 
 mod args;
 mod config;
+mod connector;
 mod dev;
 mod devcert;
 mod doctor;
@@ -30,8 +31,10 @@ Commands:
                  Defaults: --listen 127.0.0.1:8000, --route * (every request)
   gateway --config <file>
                  Run a gateway from its TOML configuration file
+  connector --config <file>
+                 Run a connector in front of a local service, from its TOML file
   config check <file>
-                 Check a configuration file and list every problem
+                 Check a gateway's or a connector's file and list every problem
   doctor [--config <file>]
                  Check this machine and, given a file, its configuration
 
@@ -89,6 +92,33 @@ fn gateway(args: &[String]) -> Result<(), Outcome> {
         .map_err(Outcome::Failed)
 }
 
+fn connector(args: &[String]) -> Result<(), Outcome> {
+    let args = Args::parse(args, &["config"])?;
+    let path = args
+        .get("config")
+        .ok_or_else(|| UsageError("connector needs '--config <file>'".into()))?;
+    runtime()?
+        .block_on(connector::run(Path::new(path)))
+        .map_err(Outcome::Failed)
+}
+
+/// Checks a connector's file (one with `[target]`) or a gateway's.
+fn check_file(path: &Path) -> Result<(), Outcome> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| Outcome::Failed(format!("{}: {e}", path.display())))?;
+    let problems = if connector::is_connector_file(&text) {
+        let file = connector::load(path).map_err(Outcome::Failed)?;
+        connector::check(path, &file).err()
+    } else {
+        let file = config::load(path).map_err(Outcome::Failed)?;
+        config::check(path, file).err()
+    };
+    match problems {
+        None => Ok(()),
+        Some(problems) => Err(Outcome::Failed(problems.join("\n"))),
+    }
+}
+
 fn config_check(args: &[String]) -> Result<(), Outcome> {
     let args = Args::parse(args, &[])?;
     let [command, path] = args.positional.as_slice() else {
@@ -98,8 +128,7 @@ fn config_check(args: &[String]) -> Result<(), Outcome> {
         return Err(UsageError(format!("unknown config command '{command}'")).into());
     }
     let path = Path::new(path);
-    let file = config::load(path).map_err(Outcome::Failed)?;
-    config::check(path, file).map_err(|problems| Outcome::Failed(problems.join("\n")))?;
+    check_file(path)?;
     println!("{}: ok", path.display());
     Ok(())
 }
@@ -118,25 +147,37 @@ fn doctor(args: &[String]) -> Result<(), Outcome> {
     }
 }
 
+type Command = fn(&[String]) -> Result<(), Outcome>;
+
+/// Every command, by the names that call it.
+const COMMANDS: [(&[&str], Command); 7] = [
+    (&["-h", "--help"], |_| {
+        print!("{USAGE}");
+        Ok(())
+    }),
+    (&["-V", "--version"], |_| {
+        println!("tunnelward {}", env!("CARGO_PKG_VERSION"));
+        Ok(())
+    }),
+    (&["dev"], dev),
+    (&["gateway"], gateway),
+    (&["connector"], connector),
+    (&["config"], config_check),
+    (&["doctor"], doctor),
+];
+
 fn dispatch(args: &[String]) -> Outcome {
-    let (command, rest) = match args.split_first() {
-        Some((command, rest)) => (command.as_str(), rest),
+    let (name, rest) = match args.split_first() {
+        Some((name, rest)) => (name.as_str(), rest),
         None => ("--help", &[][..]),
     };
+    let command = COMMANDS
+        .iter()
+        .find(|(names, _)| names.contains(&name))
+        .map(|(_, command)| *command);
     let result = match command {
-        "-h" | "--help" => {
-            print!("{USAGE}");
-            Ok(())
-        }
-        "-V" | "--version" => {
-            println!("tunnelward {}", env!("CARGO_PKG_VERSION"));
-            Ok(())
-        }
-        "dev" => dev(rest),
-        "gateway" => gateway(rest),
-        "config" => config_check(rest),
-        "doctor" => doctor(rest),
-        other => Err(UsageError(format!("unexpected argument '{other}'")).into()),
+        Some(command) => command(rest),
+        None => Err(UsageError(format!("unexpected argument '{name}'")).into()),
     };
     result.err().unwrap_or(Outcome::Done)
 }

@@ -62,6 +62,14 @@ fn pki_dir(name: &str) -> Res<PathBuf> {
     std::fs::write(dir.join("gateway.crt"), pem("CERTIFICATE", pki::GATEWAY.0))?;
     std::fs::write(dir.join("gateway.key"), pem("PRIVATE KEY", pki::GATEWAY.1))?;
     std::fs::write(dir.join("ca.crt"), pem("CERTIFICATE", pki::CA))?;
+    std::fs::write(
+        dir.join("connector.crt"),
+        pem("CERTIFICATE", pki::CONNECTOR.0),
+    )?;
+    std::fs::write(
+        dir.join("connector.key"),
+        pem("PRIVATE KEY", pki::CONNECTOR.1),
+    )?;
     Ok(dir)
 }
 
@@ -270,5 +278,102 @@ fn the_gateway_reloads_renewed_certificates_and_keeps_good_ones() -> Res<()> {
     std::fs::write(dir.join("gateway.key"), pem("PRIVATE KEY", pki::GATEWAY.1))?;
     expect(&out, "certificates reloaded")?;
     drop(child);
+    Ok(std::fs::remove_dir_all(dir)?)
+}
+
+fn connector_file(dir: &Path, gateway: &str, target: &str, routes: &str) -> Res<PathBuf> {
+    let path = dir.join("connector.toml");
+    std::fs::write(
+        &path,
+        format!(
+            "[gateway]\naddress = \"{gateway}\"\nserver_name = \"{}\"\nca = \"ca.crt\"\n\n\
+             [identity]\ncert = \"connector.crt\"\nkey = \"connector.key\"\n\
+             spiffe_id = \"spiffe://example.org/connector\"\n\n\
+             [register]\nroutes = [{routes}]\n\n[target]\nurl = \"{target}\"\n",
+            pki::GATEWAY_NAME
+        ),
+    )?;
+    Ok(path)
+}
+
+#[test]
+fn a_connector_file_checks_ok_or_lists_its_problems() -> Res<()> {
+    let dir = pki_dir("connector-check")?;
+    let good = connector_file(&dir, "127.0.0.1:7443", "http://127.0.0.1:8080", "\"mcp\"")?;
+    let out = tunnelward(&["config", "check", &good.to_string_lossy()])?;
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let bad = connector_file(&dir, "nowhere", "ftp://x", "\"/bad/\"")?;
+    let out = tunnelward(&["config", "check", &bad.to_string_lossy()])?;
+    let errors = text(&out.stderr);
+    for expected in ["is not a route", "give host:port", "give http://host:port"] {
+        assert!(
+            errors.contains(expected),
+            "{expected} missing from: {errors}"
+        );
+    }
+    Ok(std::fs::remove_dir_all(dir)?)
+}
+
+fn gateway_file(dir: &Path, connectors: &str, ingress: &str) -> Res<PathBuf> {
+    let path = dir.join("tunnelward.toml");
+    std::fs::write(
+        &path,
+        format!(
+            "[listen]\nconnectors = \"{connectors}\"\ningress = \"{ingress}\"\n\n\
+             [tls]\ncert = \"gateway.crt\"\nkey = \"gateway.key\"\nclient_ca = \"ca.crt\"\n"
+        ),
+    )?;
+    Ok(path)
+}
+
+/// `tunnelward connector` on `config`, with its stdout lines.
+fn spawn_connector(config: &Path) -> Res<(Running, Lines)> {
+    let mut child = Running(
+        Command::new(env!("CARGO_BIN_EXE_tunnelward"))
+            .args(["connector", "--config", &config.to_string_lossy()])
+            .stdout(Stdio::piped())
+            .spawn()?,
+    );
+    let out = lines(child.0.stdout.take().ok_or("no stdout")?);
+    Ok((child, out))
+}
+
+/// An agent's GET for `path` at `ingress`, and the whole raw answer.
+fn ask(ingress: &str, path: &str) -> Res<String> {
+    let mut agent = TcpStream::connect(ingress)?;
+    agent.set_read_timeout(Some(Duration::from_secs(5)))?;
+    write!(
+        agent,
+        "GET {path} HTTP/1.1\r\nhost: h\r\nconnection: close\r\n\r\n"
+    )?;
+    let mut answer = String::new();
+    agent.read_to_string(&mut answer)?;
+    Ok(answer)
+}
+
+/// A gateway and a connector from their files in `dir`, in front of a
+/// local service; returns both processes and the ingress address once
+/// the connector has registered.
+fn start_pair(dir: &Path) -> Res<(Running, Running, String)> {
+    let (connectors, ingress, service) = (free_port()?, free_port()?, hello_service()?);
+    let (gateway, gateway_out, _) = spawn_gateway(&gateway_file(dir, &connectors, &ingress)?)?;
+    expect(&gateway_out, "connectors on")?;
+    let target = format!("http://{service}");
+    let file = connector_file(dir, &connectors, &target, "\"mcp\"")?;
+    let (connector, connector_out) = spawn_connector(&file)?;
+    expect(&connector_out, "Registered")?;
+    Ok((gateway, connector, ingress))
+}
+
+#[test]
+fn a_gateway_and_a_connector_from_their_files_serve_a_request() -> Res<()> {
+    let dir = pki_dir("pair")?;
+    let (gateway, connector, ingress) = start_pair(&dir)?;
+    let answer = ask(&ingress, "/mcp/x")?;
+    assert!(
+        answer.starts_with("HTTP/1.1 200") && answer.ends_with("hello"),
+        "{answer}"
+    );
+    drop((connector, gateway));
     Ok(std::fs::remove_dir_all(dir)?)
 }

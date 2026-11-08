@@ -120,7 +120,7 @@ pub(crate) fn load(path: &Path) -> Result<File, String> {
 }
 
 /// Paths in the file are relative to the file's directory.
-fn resolve(base: &Path, path: &Path) -> PathBuf {
+pub(crate) fn resolve(base: &Path, path: &Path) -> PathBuf {
     if path.is_absolute() {
         path.to_owned()
     } else {
@@ -128,7 +128,7 @@ fn resolve(base: &Path, path: &Path) -> PathBuf {
     }
 }
 
-fn chain(path: &Path) -> Result<Vec<CertificateDer<'static>>, String> {
+pub(crate) fn chain(path: &Path) -> Result<Vec<CertificateDer<'static>>, String> {
     let certs = CertificateDer::pem_file_iter(path)
         .and_then(Iterator::collect::<Result<Vec<_>, _>>)
         .map_err(|e| format!("{}: {e}", path.display()))?;
@@ -138,7 +138,7 @@ fn chain(path: &Path) -> Result<Vec<CertificateDer<'static>>, String> {
     Ok(certs)
 }
 
-fn identity(cert: &Path, key: &Path) -> Result<Identity, String> {
+pub(crate) fn identity(cert: &Path, key: &Path) -> Result<Identity, String> {
     let key = PrivateKeyDer::from_pem_file(key).map_err(|e| format!("{}: {e}", key.display()))?;
     Ok(Identity {
         chain: chain(cert)?,
@@ -146,7 +146,7 @@ fn identity(cert: &Path, key: &Path) -> Result<Identity, String> {
     })
 }
 
-fn roots(path: &Path) -> Result<Arc<RootCertStore>, String> {
+pub(crate) fn roots(path: &Path) -> Result<Arc<RootCertStore>, String> {
     let mut store = RootCertStore::empty();
     for cert in chain(path)? {
         store
