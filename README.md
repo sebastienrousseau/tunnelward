@@ -24,7 +24,7 @@ Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/release
 </p>
 
 <p align="center">
-  <img src=".github/demo.gif" alt="A terminal runs tunnelward --version, which prints tunnelward 0.0.1, then tunnelward --help, which prints the usage" width="100%" />
+  <img src=".github/demo.gif" alt="A terminal runs tunnelward dev in front of a local web server; curl through the tunnel prints hello from a private service, and the admin API shows one connector with two connections" width="100%" />
 </p>
 
 ---
@@ -63,20 +63,28 @@ Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/release
 
 ## Install
 
+### The `tunnelward` binary
+
+```bash
+cargo install --locked tunnelward
+```
+
+Pre-built binaries for Linux (static musl), macOS and Windows, with
+checksums, an SBOM and build provenance, are on each
+[GitHub Release](https://github.com/sebastienrousseau/tunnelward/releases).
+A container image is at `ghcr.io/sebastienrousseau/tunnelward`.
+
 ### As a Rust library
 
 ```toml
-# Not published yet. The crates go to crates.io once they carry an API
-# worth depending on; until then, build from source as below.
+[dependencies]
+tunnelward-connector = "0.0.8"   # embed a connector in your service
+tunnelward-gateway = "0.0.8"     # embed a gateway in your server
 ```
 
-From source, the `tunnelward` binary:
-
-```bash
-git clone https://github.com/sebastienrousseau/tunnelward
-cd tunnelward
-cargo install --locked --path crates/tw-cli
-```
+`tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
+the TLS configuration underneath. API documentation is on
+[docs.rs](https://docs.rs/tunnelward-connector).
 
 ---
 
@@ -89,17 +97,19 @@ cargo install --locked --path crates/tw-cli
 
 ## Quick Start
 
+Put a tunnel in front of a service running on your machine:
+
 ```bash
-cargo build --workspace --locked
-cargo run --quiet --locked -p tunnelward -- --version
-cargo xtask ci
+python3 -m http.server 8080 &              # any local HTTP service
+tunnelward dev --to http://127.0.0.1:8080  # gateway and connector, one process
+curl http://127.0.0.1:8000/                # an agent's request, through the tunnel
 ```
 
-The binary reports its version and usage, and `cargo xtask ci` runs
-every check CI runs. Since v0.0.4 a connector can register with a gateway
-and serve requests through its outbound connection; the
-`tunnelward` subcommands that run them arrive in v0.0.8. Until then they
-are libraries: see `crates/tw-gateway/tests/tunnel.rs`.
+`tunnelward dev` runs a gateway and a connector together. The connector
+dials the gateway over the same mutual TLS, with post-quantum key
+exchange, that a real deployment uses, using throwaway certificates made
+at startup, and every listener stays on loopback. Add
+`--admin 127.0.0.1:9000` to see `/inventory` and `/metrics`.
 
 ---
 
@@ -173,13 +183,28 @@ The workspace has no Cargo features yet.
 
 ## Configuration
 
-Nothing to configure in v0.0.1.
+`tunnelward gateway --config tunnelward.toml` runs a gateway from a TOML
+file: its listeners, its TLS certificates, the agent ingress, the
+connector allowlist and the admin token. The format, with every key, is
+documented at the top of [`crates/tw-cli/src/config.rs`](crates/tw-cli/src/config.rs).
+Check a file before deploying it:
+
+```bash
+tunnelward config check tunnelward.toml   # every problem, or "ok"
+tunnelward doctor --config tunnelward.toml
+```
+
+Errors carry stable ids (`TW-S001` and so on), explained in
+[docs/errors.md](docs/errors.md).
 
 ---
 
 ## Examples
 
-No examples yet; the first, a gateway and connector on one machine, comes with `tunnelward dev` in 0.0.8.
+The [Quick Start](#quick-start) is the first example: a gateway and a
+connector on one machine with `tunnelward dev`. For embedding, the
+gateway's tests show each feature end to end
+(`crates/tw-gateway/tests/`).
 
 ---
 
