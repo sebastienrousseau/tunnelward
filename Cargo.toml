@@ -43,6 +43,7 @@ tunnelward-gateway = { path = "crates/tw-gateway", version = "=0.0.8" }
 tunnelward-testpki = { path = "crates/tw-testpki" }
 cbor4ii = { version = "1.2.4", default-features = false, features = ["serde1", "use_std"] }
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 serde_bytes = { version = "0.11.19", default-features = false, features = ["std"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "prefer-post-quantum", "std"] }
 tokio = { version = "1.54.1", default-features = false }

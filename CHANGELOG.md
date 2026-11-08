@@ -7,6 +7,29 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.8]
+
+### Added
+
+- The admin API (FR-9) on its own listener, `Gateway::serve_admin`
+  (`Gateway::admin` for embedders): `/healthz`, `/readyz`, `/inventory`
+  (counts only by default; `?redaction=internal` adds each connection's
+  connector, address, routes and load), `/metrics` in Prometheus text
+  (G15), and `POST /drain` by connector, route or address. With
+  `AdminConfig::token` set every request needs that bearer token;
+  without one only loopback clients are served.
+- FR-1's acceptance test: a gateway killed under load fails only its
+  own in-flight requests, and new requests succeed on the other gateway
+  within one backoff window.
+
+### Changed
+
+- The crates are renamed `tunnelward-*` (the binary crate is
+  `tunnelward`), and the five with code are published on crates.io from
+  this release. Directories keep their `crates/tw-*` names.
+- `serde_json` joins the gateway's dependencies for the admin API; its
+  publishers were already trusted under the cargo-vet policy.
+
 ## [0.0.7]
 
 ### Added
