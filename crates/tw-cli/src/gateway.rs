@@ -32,13 +32,7 @@ pub(crate) async fn run(path: &Path) -> Result<(), String> {
         ingress: bind(listen.ingress).await?,
         admin,
     };
-    let admin_note = listen.admin.map(|a| format!(", admin on {a}"));
-    println!(
-        "tunnelward gateway: connectors on {}, agents on {}{}",
-        listen.connectors,
-        listen.ingress,
-        admin_note.unwrap_or_default()
-    );
+    println!("tunnelward gateway: {}", listeners.describe());
     let reload = tokio::spawn(reload(path.to_owned(), gateway.clone(), watch));
     let stopped = until_one_stops(&gateway, listeners).await;
     reload.abort();

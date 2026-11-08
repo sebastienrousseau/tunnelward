@@ -99,12 +99,19 @@ fn a_good_config_checks_ok() -> Res<()> {
 fn a_bad_config_lists_every_problem() -> Res<()> {
     let dir = pki_dir("bad")?;
     let extra = "[ingress]\ncert = \"gateway.crt\"\ntrusted_proxies = [\"10.0.0.0/33\"]\n\
+                 [[ingress.cors]]\npath = \"mcp\"\norigins = [\"https://app.example/x\"]\n\
                  [connectors]\nallow = [\"nonsense\"]\n";
     let path = write_config(&dir, extra)?;
     let out = tunnelward(&["config", "check", &path.to_string_lossy()])?;
     assert_eq!(out.status.code(), Some(1));
     let errors = text(&out.stderr);
-    for expected in ["give both cert and key", "10.0.0.0/33", "nonsense"] {
+    for expected in [
+        "give both cert and key",
+        "10.0.0.0/33",
+        "nonsense",
+        "start it with /",
+        "give scheme://host",
+    ] {
         assert!(
             errors.contains(expected),
             "{expected} missing from: {errors}"
@@ -158,8 +165,13 @@ fn hello_service() -> Res<String> {
     Ok(addr)
 }
 
-fn free_port() -> Res<String> {
-    Ok(TcpListener::bind("127.0.0.1:0")?.local_addr()?.to_string())
+/// The address after `<label> on ` in a startup line.
+fn bound(line: &str, label: &str) -> Res<String> {
+    let rest = line
+        .split(&format!("{label} on "))
+        .nth(1)
+        .ok_or_else(|| format!("no {label} address in {line:?}"))?;
+    Ok(rest.split([',', ' ']).next().unwrap_or_default().to_owned())
 }
 
 /// Stops the child when the test ends, pass or fail.
@@ -174,11 +186,11 @@ impl Drop for Running {
 
 #[test]
 fn dev_puts_a_tunnel_in_front_of_a_local_service() -> Res<()> {
-    let (service, listen) = (hello_service()?, free_port()?);
+    let service = hello_service()?;
     let to = format!("http://{service}");
     let mut child = Running(
         Command::new(env!("CARGO_BIN_EXE_tunnelward"))
-            .args(["dev", "--to", &to, "--listen", &listen])
+            .args(["dev", "--to", &to, "--listen", "127.0.0.1:0"])
             .stdout(Stdio::piped())
             .spawn()?,
     );
@@ -186,12 +198,12 @@ fn dev_puts_a_tunnel_in_front_of_a_local_service() -> Res<()> {
     let mut line = String::new();
     BufReader::new(stdout).read_line(&mut line)?;
     assert!(line.starts_with("tunnelward dev: ready."), "{line}");
-
-    let mut agent = TcpStream::connect(&listen)?;
-    agent.set_read_timeout(Some(Duration::from_secs(5)))?;
-    agent.write_all(b"GET /anything HTTP/1.1\r\nhost: dev\r\nconnection: close\r\n\r\n")?;
-    let mut answer = String::new();
-    agent.read_to_string(&mut answer)?;
+    let listen = line
+        .split("http://")
+        .nth(1)
+        .and_then(|rest| rest.split(' ').next())
+        .ok_or("no address in the ready line")?;
+    let answer = ask(listen, "/anything")?;
     assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
     assert!(answer.ends_with("hello"), "{answer}");
     Ok(())
@@ -240,11 +252,13 @@ fn lines(stream: impl Read + Send + 'static) -> std::sync::mpsc::Receiver<String
     rx
 }
 
-fn expect(rx: &Lines, wanted: &str) -> Res<()> {
+/// Waits for a line containing `wanted`, and returns it.
+fn expect(rx: &Lines, wanted: &str) -> Res<String> {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
-        if rx.recv_timeout(left)?.contains(wanted) {
-            return Ok(());
+        let line = rx.recv_timeout(left)?;
+        if line.contains(wanted) {
+            return Ok(line);
         }
     }
     Err(format!("no line containing {wanted:?}").into())
@@ -355,9 +369,11 @@ fn ask(ingress: &str, path: &str) -> Res<String> {
 /// local service; returns both processes and the ingress address once
 /// the connector has registered.
 fn start_pair(dir: &Path) -> Res<(Running, Running, String)> {
-    let (connectors, ingress, service) = (free_port()?, free_port()?, hello_service()?);
-    let (gateway, gateway_out, _) = spawn_gateway(&gateway_file(dir, &connectors, &ingress)?)?;
-    expect(&gateway_out, "connectors on")?;
+    let service = hello_service()?;
+    let (gateway, gateway_out, _) =
+        spawn_gateway(&gateway_file(dir, "127.0.0.1:0", "127.0.0.1:0")?)?;
+    let started = expect(&gateway_out, "connectors on")?;
+    let (connectors, ingress) = (bound(&started, "connectors")?, bound(&started, "agents")?);
     let target = format!("http://{service}");
     let file = connector_file(dir, &connectors, &target, "\"mcp\"")?;
     let (connector, connector_out) = spawn_connector(&file)?;
