@@ -132,12 +132,15 @@ fn run_all(steps: &[Step]) -> Result<(), String> {
 /// inputs go to the untracked `fuzz/corpus/<name>`; the seeds stay as
 /// committed.
 fn fuzz(secs: u32) -> Result<(), String> {
+    let host = host_triple()?;
     FUZZ_TARGETS.iter().try_for_each(|target| {
         let corpus = format!("fuzz/corpus/{target}");
         fs::create_dir_all(&corpus).map_err(|e| format!("fuzz: cannot create {corpus}: {e}"))?;
         println!("==> fuzz {target} for {secs} s");
         let status = Command::new("cargo")
-            .args(["+nightly", "fuzz", "run", target, &corpus])
+            .args([
+                "+nightly", "fuzz", "run", "--target", &host, target, &corpus,
+            ])
             .arg(format!("fuzz/seeds/{target}"))
             .args(["--", &format!("-max_total_time={secs}")])
             .status()
@@ -147,6 +150,21 @@ fn fuzz(secs: u32) -> Result<(), String> {
             .then_some(())
             .ok_or(format!("fuzz {target}: failed ({status})"))
     })
+}
+
+/// The nightly toolchain's host triple. cargo-fuzz otherwise builds for
+/// the triple it was itself built for, and a prebuilt musl `cargo-fuzz`
+/// (as CI installs) then builds for musl, where `AddressSanitizer` cannot run.
+fn host_triple() -> Result<String, String> {
+    let out = Command::new("rustc")
+        .args(["+nightly", "-vV"])
+        .output()
+        .map_err(|e| format!("fuzz: cannot run rustc: {e}"))?;
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))
+        .map(str::to_owned)
+        .ok_or_else(|| "fuzz: rustc -vV printed no host".to_owned())
 }
 
 fn fuzz_secs(arg: Option<&str>) -> Result<u32, String> {
