@@ -123,7 +123,7 @@ until the release the plan gives them.
 | :--- | :--- | :--- |
 | `tunnelward-proto` | Register frames, limits, error codes | Parsing what a connector sends before its identity is known |
 | `tunnelward-crypto` | rustls configuration with hybrid post-quantum key exchange | X25519MLKEM768 on every TLS hop |
-| `tunnelward-identity` | SPIFFE SVIDs, enrolment tokens | Proving which workload a connector is |
+| `tunnelward-identity` | The SPIFFE ID in an X.509-SVID; enrolment tokens later | Proving which workload a connector is |
 | `tunnelward-attest` | passmcp attestation verification | Admitting only MCP servers that passed passmcp |
 | `tunnelward-policy` | Cedar policy per MCP tool | Allowing or denying each `tools/call` |
 | `tunnelward-mcp` | MCP envelope parsing, Streamable HTTP, SSE | Reading the method and tool name without parsing the body |
@@ -213,7 +213,7 @@ gateway's tests show each feature end to end
 
 ## When not to use Tunnelward
 
-- In production, yet: identity checks beyond mutual TLS, pools, reconnects and the agent-facing ingress are still to come (see the plan).
+- In production, yet: per-tool policy, attestation, the audit log and agent-side authorisation are still to come (see the plan).
 - For LLM routing, prompt guardrails or token accounting: use an MCP or LLM gateway such as agentgateway in front of it.
 - As a general-purpose VPN or mesh.
 - If you want a vendor edge to run the data plane for you: Tunnelward is self-hosted.
@@ -237,7 +237,8 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for the toolchain and what the gate runs.
 - No `unsafe` code in any Tunnelward crate (`unsafe_code = "forbid"`).
 - No `unwrap`, `expect` or `panic!` outside tests (clippy, denied).
 - Dependencies checked by `cargo deny` and `cargo vet` on every pull request; Actions pinned by commit SHA.
-- The register-frame decoder, the only parser that sees bytes before a connector's identity is known, is fuzzed (`fuzz/fuzz_targets/decode.rs`, 60 s per pull request, 30 min weekly), property-tested, and run under Miri.
+- A connector registers as the SPIFFE ID in its X.509-SVID and no other, and a route belongs to one identity: another identity's claim is refused (`docs/errors.md`, TW-R003 and TW-R004).
+- The register-frame decoder, the only parser that sees bytes before a connector's identity is known, is fuzzed (`fuzz/fuzz_targets/decode.rs`, 60 s per pull request, 30 min weekly), property-tested, and run under Miri. The SVID reader is fuzzed the same way (`fuzz/fuzz_targets/svid.rs`).
 
 Report vulnerabilities according to [`SECURITY.md`](SECURITY.md).
 
