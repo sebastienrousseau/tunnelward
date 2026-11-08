@@ -13,7 +13,7 @@ use rustls::{ClientConfig, RootCertStore, ServerConfig};
 use crate::{Identity, KeyExchange, provider};
 
 /// Only TLS 1.3. TLS 1.2 support is not compiled in.
-static VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
+pub(crate) static VERSIONS: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
 
 /// Whether a server asks clients for a certificate.
 #[derive(Debug, Clone)]

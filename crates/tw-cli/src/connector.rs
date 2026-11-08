@@ -10,10 +10,12 @@
 //! server_name = "gateway.example.org"   # the name in the gateway's certificate
 //! ca = "gateway-ca.crt"                 # PEM roots the gateway's certificate chains to
 //!
-//! [identity]
-//! cert = "connector.crt"                # PEM chain, leaf first
-//! key = "connector.key"                 # PEM private key
+//! [identity]                            # an X.509-SVID for spiffe_id, from
 //! spiffe_id = "spiffe://example.org/ns/prod/sa/payments"
+//! cert = "connector.crt"                # PEM files, read again when they
+//! key = "connector.key"                 # change (every reload_secs, 10)
+//! # workload_api = "unix:///run/spire/sockets/agent.sock"   # or the SPIFFE
+//! #                                     # Workload API, rotating as it sends
 //!
 //! [register]
 //! routes = ["mcp/payments"]
@@ -34,13 +36,15 @@ use serde::Deserialize;
 use tunnelward_connector::{
     Config as Session, Connector, ConnectorConfig, Forward, Gateways, Target,
 };
+use tunnelward_crypto::rustls::RootCertStore;
 use tunnelward_crypto::rustls::pki_types::ServerName;
-use tunnelward_crypto::{Identity, KeyExchange, client_config};
+use tunnelward_crypto::{KeyExchange, RotatingIdentity, client_config_rotating};
 use tunnelward_proto::{
     ALPN, ConnectorId, Limits, PROTOCOL_VERSION, Register, is_domain, is_route, is_spiffe_id,
 };
 
 use crate::config::{Problems, identity, resolve, roots};
+use crate::svid::{self, Source, claims_its_certificate};
 
 /// How often a gateway name is looked up again.
 const DNS_REFRESH: Duration = Duration::from_secs(60);
@@ -65,9 +69,11 @@ struct GatewayPart {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct IdentityPart {
-    cert: PathBuf,
-    key: PathBuf,
     spiffe_id: String,
+    cert: Option<PathBuf>,
+    key: Option<PathBuf>,
+    workload_api: Option<String>,
+    reload_secs: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -163,90 +169,121 @@ fn register(file: &File, problems: &mut Problems) -> Register {
     }
 }
 
-fn session(base: &Path, file: &File, register: Register) -> Result<Session, String> {
-    let g = &file.gateway;
-    let id = identity(
-        &resolve(base, &file.identity.cert),
-        &resolve(base, &file.identity.key),
-    )?;
-    claims_its_certificate(&id, &register.spiffe_id)?;
-    let tls = client_config(
-        roots(&resolve(base, &g.ca))?,
-        Some(id),
-        KeyExchange::default(),
-        &[ALPN],
-    )
-    .map_err(|e| format!("[identity]: {e}"))?;
-    let server_name = ServerName::try_from(g.server_name.clone())
-        .map_err(|e| format!("[gateway] server_name {:?}: {e}", g.server_name))?;
-    Ok(Session {
-        gateway: g.address.clone(),
-        server_name,
-        tls: Arc::new(tls),
-        register,
-        limits: Limits::default(),
-        handshake_timeout: Duration::from_secs(10),
-    })
-}
-
-/// Fails unless `claimed` is the SPIFFE ID in `id`'s leaf certificate,
-/// which the gateway checks too (TW-R003).
-fn claims_its_certificate(id: &Identity, claimed: &str) -> Result<(), String> {
-    let leaf = id.chain.first().ok_or("[identity] cert: no certificate")?;
-    match tunnelward_identity::spiffe_id(leaf.as_ref()) {
-        Ok(proven) if proven == claimed => Ok(()),
-        Ok(proven) => Err(format!(
-            "[identity] spiffe_id {claimed:?} is not the certificate's, {proven:?}"
-        )),
-        Err(e) => Err(format!("[identity] cert: {e}")),
+/// Where the SVID comes from: the files (loaded once now, so a file
+/// for another identity fails the check) or the Workload API endpoint.
+fn source(base: &Path, id: &IdentityPart) -> Result<Source, String> {
+    match (&id.cert, &id.key, &id.workload_api) {
+        (Some(cert), Some(key), None) => {
+            let (cert, key) = (resolve(base, cert), resolve(base, key));
+            claims_its_certificate(&identity(&cert, &key)?, &id.spiffe_id)?;
+            let every = Duration::from_secs(id.reload_secs.unwrap_or(10).max(1));
+            Ok(Source::Files { cert, key, every })
+        }
+        #[cfg(unix)]
+        (None, None, Some(endpoint)) => tunnelward_identity::workload::socket_path(endpoint)
+            .map(Source::Workload)
+            .map_err(|e| format!("[identity] workload_api: {e}")),
+        _ => Err("[identity]: give cert and key, or workload_api (Unix only)".into()),
     }
 }
 
-/// A file that passed every check.
+/// A file that passed every check: everything but the SVID itself.
 pub(crate) struct Checked {
-    pub(crate) config: ConnectorConfig,
-    pub(crate) target: Target,
+    gateways: Gateways,
+    target: Target,
+    register: Register,
+    roots: Arc<RootCertStore>,
+    server_name: ServerName<'static>,
+    address: String,
+    source: Source,
+}
+
+/// `result`'s value, or its error added to `problems`.
+fn note<T>(problems: &mut Problems, result: Result<T, String>) -> Option<T> {
+    result.map_err(|e| problems.push(e)).ok()
 }
 
 /// Every check on `file`, read from `path`.
 pub(crate) fn check(path: &Path, file: &File) -> Result<Checked, Problems> {
     let base = path.parent().unwrap_or_else(|| Path::new("."));
     let mut problems = Problems::new();
+    let gateways = note(&mut problems, gateways(&file.gateway.address));
+    let target = note(&mut problems, target(&file.target.url));
+    let source = note(&mut problems, source(base, &file.identity));
+    let roots = note(&mut problems, roots(&resolve(base, &file.gateway.ca)));
+    let name = &file.gateway.server_name;
+    let server_name = note(
+        &mut problems,
+        ServerName::try_from(name.clone())
+            .map_err(|e| format!("[gateway] server_name {name:?}: {e}")),
+    );
     let register = register(file, &mut problems);
-    let gateways = gateways(&file.gateway.address)
-        .map_err(|e| problems.push(e))
-        .ok();
-    let target = target(&file.target.url).map_err(|e| problems.push(e)).ok();
-    let session = session(base, file, register)
-        .map_err(|e| problems.push(e))
-        .ok();
-    match (gateways, target, session) {
-        (Some(gateways), Some(target), Some(session)) if problems.is_empty() => Ok(Checked {
-            config: ConnectorConfig::new(gateways, session),
-            target,
-        }),
+    match (gateways, target, source, roots, server_name) {
+        (Some(gateways), Some(target), Some(source), Some(roots), Some(server_name))
+            if problems.is_empty() =>
+        {
+            Ok(Checked {
+                gateways,
+                target,
+                register,
+                roots,
+                server_name,
+                address: file.gateway.address.clone(),
+                source,
+            })
+        }
         _ => Err(problems),
     }
+}
+
+/// The connector's configuration, presenting `identity` at each
+/// handshake.
+fn config(checked: Checked, identity: Arc<RotatingIdentity>) -> Result<ConnectorConfig, String> {
+    let tls = client_config_rotating(checked.roots, identity, KeyExchange::default(), &[ALPN])
+        .map_err(|e| format!("[identity]: {e}"))?;
+    let session = Session {
+        gateway: checked.address,
+        server_name: checked.server_name,
+        tls: Arc::new(tls),
+        register: checked.register,
+        limits: Limits::default(),
+        handshake_timeout: Duration::from_secs(10),
+    };
+    Ok(ConnectorConfig::new(checked.gateways, session))
 }
 
 /// Runs the connector until the process stops.
 pub(crate) async fn run(path: &Path) -> Result<(), String> {
     let file = load(path)?;
     let mut checked = check(path, &file).map_err(|p| p.join("\n"))?;
+    checked.register.connector_id = fresh_id()?;
+    let (identity, keeper) =
+        svid::start(checked.source.clone(), checked.register.spiffe_id.clone()).await?;
+    let forward = Forward::new(checked.target.clone(), Duration::from_secs(30));
+    let connector = Connector::start(config(checked, identity)?, forward);
+    println!("tunnelward connector: forwarding to {}", file.target.url);
+    report(&connector).await;
+    keeper.abort();
+    Ok(())
+}
+
+/// A random connector id.
+fn fresh_id() -> Result<ConnectorId, String> {
     let mut id = [0_u8; 16];
     SystemRandom::new()
         .fill(&mut id)
         .map_err(|_| "no randomness for the connector id".to_owned())?;
-    checked.config.session.register.connector_id = ConnectorId(id);
-    let forward = Forward::new(checked.target.clone(), Duration::from_secs(30));
-    let connector = Connector::start(checked.config, forward);
+    Ok(ConnectorId(id))
+}
+
+/// Prints the connector's events until it stops.
+async fn report(connector: &Connector) {
     let mut events = connector.events();
-    println!("tunnelward connector: forwarding to {}", file.target.url);
     loop {
         match events.recv().await {
             Ok(event) => println!("tunnelward connector: {event:?}"),
             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
-            Err(tokio::sync::broadcast::error::RecvError::Closed) => return Ok(()),
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
         }
     }
 }

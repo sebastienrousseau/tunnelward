@@ -84,7 +84,8 @@ tunnelward-gateway = "0.0.11"     # embed a gateway in your server
 
 `tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
 the TLS configuration underneath; `tunnelward-identity` reads a
-connector's SPIFFE ID from its X.509-SVID; `tunnelward-mcp` parses MCP
+connector's SPIFFE ID from its X.509-SVID and fetches SVIDs from the
+SPIFFE Workload API; `tunnelward-mcp` parses MCP
 envelopes. API documentation is on
 [docs.rs](https://docs.rs/tunnelward-connector).
 
@@ -158,6 +159,7 @@ its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
 | Live changes | Dark mode per connector, route or address; certificates reloaded from disk without a restart; `tunnelward connector`; CORS per path | Shipped in 0.0.9 |
 | Connector identity | The registered SPIFFE ID must be the one in the connector's X.509-SVID; routes owned by identities; registrations per source, domains per gateway and routes per identity enforced | Shipped in 0.0.10 |
 | Agent authorisation | OAuth 2.1 resource server per the MCP authorisation spec: bearer JWTs (ES256, RS256, PS256, EdDSA) checked against each issuer's JWK Set, audience, expiry and scopes; protected-resource metadata (RFC 9728); tokens never passed to connectors | Shipped in 0.0.11 |
+| SVID rotation | Connector SVIDs from the SPIFFE Workload API or from files, rotated without a restart; an SVID for another identity is refused | Shipped in 0.0.11 |
 
 ---
 

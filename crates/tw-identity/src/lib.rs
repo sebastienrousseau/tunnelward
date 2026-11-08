@@ -9,6 +9,10 @@
 //! on a certificate the TLS handshake already verified.
 
 mod der;
+#[cfg(unix)]
+mod proto;
+#[cfg(unix)]
+pub mod workload;
 
 use tunnelward_proto::is_spiffe_id;
 

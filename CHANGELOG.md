@@ -25,6 +25,18 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   over HTTPS, refreshed every 10 minutes and sooner for an unknown key
   id; a failed fetch keeps the old keys. Token checks are in-house on
   aws-lc-rs: no JWT or base64 crate joins cargo-vet.
+- Connector SVIDs that rotate without a restart. `tunnelward connector`
+  takes its X.509-SVID from the SPIFFE Workload API
+  (`[identity] workload_api = "unix:///..."`), following the agent's
+  stream as it rotates and reconnecting if the agent restarts, or from
+  `cert` and `key` files read again when they change. Each SVID must be
+  for the configured SPIFFE ID, proven by its certificate rather than by
+  the agent's label; one that is not is refused and the current kept.
+  New handshakes present the new SVID; established connections move to
+  it at their next lease renewal. Library parts:
+  `tunnelward_identity::workload` (gRPC over a Unix socket on hyper, an
+  in-house protobuf reader; Unix only) and
+  `tunnelward_crypto::{RotatingIdentity, client_config_rotating}`.
 
 ## [0.0.10]
 

@@ -12,6 +12,7 @@ mod devcert;
 mod doctor;
 mod gateway;
 mod serve;
+mod svid;
 
 use std::env;
 use std::net::SocketAddr;

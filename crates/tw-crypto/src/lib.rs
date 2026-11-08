@@ -20,9 +20,11 @@
 
 mod config;
 mod identity;
+mod rotating;
 
 pub use config::{ClientAuth, Error, client_config, server_config};
 pub use identity::Identity;
+pub use rotating::{RotatingIdentity, client_config_rotating};
 pub use rustls;
 
 use std::sync::Arc;

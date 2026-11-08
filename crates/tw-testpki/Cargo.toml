@@ -16,5 +16,13 @@ publish = false
 [dependencies]
 tunnelward-crypto.workspace = true
 
+# The fake Workload API agent.
+[target.'cfg(unix)'.dependencies]
+bytes.workspace = true
+http.workspace = true
+hyper = { workspace = true, features = ["server", "http2"] }
+hyper-util.workspace = true
+tokio = { workspace = true, features = ["net", "rt", "sync"] }
+
 [lints]
 workspace = true

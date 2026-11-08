@@ -3,7 +3,7 @@
 
 [package]
 name = "tunnelward-identity"
-description = "Tunnelward workload identity: the SPIFFE ID in an X.509-SVID"
+description = "Tunnelward workload identity: X.509-SVIDs, their SPIFFE IDs, and the SPIFFE Workload API"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -18,8 +18,20 @@ categories = ["authentication", "cryptography", "network-programming"]
 [dependencies]
 tunnelward-proto.workspace = true
 
+# The Workload API client: gRPC over a Unix socket.
+[target.'cfg(unix)'.dependencies]
+bytes.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+hyper = { workspace = true, features = ["client", "http2"] }
+hyper-util.workspace = true
+tokio = { workspace = true, features = ["net"] }
+
 [dev-dependencies]
 tunnelward-testpki.workspace = true
+
+[target.'cfg(unix)'.dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [lints]
 workspace = true

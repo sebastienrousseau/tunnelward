@@ -12,6 +12,7 @@
 #   gateway.{der,key}  server leaf, SAN DNS:gateway.test and IP:127.0.0.1, serverAuth
 #   connector.{der,key} client leaf, an X.509-SVID: SAN
 #                      URI:spiffe://example.org/connector and DNS:connector.test
+#   connector-next.{der,key} the same SPIFFE ID with a new key: a rotation
 #   rival.{der,key}    client leaf, SVID for spiffe://example.org/rival
 #   plain.{der,key}    client leaf with a DNS name and no SPIFFE ID
 #   two-ids.{der,key}  client leaf with two SPIFFE IDs (not a valid SVID)
@@ -53,6 +54,8 @@ ca ca "Tunnelward Test CA"
 ca other-ca "Untrusted Test CA"
 leaf gateway gateway.test serverAuth ca DNS:gateway.test,IP:127.0.0.1
 leaf connector connector.test clientAuth ca \
+  URI:spiffe://example.org/connector,DNS:connector.test
+leaf connector-next connector.test clientAuth ca \
   URI:spiffe://example.org/connector,DNS:connector.test
 leaf rival rival.test clientAuth ca URI:spiffe://example.org/rival
 leaf plain plain.test clientAuth ca DNS:plain.test
