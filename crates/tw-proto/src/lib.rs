@@ -11,7 +11,7 @@
 //! the hard limits.
 //!
 //! ```
-//! use tw_proto::{decode, encode, ConnectorId, Decoded, Frame, Limits, Register, PROTOCOL_VERSION};
+//! use tunnelward_proto::{decode, encode, ConnectorId, Decoded, Frame, Limits, Register, PROTOCOL_VERSION};
 //!
 //! let limits = Limits::default();
 //! let frame = Frame::Register(Register {
@@ -40,7 +40,7 @@ pub mod io;
 mod limits;
 mod validate;
 
-pub use code::{RejectCode, UnknownCode};
+pub use code::{ERROR_DOCS, RejectCode, UnknownCode, error_url};
 pub use codec::{DecodeError, Decoded, EncodeError, decode, encode};
 pub use frame::{
     ALPN, Accept, ConnectorId, Frame, McpDescriptor, PROTOCOL_VERSION, Register, Reject,

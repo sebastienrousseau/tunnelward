@@ -8,9 +8,9 @@
 
 use std::sync::Arc;
 
-use tw_crypto::Identity;
-use tw_crypto::rustls::RootCertStore;
-use tw_crypto::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+use tunnelward_crypto::Identity;
+use tunnelward_crypto::rustls::RootCertStore;
+use tunnelward_crypto::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
 /// A certificate and its PKCS#8 key, both DER.
 pub type Pair = (&'static [u8], &'static [u8]);
@@ -51,7 +51,7 @@ pub fn identity((cert, key): Pair) -> Identity {
 /// # Errors
 ///
 /// The certificate does not parse.
-pub fn roots(ca: &[u8]) -> Result<Arc<RootCertStore>, tw_crypto::rustls::Error> {
+pub fn roots(ca: &[u8]) -> Result<Arc<RootCertStore>, tunnelward_crypto::rustls::Error> {
     let mut store = RootCertStore::empty();
     store.add(CertificateDer::from(ca.to_vec()))?;
     Ok(Arc::new(store))

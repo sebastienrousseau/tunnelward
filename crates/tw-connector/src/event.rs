@@ -5,7 +5,7 @@
 
 use std::net::SocketAddr;
 
-use tw_proto::RejectCode;
+use tunnelward_proto::RejectCode;
 
 /// Something that happened to a connector. Subscribe with
 /// [`Connector::events`](crate::Connector::events); a subscriber that falls

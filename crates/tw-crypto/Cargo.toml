@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 
 [package]
-name = "tw-crypto"
+name = "tunnelward-crypto"
 description = "Tunnelward TLS configuration with hybrid post-quantum key exchange"
 version.workspace = true
 edition.workspace = true
@@ -11,14 +11,15 @@ license = "MIT OR Apache-2.0"
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-# Not published until the crate has an API worth depending on.
-publish = false
+readme.workspace = true
+keywords = ["tls", "post-quantum", "ml-kem", "rustls", "mtls"]
+categories = ["cryptography", "network-programming"]
 
 [dependencies]
 rustls.workspace = true
 
 [dev-dependencies]
-tw-testpki = { path = "../tw-testpki" }
+tunnelward-testpki.workspace = true
 
 [lints]
 workspace = true

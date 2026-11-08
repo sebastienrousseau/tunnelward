@@ -5,8 +5,8 @@
 //! gateway's requests over the connection it opened.
 //!
 //! The connector never listens. It opens TLS to the gateway with ALPN
-//! `tw/1`, sends one [`Register`](tw_proto::Register) frame and reads the
-//! answer. On [`Accept`](tw_proto::Accept) the same stream becomes an
+//! `tw/1`, sends one [`Register`](tunnelward_proto::Register) frame and reads the
+//! answer. On [`Accept`](tunnelward_proto::Accept) the same stream becomes an
 //! HTTP/2 connection with the roles reversed: the gateway is the HTTP/2
 //! client and the connector the server (ADR 0001), so requests flow in
 //! through a connection that was opened outwards.

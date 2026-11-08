@@ -7,6 +7,10 @@
 # requests from forks; it never checks out or runs the pull request's code.
 # The maintainer is allow-listed. Companies that signed the CCLA have their
 # employees added to the allow list.
+#
+# The cla-signatures branch must exist before the first run (the action
+# does not create it). On its first run the action writes
+# signatures/cla.json there and fails once by design; reruns pass.
 
 name: CLA
 

@@ -24,7 +24,7 @@ Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/release
 </p>
 
 <p align="center">
-  <img src=".github/demo.gif" alt="A terminal runs tunnelward --version, which prints tunnelward 0.0.1, then tunnelward --help, which prints the usage" width="100%" />
+  <img src=".github/demo.gif" alt="A terminal runs tunnelward dev in front of a local web server; curl through the tunnel prints hello from a private service, and the admin API shows one connector with two connections" width="100%" />
 </p>
 
 ---
@@ -39,7 +39,7 @@ Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/release
 
 **The Tunnelward ecosystem**
 
-- [The Tunnelward ecosystem](#the-tunnelward-ecosystem) — tw-proto, tw-crypto, tw-identity, tw-attest, tw-policy, tw-mcp, tw-audit, tw-gateway, tw-connector, tw-cli
+- [The Tunnelward ecosystem](#the-tunnelward-ecosystem) — tunnelward-proto, tunnelward-crypto, tunnelward-identity, tunnelward-attest, tunnelward-policy, tunnelward-mcp, tunnelward-audit, tunnelward-gateway, tunnelward-connector, tunnelward
 
 **Library reference**
 
@@ -63,20 +63,28 @@ Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/release
 
 ## Install
 
+### The `tunnelward` binary
+
+```bash
+cargo install --locked tunnelward
+```
+
+Pre-built binaries for Linux (static musl), macOS and Windows, with
+checksums, an SBOM and build provenance, are on each
+[GitHub Release](https://github.com/sebastienrousseau/tunnelward/releases).
+A container image is at `ghcr.io/sebastienrousseau/tunnelward`.
+
 ### As a Rust library
 
 ```toml
-# Not published yet. The crates go to crates.io once they carry an API
-# worth depending on; until then, build from source as below.
+[dependencies]
+tunnelward-connector = "0.0.8"   # embed a connector in your service
+tunnelward-gateway = "0.0.8"     # embed a gateway in your server
 ```
 
-From source, the `tunnelward` binary:
-
-```bash
-git clone https://github.com/sebastienrousseau/tunnelward
-cd tunnelward
-cargo install --locked --path crates/tw-cli
-```
+`tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
+the TLS configuration underneath. API documentation is on
+[docs.rs](https://docs.rs/tunnelward-connector).
 
 ---
 
@@ -89,38 +97,40 @@ cargo install --locked --path crates/tw-cli
 
 ## Quick Start
 
+Put a tunnel in front of a service running on your machine:
+
 ```bash
-cargo build --workspace --locked
-cargo run --quiet --locked -p tw-cli -- --version
-cargo xtask ci
+python3 -m http.server 8080 &              # any local HTTP service
+tunnelward dev --to http://127.0.0.1:8080  # gateway and connector, one process
+curl http://127.0.0.1:8000/                # an agent's request, through the tunnel
 ```
 
-The binary reports its version and usage, and `cargo xtask ci` runs
-every check CI runs. Since v0.0.4 a connector can register with a gateway
-and serve requests through its outbound connection; the
-`tunnelward` subcommands that run them arrive in v0.0.8. Until then they
-are libraries: see `crates/tw-gateway/tests/tunnel.rs`.
+`tunnelward dev` runs a gateway and a connector together. The connector
+dials the gateway over the same mutual TLS, with post-quantum key
+exchange, that a real deployment uses, using throwaway certificates made
+at startup, and every listener stays on loopback. Add
+`--admin 127.0.0.1:9000` to see `/inventory` and `/metrics`.
 
 ---
 
 ## The Tunnelward ecosystem
 
 One crate per concern, so the protocol core can be fuzzed and audited on
-its own. `tw-proto`, `tw-crypto`, `tw-gateway`, `tw-connector` and `tw-cli` have code; the others are placeholders
+its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-gateway`, `tunnelward-connector` and `tunnelward` have code; the others are placeholders
 until the release the plan gives them.
 
 | Component | Purpose | Use case |
 | :--- | :--- | :--- |
-| `tw-proto` | Register frames, limits, error codes | Parsing what a connector sends before its identity is known |
-| `tw-crypto` | rustls configuration with hybrid post-quantum key exchange | X25519MLKEM768 on every TLS hop |
-| `tw-identity` | SPIFFE SVIDs, enrolment tokens | Proving which workload a connector is |
-| `tw-attest` | passmcp attestation verification | Admitting only MCP servers that passed passmcp |
-| `tw-policy` | Cedar policy per MCP tool | Allowing or denying each `tools/call` |
-| `tw-mcp` | MCP envelope parsing, Streamable HTTP, SSE | Reading the method and tool name without parsing the body |
-| `tw-audit` | Hash-chained log, offline verifier | Proving what was allowed, after the fact |
-| `tw-gateway` | Ingress, routing, admission, admin API | The public side agents connect to |
-| `tw-connector` | Outbound registration, stdio bridge | The private side next to the MCP server |
-| `tw-cli` | The `tunnelward` binary | Operating all of the above |
+| `tunnelward-proto` | Register frames, limits, error codes | Parsing what a connector sends before its identity is known |
+| `tunnelward-crypto` | rustls configuration with hybrid post-quantum key exchange | X25519MLKEM768 on every TLS hop |
+| `tunnelward-identity` | SPIFFE SVIDs, enrolment tokens | Proving which workload a connector is |
+| `tunnelward-attest` | passmcp attestation verification | Admitting only MCP servers that passed passmcp |
+| `tunnelward-policy` | Cedar policy per MCP tool | Allowing or denying each `tools/call` |
+| `tunnelward-mcp` | MCP envelope parsing, Streamable HTTP, SSE | Reading the method and tool name without parsing the body |
+| `tunnelward-audit` | Hash-chained log, offline verifier | Proving what was allowed, after the fact |
+| `tunnelward-gateway` | Ingress, routing, admission, admin API | The public side agents connect to |
+| `tunnelward-connector` | Outbound registration, stdio bridge | The private side next to the MCP server |
+| `tunnelward` | The `tunnelward` binary | Operating all of the above |
 
 ---
 
@@ -173,13 +183,28 @@ The workspace has no Cargo features yet.
 
 ## Configuration
 
-Nothing to configure in v0.0.1.
+`tunnelward gateway --config tunnelward.toml` runs a gateway from a TOML
+file: its listeners, its TLS certificates, the agent ingress, the
+connector allowlist and the admin token. The format, with every key, is
+documented at the top of [`crates/tw-cli/src/config.rs`](crates/tw-cli/src/config.rs).
+Check a file before deploying it:
+
+```bash
+tunnelward config check tunnelward.toml   # every problem, or "ok"
+tunnelward doctor --config tunnelward.toml
+```
+
+Errors carry stable ids (`TW-S001` and so on), explained in
+[docs/errors.md](docs/errors.md).
 
 ---
 
 ## Examples
 
-No examples yet; the first, a gateway and connector on one machine, comes with `tunnelward dev` in 0.0.8.
+The [Quick Start](#quick-start) is the first example: a gateway and a
+connector on one machine with `tunnelward dev`. For embedding, the
+gateway's tests show each feature end to end
+(`crates/tw-gateway/tests/`).
 
 ---
 
@@ -236,8 +261,8 @@ Two licences, split by what you embed (decision D8):
 
 | Crates | Licence | Why |
 | :--- | :--- | :--- |
-| `tw-proto`, `tw-crypto`, `tw-identity`, `tw-mcp`, `tw-connector`, `tw-testpki` | [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE), at your option | They ship inside your services, as the connector library and the SDKs' base |
-| `tw-gateway`, `tw-policy`, `tw-audit`, `tw-attest`, `tw-cli` (the `tunnelward` binary), `xtask` | [GPL-3.0-only](LICENSE-GPL) | The gateway and tools you run, not embed |
+| `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`, `tunnelward-mcp`, `tunnelward-connector`, `tunnelward-testpki` | [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE), at your option | They ship inside your services, as the connector library and the SDKs' base |
+| `tunnelward-gateway`, `tunnelward-policy`, `tunnelward-audit`, `tunnelward-attest`, `tunnelward` (the `tunnelward` binary), `xtask` | [GPL-3.0-only](LICENSE-GPL) | The gateway and tools you run, not embed |
 
 The gate fails if a permissive crate depends on a GPL one
 (`scripts/licence-boundary.sh`). Every file names its licence in an SPDX

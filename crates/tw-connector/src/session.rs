@@ -14,10 +14,10 @@ use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
-use tw_crypto::rustls::ClientConfig;
-use tw_crypto::rustls::pki_types::ServerName;
-use tw_proto::io::{read_frame, write_frame};
-use tw_proto::{ALPN, Accept, Frame, Limits, Register};
+use tunnelward_crypto::rustls::ClientConfig;
+use tunnelward_crypto::rustls::pki_types::ServerName;
+use tunnelward_proto::io::{read_frame, write_frame};
+use tunnelward_proto::{ALPN, Accept, Frame, Limits, Register};
 
 use crate::Error;
 
@@ -28,7 +28,7 @@ pub struct Config {
     pub gateway: String,
     /// The name the gateway's certificate must carry.
     pub server_name: ServerName<'static>,
-    /// TLS configuration from `tw_crypto::client_config`, offering ALPN
+    /// TLS configuration from `tunnelward_crypto::client_config`, offering ALPN
     /// `tw/1` and presenting the connector's certificate.
     pub tls: Arc<ClientConfig>,
     /// What to register.

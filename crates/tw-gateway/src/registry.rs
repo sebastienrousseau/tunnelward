@@ -14,7 +14,7 @@ use bytes::Bytes;
 use http_body_util::Full;
 use hyper::client::conn::http2::SendRequest;
 use tokio::sync::Notify;
-use tw_proto::Register;
+use tunnelward_proto::{ConnectorId, Register};
 
 use crate::kill::KillSwitch;
 use crate::pool::{Entry, Lease, choose};
@@ -52,6 +52,17 @@ pub(crate) struct Link {
     pub(crate) grant: u32,
     pub(crate) peer: Option<IpAddr>,
     pub(crate) kill: Arc<KillSwitch>,
+}
+
+/// One connection as the admin inventory reports it.
+pub(crate) struct Snapshot {
+    pub(crate) id: ConnectorId,
+    pub(crate) peer: Option<IpAddr>,
+    pub(crate) routes: Vec<String>,
+    pub(crate) domains: Vec<String>,
+    pub(crate) capacity: u32,
+    pub(crate) in_flight: u32,
+    pub(crate) draining: bool,
 }
 
 #[derive(Default)]
@@ -145,7 +156,6 @@ impl Registry {
         u32::try_from(count).unwrap_or(u32::MAX)
     }
 
-    /// Forgets connector `id`, keeping its routes for `keep`.
     /// Forgets `session`, keeping its routes for `keep`.
     pub(crate) fn remove(&self, session: u64, keep: Duration) {
         let mut state = self.lock();
@@ -171,6 +181,24 @@ impl Registry {
             .collect();
         routes.sort_unstable();
         routes
+    }
+
+    /// Every live connection, for the admin inventory.
+    pub(crate) fn snapshot(&self) -> Vec<Snapshot> {
+        self.lock()
+            .entries
+            .iter()
+            .filter(|e| !e.sender.is_closed())
+            .map(|e| Snapshot {
+                id: e.id,
+                peer: e.peer,
+                routes: e.routes.clone(),
+                domains: e.domains.clone(),
+                capacity: e.capacity,
+                in_flight: e.load(),
+                draining: e.draining,
+            })
+            .collect()
     }
 
     pub(crate) fn in_flight(&self) -> u32 {

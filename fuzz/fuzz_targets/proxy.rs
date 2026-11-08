@@ -8,7 +8,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use tw_gateway::proxy_protocol::{Parsed, parse};
+use tunnelward_gateway::proxy_protocol::{Parsed, parse};
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(Parsed::Complete(header, used)) = parse(data) {

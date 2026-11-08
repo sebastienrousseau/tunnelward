@@ -72,15 +72,21 @@ impl hyper::service::Service<Request<Incoming>> for Ingress {
 }
 
 /// A refusal: the status, the reason for observers, and any `Retry-After`.
+/// The response header naming a refusal's error id.
+const TW_ERROR: http::HeaderName = http::HeaderName::from_static("tw-error");
+
 struct Refusal {
+    /// The stable error id (`docs/errors.md`).
+    id: &'static str,
     status: StatusCode,
     reason: String,
     retry_after: Option<Duration>,
 }
 
 impl Refusal {
-    fn new(status: StatusCode, reason: impl Into<String>) -> Self {
+    fn new(id: &'static str, status: StatusCode, reason: impl Into<String>) -> Self {
         Self {
+            id,
             status,
             reason: reason.into(),
             retry_after: None,
@@ -122,6 +128,7 @@ impl Ingress {
             Ok(Ok(response)) => Ok(response),
             Ok(Err(error)) => Err(refusal_for(&error)),
             Err(_) => Err(Refusal::new(
+                "TW-I006",
                 StatusCode::GATEWAY_TIMEOUT,
                 "no response within the request timeout",
             )),
@@ -132,7 +139,11 @@ impl Ingress {
     fn admit(&self, request: &Request<Incoming>, info: &RequestInfo) -> Result<(), Refusal> {
         let ingress = &self.gateway.inner.config.ingress;
         if request.uri().to_string().len() > ingress.max_url_len {
-            return Err(Refusal::new(StatusCode::URI_TOO_LONG, "URL over the limit"));
+            return Err(Refusal::new(
+                "TW-I001",
+                StatusCode::URI_TOO_LONG,
+                "URL over the limit",
+            ));
         }
         let declared = request
             .headers()
@@ -140,6 +151,7 @@ impl Ingress {
             .and_then(|v| v.to_str().ok()?.parse::<u64>().ok());
         if declared.is_some_and(|n| n > ingress.max_body as u64) {
             return Err(Refusal::new(
+                "TW-I002",
                 StatusCode::PAYLOAD_TOO_LARGE,
                 "declared body over the limit",
             ));
@@ -150,7 +162,7 @@ impl Ingress {
             .check(info.client.client, Instant::now())
             .map_err(|wait| Refusal {
                 retry_after: Some(wait),
-                ..Refusal::new(StatusCode::TOO_MANY_REQUESTS, "rate limit")
+                ..Refusal::new("TW-I004", StatusCode::TOO_MANY_REQUESTS, "rate limit")
             })
     }
 
@@ -160,9 +172,13 @@ impl Ingress {
         let (parts, body) = request.into_parts();
         let collected = Limited::new(body, max).collect().await.map_err(|e| {
             if e.is::<LengthLimitError>() {
-                Refusal::new(StatusCode::PAYLOAD_TOO_LARGE, "body over the limit")
+                Refusal::new(
+                    "TW-I003",
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "body over the limit",
+                )
             } else {
-                Refusal::new(StatusCode::BAD_REQUEST, "request body failed")
+                Refusal::new("TW-I005", StatusCode::BAD_REQUEST, "request body failed")
             }
         })?;
         Ok(Request::from_parts(parts, Full::new(collected.to_bytes())))
@@ -238,10 +254,17 @@ impl Ingress {
         for o in observers {
             o.on_response(info, refusal.status, started.elapsed());
         }
-        let text = format!("{}: {}\n", refusal.status, refusal.reason);
+        let url = tunnelward_proto::error_url(refusal.id);
+        let text = format!(
+            "{}: {} [{}] {url}\n",
+            refusal.status, refusal.reason, refusal.id
+        );
         let mut response =
             Response::new(Full::new(Bytes::from(text)).map_err(|e| match e {}).boxed());
         *response.status_mut() = refusal.status;
+        response
+            .headers_mut()
+            .insert(TW_ERROR, HeaderValue::from_static(refusal.id));
         if let Some(wait) = refusal.retry_after {
             let secs = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
             response
@@ -253,14 +276,17 @@ impl Ingress {
 }
 
 fn refusal_for(error: &SendError) -> Refusal {
+    let id = error.id();
     match error {
-        SendError::NoRoute => Refusal::new(StatusCode::NOT_FOUND, "no connector serves this route"),
+        SendError::NoRoute => {
+            Refusal::new(id, StatusCode::NOT_FOUND, "no connector serves this route")
+        }
         SendError::Unavailable { retry_after } => Refusal {
             retry_after: Some(*retry_after),
-            ..Refusal::new(StatusCode::SERVICE_UNAVAILABLE, "no connector free")
+            ..Refusal::new(id, StatusCode::SERVICE_UNAVAILABLE, "no connector free")
         },
-        SendError::BadRequest(_) => Refusal::new(StatusCode::BAD_REQUEST, error.to_string()),
-        _ => Refusal::new(StatusCode::BAD_GATEWAY, error.to_string()),
+        SendError::BadRequest(_) => Refusal::new(id, StatusCode::BAD_REQUEST, error.to_string()),
+        _ => Refusal::new(id, StatusCode::BAD_GATEWAY, error.to_string()),
     }
 }
 

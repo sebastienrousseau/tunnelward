@@ -51,6 +51,41 @@ const ALL: [RejectCode; 11] = [
     RejectCode::Internal,
 ];
 
+/// Each code's stable id, in code order (1 to 11).
+const IDS: [&str; 11] = [
+    "TW-R001", "TW-R002", "TW-R003", "TW-R004", "TW-R005", "TW-R006", "TW-R007", "TW-R008",
+    "TW-R009", "TW-R010", "TW-R011",
+];
+
+/// Where every Tunnelward error id is explained.
+pub const ERROR_DOCS: &str =
+    "https://github.com/sebastienrousseau/tunnelward/blob/main/docs/errors.md";
+
+/// The documentation URL for the error `id`, such as `TW-R004`.
+#[must_use]
+pub fn error_url(id: &str) -> String {
+    format!("{ERROR_DOCS}#{}", id.to_ascii_lowercase())
+}
+
+impl RejectCode {
+    /// The code's stable id, `TW-R` and its number, explained at
+    /// [`RejectCode::docs_url`].
+    #[must_use]
+    pub fn id(self) -> &'static str {
+        usize::from(u16::from(self))
+            .checked_sub(1)
+            .and_then(|i| IDS.get(i))
+            .copied()
+            .unwrap_or("TW-R000")
+    }
+
+    /// Where this code is explained.
+    #[must_use]
+    pub fn docs_url(self) -> String {
+        error_url(self.id())
+    }
+}
+
 impl From<RejectCode> for u16 {
     fn from(code: RejectCode) -> Self {
         code as u16
@@ -92,5 +127,16 @@ mod tests {
         }
         assert_eq!(RejectCode::try_from(0), Err(UnknownCode(0)));
         assert_eq!(RejectCode::try_from(12), Err(UnknownCode(12)));
+    }
+
+    #[test]
+    fn ids_carry_the_number() {
+        for code in ALL {
+            assert_eq!(code.id(), format!("TW-R{:03}", u16::from(code)));
+        }
+        assert_eq!(
+            RejectCode::RouteOwned.docs_url(),
+            format!("{ERROR_DOCS}#tw-r004")
+        );
     }
 }

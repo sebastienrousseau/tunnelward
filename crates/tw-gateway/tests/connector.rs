@@ -8,7 +8,6 @@
 mod common;
 
 use std::convert::Infallible;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,12 +17,12 @@ use hyper::body::Incoming;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use tokio::sync::{Semaphore, broadcast};
-use tw_connector::{Connector, ConnectorConfig, ConnectorEvent, Gateways};
-use tw_gateway::{Config, DrainTarget};
-use tw_proto::ConnectorId;
+use tunnelward_connector::{Connector, ConnectorEvent, Gateways};
+use tunnelward_gateway::{Config, DrainTarget};
+use tunnelward_proto::ConnectorId;
 
 use common::{
-    Res, WAIT, connector_config, echo, eventually, gateway_config, get, registration, start,
+    Res, WAIT, addr, echo, eventually, gated_service, gateway_config, get, start, supervised,
 };
 
 type Body = Full<Bytes>;
@@ -40,44 +39,12 @@ fn echo_service() -> impl hyper::service::Service<
     service_fn(|req: Request<Incoming>| std::future::ready(Ok::<_, Infallible>(echo("c", &req))))
 }
 
-/// A service whose every request waits for a permit from `gate`.
-fn gated_service(
-    gate: Arc<Semaphore>,
-) -> impl hyper::service::Service<
-    Request<Incoming>,
-    Response = Response<Body>,
-    Error = Infallible,
-    Future: Send,
-> + Clone
-+ Send
-+ Sync
-+ 'static {
-    service_fn(move |req: Request<Incoming>| {
-        let gate = gate.clone();
-        async move {
-            drop(gate.acquire_owned().await);
-            Ok::<_, Infallible>(echo("c", &req))
-        }
-    })
-}
-
-fn supervised(gateways: Gateways, any_addr: &str) -> Res<ConnectorConfig> {
-    let mut config = ConnectorConfig::new(
-        gateways,
-        connector_config(any_addr, registration(1, &["mcp"], &[]))?,
-    );
-    config.backoff_base = Duration::from_millis(50);
-    config.backoff_cap = Duration::from_millis(200);
-    Ok(config)
-}
-
-fn addr(text: &str) -> Res<SocketAddr> {
-    Ok(text.parse()?)
-}
-
 /// Two gateways and one supervised connector for both.
-async fn two_gateways_one_connector() -> Res<(tw_gateway::Gateway, tw_gateway::Gateway, Connector)>
-{
+async fn two_gateways_one_connector() -> Res<(
+    tunnelward_gateway::Gateway,
+    tunnelward_gateway::Gateway,
+    Connector,
+)> {
     let (a, a_addr) = start(gateway_config()?).await?;
     let (b, b_addr) = start(gateway_config()?).await?;
     let connector = start_supervised(&[&a_addr, &b_addr])?;

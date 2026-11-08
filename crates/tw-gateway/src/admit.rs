@@ -13,8 +13,10 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tokio_rustls::server::TlsStream;
-use tw_proto::io::{ReadError, read_frame, write_frame};
-use tw_proto::{ALPN, Accept, ConnectorId, Frame, MAX_REASON_LEN, Register, Reject, RejectCode};
+use tunnelward_proto::io::{ReadError, read_frame, write_frame};
+use tunnelward_proto::{
+    ALPN, Accept, ConnectorId, Frame, MAX_REASON_LEN, Register, Reject, RejectCode,
+};
 
 use crate::kill::Killable;
 use crate::registry::Link;

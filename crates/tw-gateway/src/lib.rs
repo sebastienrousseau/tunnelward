@@ -4,9 +4,9 @@
 //! Tunnelward gateway: admits connectors and sends requests through them.
 //!
 //! A connector dials in over TLS with ALPN `tw/1` and sends one
-//! [`Register`](tw_proto::Register) frame. [`Gateway::admit`] reads it
-//! under a timeout, answers [`Accept`](tw_proto::Accept) or
-//! [`Reject`](tw_proto::Reject), and on acceptance becomes the HTTP/2
+//! [`Register`](tunnelward_proto::Register) frame. [`Gateway::admit`] reads it
+//! under a timeout, answers [`Accept`](tunnelward_proto::Accept) or
+//! [`Reject`](tunnelward_proto::Reject), and on acceptance becomes the HTTP/2
 //! client on that same connection (ADR 0001). [`Gateway::send`] then routes
 //! a request to a connector by host and path.
 //!
@@ -16,6 +16,7 @@
 //! loop the `tunnelward` binary will use. Identity checks, pools and the
 //! agent-facing ingress arrive in later releases (v0.0.5 to v0.0.10).
 
+mod admin;
 mod admit;
 mod cidr;
 mod client_addr;
@@ -35,6 +36,7 @@ mod resolver;
 mod retry;
 mod route;
 
+pub use admin::{AdminConfig, Connection, Inventory, Redaction};
 pub use cidr::{Cidr, CidrError};
 pub use client_addr::ClientAddr;
 pub use config::{Config, IngressConfig};
@@ -88,6 +90,8 @@ struct Inner {
     registry: Registry,
     limiter: ratelimit::Limiter,
     next_request: std::sync::atomic::AtomicU64,
+    /// Whether connectors can register, for the admin API's `/readyz`.
+    ready: std::sync::atomic::AtomicBool,
 }
 
 impl Gateway {
@@ -103,6 +107,7 @@ impl Gateway {
                 registry: Registry::default(),
                 limiter,
                 next_request: std::sync::atomic::AtomicU64::new(0),
+                ready: std::sync::atomic::AtomicBool::new(false),
             }),
         }
     }
@@ -114,6 +119,13 @@ impl Gateway {
     ///
     /// The listener's accept error.
     pub async fn serve_connectors(&self, listener: TcpListener) -> std::io::Result<()> {
+        self.set_ready(true);
+        let failed = self.accept_connectors(&listener).await;
+        self.set_ready(false);
+        failed
+    }
+
+    async fn accept_connectors(&self, listener: &TcpListener) -> std::io::Result<()> {
         loop {
             let (tcp, peer) = listener.accept().await?;
             if !self.allows(peer.ip()) {

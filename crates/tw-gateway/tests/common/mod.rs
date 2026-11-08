@@ -5,6 +5,8 @@
 
 #![allow(dead_code, unreachable_pub)] // each test file uses a different subset
 
+pub mod ingress;
+
 use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,12 +18,14 @@ use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
-use tw_connector::{Config as ConnectorConfig, register};
-use tw_crypto::rustls::pki_types::ServerName;
-use tw_crypto::{ClientAuth, KeyExchange, client_config, server_config};
-use tw_gateway::{Config, Gateway};
-use tw_proto::{ALPN, ConnectorId, Limits, PROTOCOL_VERSION, Register};
-use tw_testpki as pki;
+use tunnelward_connector::{
+    Config as ConnectorConfig, ConnectorConfig as SupervisedConfig, Gateways, register,
+};
+use tunnelward_crypto::rustls::pki_types::ServerName;
+use tunnelward_crypto::{ClientAuth, KeyExchange, client_config, server_config};
+use tunnelward_gateway::{Config, Gateway};
+use tunnelward_proto::{ALPN, ConnectorId, Limits, PROTOCOL_VERSION, Register};
+use tunnelward_testpki as pki;
 
 pub type Res<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -48,7 +52,7 @@ pub async fn start(config: Config) -> Res<(Gateway, String)> {
     Ok((gateway, addr))
 }
 
-pub fn tls_client(alpn: &[&[u8]]) -> Res<Arc<tw_crypto::rustls::ClientConfig>> {
+pub fn tls_client(alpn: &[&[u8]]) -> Res<Arc<tunnelward_crypto::rustls::ClientConfig>> {
     let id = Some(pki::identity(pki::CONNECTOR));
     Ok(Arc::new(client_config(
         pki::roots(pki::CA)?,
@@ -151,7 +155,7 @@ pub async fn get(gateway: &Gateway, uri: &str) -> Res<(StatusCode, String)> {
 pub async fn send(
     gateway: &Gateway,
     uri: &str,
-) -> Res<Result<Response<tw_gateway::ResponseBody>, tw_gateway::SendError>> {
+) -> Res<Result<Response<tunnelward_gateway::ResponseBody>, tunnelward_gateway::SendError>> {
     let sent = tokio::time::timeout(WAIT, gateway.send(get_request(uri)?)).await;
     sent.map_err(|_| format!("send {uri} timed out").into())
 }
@@ -166,4 +170,41 @@ pub async fn eventually(what: &str, check: impl Fn() -> bool) -> Res<()> {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     Ok(())
+}
+
+/// A service whose every request waits for a permit from `gate`.
+pub fn gated_service(
+    gate: Arc<Semaphore>,
+) -> impl hyper::service::Service<
+    Request<Incoming>,
+    Response = Response<Full<Bytes>>,
+    Error = Infallible,
+    Future: Send,
+> + Clone
++ Send
++ Sync
++ 'static {
+    service_fn(move |req: Request<Incoming>| {
+        let gate = gate.clone();
+        async move {
+            drop(gate.acquire_owned().await);
+            Ok::<_, Infallible>(echo("c", &req))
+        }
+    })
+}
+
+/// A supervised connector's configuration with a short backoff, so tests
+/// see reconnects quickly.
+pub fn supervised(gateways: Gateways, any_addr: &str) -> Res<SupervisedConfig> {
+    let mut config = SupervisedConfig::new(
+        gateways,
+        connector_config(any_addr, registration(1, &["mcp"], &[]))?,
+    );
+    config.backoff_base = Duration::from_millis(50);
+    config.backoff_cap = Duration::from_millis(200);
+    Ok(config)
+}
+
+pub fn addr(text: &str) -> Res<std::net::SocketAddr> {
+    Ok(text.parse()?)
 }

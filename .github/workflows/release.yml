@@ -11,6 +11,12 @@
 #   publish    SHA256SUMS (cosign-signed), CycloneDX SBOM, SLSA
 #              provenance, Homebrew formula, release notes, GitHub Release
 #   container  multi-arch distroless image on GHCR, cosign-signed
+#   crates     the workspace's publishable crates on crates.io, through
+#              trusted publishing (OIDC, no stored token). Runs once the
+#              repository variable CRATES_IO_TRUSTED_PUBLISHING is "true",
+#              which needs each crate to exist on crates.io and to name
+#              this workflow as its trusted publisher. A version already
+#              on crates.io is skipped, so rebuilding a tag is safe.
 #
 # Verify an asset:   gh attestation verify --owner sebastienrousseau <file>
 # Verify checksums:  cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
@@ -103,7 +109,7 @@ jobs:
           targets: ${{ matrix.target }}
       - if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - run: cargo build --release --locked -p tw-cli --target ${{ matrix.target }}
+      - run: cargo build --release --locked -p tunnelward --target ${{ matrix.target }}
       - name: Package
         shell: bash
         env:
@@ -253,3 +259,39 @@ jobs:
             org.opencontainers.image.licenses=GPL-3.0-only
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - run: cosign sign --yes "$IMAGE@${{ steps.push.outputs.digest }}"
+
+  crates:
+    name: Publish to crates.io
+    needs: [validate, publish]
+    if: vars.CRATES_IO_TRUSTED_PUBLISHING == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+      - id: check
+        name: Skip a version crates.io already has
+        run: |
+          set -euo pipefail
+          publishable="$(cargo metadata --no-deps --format-version 1 --locked \
+            | jq '[.packages[] | select(.publish != [])] | length')"
+          status="$(curl -s -o /dev/null -w '%{http_code}' -A 'tunnelward-release (github.com/sebastienrousseau/tunnelward)' \
+            "https://crates.io/api/v1/crates/tunnelward/$VERSION")"
+          echo "run=$([ "$publishable" -gt 0 ] && [ "$status" = 404 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.check.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
+        with:
+          toolchain: stable
+      - if: steps.check.outputs.run == 'true'
+        id: auth
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+      - if: steps.check.outputs.run == 'true'
+        run: cargo publish --workspace --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

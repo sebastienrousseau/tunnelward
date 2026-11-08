@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 [package]
-name = "tw-policy"
+name = "tunnelward-policy"
 description = "Tunnelward per-tool policy evaluation with Cedar"
 version.workspace = true
 edition.workspace = true

@@ -34,7 +34,7 @@ SPDX-License-Identifier = "GPL-3.0-only"
 
 # TEST-ONLY certificates and keys, written by scripts/gen-test-pki.sh.
 # DER has no comment syntax. The keys protect nothing. MIT OR Apache-2.0
-# like tw-testpki, which embeds them (D8).
+# like tunnelward-testpki, which embeds them (D8).
 [[annotations]]
 path = ["crates/tw-testpki/pki/**"]
 precedence = "aggregate"

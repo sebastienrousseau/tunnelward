@@ -18,73 +18,16 @@ use http_body_util::{BodyExt, Full};
 use hyper::body::{Body, Frame, Incoming};
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
-use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::rt::TokioIo;
 use tokio::io::AsyncWriteExt;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Semaphore;
-use tw_connector::register;
-use tw_crypto::rustls::pki_types::ServerName;
-use tw_crypto::{ClientAuth, KeyExchange, client_config, server_config};
-use tw_gateway::{Config, Gateway, IngressConfig, ProxyObserver, RateLimit, RequestInfo};
-use tw_testpki as pki;
+use tokio::net::TcpStream;
+use tunnelward_connector::register;
+use tunnelward_crypto::{ClientAuth, KeyExchange, server_config};
+use tunnelward_gateway::{ProxyObserver, RequestInfo};
+use tunnelward_testpki as pki;
 
-use common::{
-    Res, WAIT, connector_config, eventually, gateway_config, registration, start, start_connector,
-    start_gated_connector,
-};
-
-/// A gateway with its ingress on a loopback port: (gateway, connector address, ingress address).
-async fn start_ingress(config: Config) -> Res<(Gateway, String, String)> {
-    let (gateway, connectors) = start(config).await?;
-    let listener = TcpListener::bind("127.0.0.1:0").await?;
-    let ingress = listener.local_addr()?.to_string();
-    let serving = gateway.clone();
-    tokio::spawn(async move { serving.serve_ingress(listener).await });
-    Ok((gateway, connectors, ingress))
-}
-
-/// 127.0.0.0/8, where the tests' clients connect from.
-fn loopback() -> tw_gateway::Cidr {
-    "127.0.0.0/8"
-        .parse()
-        .unwrap_or_else(|_| unreachable!("a valid range"))
-}
-
-fn ingress_config(change: impl FnOnce(&mut IngressConfig)) -> Res<Config> {
-    let mut config = gateway_config()?;
-    config.max_wait = Duration::from_millis(100);
-    change(&mut config.ingress);
-    Ok(config)
-}
-
-/// One HTTP/1.1 request over plain TCP.
-async fn h1(
-    addr: &str,
-    request: Request<Full<Bytes>>,
-) -> Res<(StatusCode, hyper::HeaderMap, String)> {
-    let tcp = TcpStream::connect(addr).await?;
-    let (mut sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(tcp)).await?;
-    tokio::spawn(conn);
-    read(tokio::time::timeout(WAIT, sender.send_request(request)).await??).await
-}
-
-async fn read(response: Response<Incoming>) -> Res<(StatusCode, hyper::HeaderMap, String)> {
-    let (parts, body) = response.into_parts();
-    let bytes = tokio::time::timeout(WAIT, body.collect())
-        .await??
-        .to_bytes();
-    Ok((
-        parts.status,
-        parts.headers,
-        String::from_utf8_lossy(&bytes).into_owned(),
-    ))
-}
-
-fn get(path: &str) -> Res<Request<Full<Bytes>>> {
-    Ok(Request::get(path)
-        .header("host", "mcp.example.org")
-        .body(Full::new(Bytes::new()))?)
-}
+use common::ingress::{get, h1, h1_over_tls, h2_over_tls, ingress_config, loopback, start_ingress};
+use common::{Res, WAIT, connector_config, eventually, registration, start_connector};
 
 #[tokio::test]
 async fn plain_http1_reaches_the_connector() -> Res<()> {
@@ -96,36 +39,6 @@ async fn plain_http1_reaches_the_connector() -> Res<()> {
         (StatusCode::OK, "echo GET /mcp/hello")
     );
     Ok(())
-}
-
-async fn tls_stream(ingress: &str, alpn: &[u8]) -> Res<tokio_rustls::client::TlsStream<TcpStream>> {
-    let tls = client_config(pki::roots(pki::CA)?, None, KeyExchange::default(), &[alpn])?;
-    let tcp = TcpStream::connect(ingress).await?;
-    let name = ServerName::try_from(pki::GATEWAY_NAME)?.to_owned();
-    Ok(tokio_rustls::TlsConnector::from(Arc::new(tls))
-        .connect(name, tcp)
-        .await?)
-}
-
-async fn h2_over_tls(
-    ingress: &str,
-    request: Request<Full<Bytes>>,
-) -> Res<(StatusCode, hyper::HeaderMap, String)> {
-    let stream = tls_stream(ingress, b"h2").await?;
-    let (mut sender, conn) =
-        hyper::client::conn::http2::handshake(TokioExecutor::new(), TokioIo::new(stream)).await?;
-    tokio::spawn(conn);
-    read(sender.send_request(request).await?).await
-}
-
-async fn h1_over_tls(
-    ingress: &str,
-    request: Request<Full<Bytes>>,
-) -> Res<(StatusCode, hyper::HeaderMap, String)> {
-    let stream = tls_stream(ingress, b"http/1.1").await?;
-    let (mut sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
-    tokio::spawn(conn);
-    read(sender.send_request(request).await?).await
 }
 
 #[tokio::test]
@@ -145,95 +58,6 @@ async fn tls_ingress_speaks_h2_and_http1_by_alpn() -> Res<()> {
         h1_over_tls(&ingress, get("/mcp/one")?).await?.2,
         "echo GET /mcp/one"
     );
-    Ok(())
-}
-
-#[tokio::test]
-async fn refusals_have_the_right_status() -> Res<()> {
-    let config = ingress_config(|i| {
-        i.max_url_len = 64;
-        i.max_body = 16;
-    })?;
-    let (_gateway, connectors, ingress) = start_ingress(config).await?;
-    let _c = start_connector(&connectors, "echo", registration(1, &["mcp"], &[])).await?;
-    assert_eq!(
-        h1(&ingress, get("/nothing")?).await?.0,
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(
-        h1(&ingress, get(&format!("/mcp/{}", "a".repeat(80)))?)
-            .await?
-            .0,
-        StatusCode::URI_TOO_LONG
-    );
-    let big = Request::post("/mcp/x")
-        .header("host", "h")
-        .body(Full::new(Bytes::from(vec![b'x'; 17])))?;
-    assert_eq!(h1(&ingress, big).await?.0, StatusCode::PAYLOAD_TOO_LARGE);
-    let ok = Request::post("/mcp/x")
-        .header("host", "h")
-        .body(Full::new(Bytes::from(vec![b'x'; 16])))?;
-    assert_eq!(h1(&ingress, ok).await?.0, StatusCode::OK);
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_client_over_its_rate_gets_429_with_retry_after() -> Res<()> {
-    let config = ingress_config(|i| {
-        i.rate_limit = RateLimit {
-            per_second: 1.0,
-            burst: 2,
-            max_clients: 10,
-        }
-    })?;
-    let (_gateway, connectors, ingress) = start_ingress(config).await?;
-    let _c = start_connector(&connectors, "echo", registration(1, &["mcp"], &[])).await?;
-    assert_eq!(h1(&ingress, get("/mcp/1")?).await?.0, StatusCode::OK);
-    assert_eq!(h1(&ingress, get("/mcp/2")?).await?.0, StatusCode::OK);
-    let (status, headers, _) = h1(&ingress, get("/mcp/3")?).await?;
-    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
-    assert_eq!(
-        headers.get("retry-after").and_then(|v| v.to_str().ok()),
-        Some("1")
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_slow_connector_is_504() -> Res<()> {
-    let config = ingress_config(|i| i.request_timeout = Duration::from_millis(200))?;
-    let (_gateway, connectors, ingress) = start_ingress(config).await?;
-    let gate = Arc::new(Semaphore::new(0));
-    let _c =
-        start_gated_connector(&connectors, "slow", registration(1, &["slow"], &[]), gate).await?;
-    assert_eq!(
-        h1(&ingress, get("/slow/x")?).await?.0,
-        StatusCode::GATEWAY_TIMEOUT
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_kept_route_with_no_connector_is_503_with_retry_after() -> Res<()> {
-    let (gateway, connectors, ingress) = start_ingress(ingress_config(|_| {})?).await?;
-    drop(
-        register(&connector_config(
-            &connectors,
-            registration(2, &["gone"], &[]),
-        )?)
-        .await?,
-    );
-    eventually("the gone route to go", || {
-        !gateway.routes().contains(&"gone".to_owned())
-    })
-    .await?;
-    let (status, headers, _) = h1(&ingress, get("/gone/x")?).await?;
-    assert_eq!(
-        status,
-        StatusCode::SERVICE_UNAVAILABLE,
-        "a kept route waits, then 503"
-    );
-    assert!(headers.contains_key("retry-after"));
     Ok(())
 }
 

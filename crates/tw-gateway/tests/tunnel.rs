@@ -14,12 +14,12 @@ use hyper::{Request, StatusCode};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
-use tw_connector::{Error as ConnectorError, register};
-use tw_crypto::rustls::pki_types::ServerName;
-use tw_gateway::{Config, SendError};
-use tw_proto::io::read_frame;
-use tw_proto::{ALPN, Frame, Limits, RejectCode};
-use tw_testpki as pki;
+use tunnelward_connector::{Error as ConnectorError, register};
+use tunnelward_crypto::rustls::pki_types::ServerName;
+use tunnelward_gateway::{Config, SendError};
+use tunnelward_proto::io::read_frame;
+use tunnelward_proto::{ALPN, Frame, Limits, RejectCode};
+use tunnelward_testpki as pki;
 
 use common::{
     Res, WAIT, connector_config, eventually, gateway_config, get, get_request, registration, start,
@@ -27,7 +27,9 @@ use common::{
 };
 
 /// A gateway that forgets a route as soon as its connector leaves.
-async fn start_gateway(registration_timeout: Duration) -> Res<(tw_gateway::Gateway, String)> {
+async fn start_gateway(
+    registration_timeout: Duration,
+) -> Res<(tunnelward_gateway::Gateway, String)> {
     let config = Config {
         registration_timeout,
         routes_keep_time: Duration::ZERO,
@@ -115,8 +117,8 @@ async fn raw(addr: &str, alpn: &[&[u8]]) -> Res<tokio_rustls::client::TlsStream<
 /// codec refuses to encode an invalid frame, so this patches valid CBOR.
 fn version_2_body() -> Res<Vec<u8>> {
     let frame = Frame::Register(registration(1, &["mcp"], &[]));
-    let valid = tw_proto::encode(&frame, &Limits::default())?;
-    let mut body = valid[tw_proto::LENGTH_PREFIX_LEN..].to_vec();
+    let valid = tunnelward_proto::encode(&frame, &Limits::default())?;
+    let mut body = valid[tunnelward_proto::LENGTH_PREFIX_LEN..].to_vec();
     // CBOR text "version" followed by the unsigned integer 1.
     let at = body
         .windows(8)
@@ -155,8 +157,8 @@ async fn a_client_offering_no_alpn_is_closed_without_an_answer() -> Res<()> {
     let (gateway, addr) = start_gateway(WAIT).await?;
     let mut stream = raw(&addr, &[]).await?;
     let frame = Frame::Register(registration(1, &["mcp"], &[]));
-    let bytes = tw_proto::encode(&frame, &Limits::default())?;
-    send_body(&mut stream, &bytes[tw_proto::LENGTH_PREFIX_LEN..]).await?;
+    let bytes = tunnelward_proto::encode(&frame, &Limits::default())?;
+    send_body(&mut stream, &bytes[tunnelward_proto::LENGTH_PREFIX_LEN..]).await?;
     let read = tokio::time::timeout(WAIT, read_frame(&mut stream, &Limits::default())).await?;
     assert!(
         read.is_err(),
@@ -241,8 +243,8 @@ async fn a_connector_that_goes_silent_is_dropped_by_keep_alive() -> Res<()> {
     // whose process hung but whose socket stayed open.
     let mut stream = raw(&addr, &[ALPN]).await?;
     let frame = Frame::Register(registration(1, &["mcp"], &[]));
-    let bytes = tw_proto::encode(&frame, &Limits::default())?;
-    send_body(&mut stream, &bytes[tw_proto::LENGTH_PREFIX_LEN..]).await?;
+    let bytes = tunnelward_proto::encode(&frame, &Limits::default())?;
+    send_body(&mut stream, &bytes[tunnelward_proto::LENGTH_PREFIX_LEN..]).await?;
     assert!(matches!(
         read_frame(&mut stream, &Limits::default()).await?,
         Frame::Accept(_)

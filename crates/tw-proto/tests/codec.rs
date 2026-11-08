@@ -3,7 +3,7 @@
 
 //! Codec behaviour at the edges: partial input, limits, malformed bodies.
 
-use tw_proto::{
+use tunnelward_proto::{
     Accept, ConnectorId, DecodeError, Decoded, EncodeError, Frame, LENGTH_PREFIX_LEN, Limits,
     McpDescriptor, PROTOCOL_VERSION, Register, Reject, RejectCode, StreamLimits, decode, encode,
 };
