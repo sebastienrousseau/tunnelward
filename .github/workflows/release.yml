@@ -112,7 +112,7 @@ jobs:
           mkdir -p "dist/$name"
           exe=tunnelward
           [[ "$TARGET" == *windows* ]] && exe=tunnelward.exe
-          cp "target/$TARGET/release/$exe" README.md CHANGELOG.md LICENSE* "dist/$name/"
+          cp -R "target/$TARGET/release/$exe" README.md CHANGELOG.md LICENSE* "dist/$name/"
           cd dist
           if [[ "$TARGET" == *windows* ]]; then
             7z a -tzip "$name.zip" "$name" > /dev/null
