@@ -34,6 +34,12 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   reaches it on UEFI hosts, so the exemption baseline is 3 for the
   same three crates.
 
+### Fixed
+
+- Release packaging: the build step failed on the `LICENSES/` directory,
+  so the first v0.0.1 release run published nothing. Archives now carry
+  `LICENSES/` alongside `LICENSE`.
+
 ## [0.0.2]
 
 ### Added
