@@ -99,8 +99,8 @@ async fn the_public_inventory_reveals_counts_only() -> Res<()> {
         body,
         r#"{"connections":1,"connectors":1,"routes":1,"in_flight":0,"waiting":0,"draining":0}"#
     );
-    for secret in ["127.0.0.1", "mcp/a", "a.example", "07070707"] {
-        assert!(!body.contains(secret), "{secret} leaked: {body}");
+    for detail in ["127.0.0.1", "mcp/a", "a.example", "07070707"] {
+        assert!(!body.contains(detail), "{detail} leaked: {body}");
     }
     Ok(())
 }
