@@ -15,8 +15,9 @@
 #              trusted publishing (OIDC, no stored token). Runs once the
 #              repository variable CRATES_IO_TRUSTED_PUBLISHING is "true",
 #              which needs each crate to exist on crates.io and to name
-#              this workflow as its trusted publisher. A version already
-#              on crates.io is skipped, so rebuilding a tag is safe.
+#              this workflow as its trusted publisher. A crate already on
+#              crates.io at this version is skipped, so a rerun resumes;
+#              a crate new to crates.io stops the job before publishing.
 #
 # Verify an asset:   gh attestation verify --owner sebastienrousseau <file>
 # Verify checksums:  cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
@@ -276,14 +277,32 @@ jobs:
           ref: ${{ env.TAG }}
           persist-credentials: false
       - id: check
-        name: Skip a version crates.io already has
+        name: Plan the publish
+        # A crate crates.io has at this version is skipped, so a rerun
+        # finishes what an earlier run started. A crate crates.io has never
+        # seen stops the job before anything is published: trusted
+        # publishing cannot create a crate, so the maintainer publishes it
+        # once by hand and adds its trusted publisher.
         run: |
           set -euo pipefail
-          publishable="$(cargo metadata --no-deps --format-version 1 --locked \
-            | jq '[.packages[] | select(.publish != [])] | length')"
-          status="$(curl -s -o /dev/null -w '%{http_code}' -A 'tunnelward-release (github.com/sebastienrousseau/tunnelward)' \
-            "https://crates.io/api/v1/crates/tunnelward/$VERSION")"
-          echo "run=$([ "$publishable" -gt 0 ] && [ "$status" = 404 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          status() {
+            curl -s -o /dev/null -w '%{http_code}' -A 'tunnelward-release (github.com/sebastienrousseau/tunnelward)' \
+              "https://crates.io/api/v1/crates/$1${2:+/$2}"
+          }
+          new=(); done_=(); todo=0
+          while IFS= read -r name; do
+            if [ "$(status "$name")" = 404 ]; then new+=("$name")
+            elif [ "$(status "$name" "$VERSION")" = 200 ]; then done_+=("$name")
+            else todo=$((todo + 1)); fi
+          done < <(cargo metadata --no-deps --format-version 1 --locked \
+            | jq -r '.packages[] | select(.publish != []) | .name')
+          if [ "${#new[@]}" -gt 0 ]; then
+            echo "::error::not on crates.io yet: ${new[*]}. Publish $VERSION by hand (.git/publish-crates.sh $VERSION), add each new crate's trusted publisher, then rerun this job."
+            exit 1
+          fi
+          excludes="$(printf -- '--exclude %s ' ${done_[@]+"${done_[@]}"})"
+          echo "excludes=$excludes" >> "$GITHUB_OUTPUT"
+          echo "run=$([ "$todo" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - if: steps.check.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
         with:
@@ -292,6 +311,10 @@ jobs:
         id: auth
         uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
       - if: steps.check.outputs.run == 'true'
-        run: cargo publish --workspace --locked
+        run: |
+          set -euo pipefail
+          read -ra excludes <<< "$EXCLUDES"
+          cargo publish --workspace --locked ${excludes[@]+"${excludes[@]}"}
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          EXCLUDES: ${{ steps.check.outputs.excludes }}

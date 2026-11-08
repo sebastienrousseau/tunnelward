@@ -45,6 +45,10 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   admitted, so concurrent registrations cannot overshoot the cap.
 - CI: the CLA workflow grants nothing at the top level; its one
   job asks for the four scopes it needs.
+- The release workflow's `crates` job resumes instead of failing on a
+  rerun: a crate crates.io already has at the version is skipped. A crate
+  crates.io has never seen stops the job before anything is published,
+  since trusted publishing cannot create one.
 - A Windows-only flaky test (`a_slow_client_holds_back_an_endless_stream`)
   now waits for production to stall instead of sleeping a fixed second.
 
