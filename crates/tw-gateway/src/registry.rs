@@ -18,7 +18,7 @@ use tunnelward_proto::{ConnectorId, Register};
 
 use crate::kill::KillSwitch;
 use crate::pool::{Entry, Lease, choose};
-use crate::{RouteResolver, Target};
+use crate::{DrainTarget, RouteResolver, Target};
 
 /// A route remembered after its last connector left (G4).
 struct Kept {
@@ -32,6 +32,9 @@ struct State {
     entries: Vec<Entry>,
     kept: Vec<Kept>,
     waiting: HashMap<String, u32>,
+    /// Dark targets (G14): matching connections stay connected but take
+    /// no new request.
+    dark: Vec<DrainTarget>,
 }
 
 /// What a request can do now.
@@ -63,6 +66,7 @@ pub(crate) struct Snapshot {
     pub(crate) capacity: u32,
     pub(crate) in_flight: u32,
     pub(crate) draining: bool,
+    pub(crate) dark: bool,
 }
 
 #[derive(Default)]
@@ -185,7 +189,8 @@ impl Registry {
 
     /// Every live connection, for the admin inventory.
     pub(crate) fn snapshot(&self) -> Vec<Snapshot> {
-        self.lock()
+        let state = self.lock();
+        state
             .entries
             .iter()
             .filter(|e| !e.sender.is_closed())
@@ -197,8 +202,28 @@ impl Registry {
                 capacity: e.capacity,
                 in_flight: e.load(),
                 draining: e.draining,
+                dark: state.dark.iter().any(|d| d.matches(e)),
             })
             .collect()
+    }
+
+    /// Turns `target` dark or back; returns whether that changed anything.
+    pub(crate) fn set_dark(&self, target: DrainTarget, dark: bool) -> bool {
+        let mut state = self.lock();
+        let had = state.dark.contains(&target);
+        match (had, dark) {
+            (false, true) => state.dark.push(target),
+            (true, false) => state.dark.retain(|d| *d != target),
+            _ => return false,
+        }
+        drop(state);
+        // Requests waiting for a slot may find one now.
+        self.changed.notify_waiters();
+        true
+    }
+
+    pub(crate) fn dark(&self) -> Vec<DrainTarget> {
+        self.lock().dark.clone()
     }
 
     pub(crate) fn in_flight(&self) -> u32 {
@@ -220,7 +245,11 @@ impl Registry {
         match top {
             None => kept_queue(resolver, &state.kept, target),
             Some((route, pool)) => {
-                let room: Vec<&Entry> = pool.into_iter().filter(|e| e.has_room()).collect();
+                let lit = |e: &&Entry| !state.dark.iter().any(|d| d.matches(e));
+                let room: Vec<&Entry> = pool
+                    .into_iter()
+                    .filter(|e| e.has_room() && lit(e))
+                    .collect();
                 choose(&room).map_or(Pick::Wait(route), |e| {
                     Pick::Ready(e.lease(self.changed.clone()))
                 })

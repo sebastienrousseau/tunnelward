@@ -187,3 +187,27 @@ async fn a_token_is_required_when_set() -> Res<()> {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn dark_mode_is_set_listed_and_shown() -> Res<()> {
+    let (_gateway, admin) = admin_rig(AdminConfig::default()).await?;
+    let (status, body) = call(&admin, Method::POST, "/dark?route=mcp/a&on=true", None).await?;
+    assert_eq!(
+        (status, body.as_str()),
+        (StatusCode::OK, r#"{"changed":true,"dark":["route:mcp/a"]}"#)
+    );
+    let (_, listed) = call(&admin, Method::GET, "/dark", None).await?;
+    assert_eq!(listed, r#"{"dark":["route:mcp/a"]}"#);
+    let (_, detail) = call(&admin, Method::GET, "/inventory?redaction=internal", None).await?;
+    assert!(detail.contains(r#""dark":true"#), "{detail}");
+    let (_, off) = call(&admin, Method::POST, "/dark?route=mcp/a&on=false", None).await?;
+    assert_eq!(off, r#"{"changed":true,"dark":[]}"#);
+    for bad in ["/dark?route=mcp/a", "/dark?on=true", "/dark?route=x&on=yes"] {
+        assert_eq!(
+            call(&admin, Method::POST, bad, None).await?.0,
+            StatusCode::BAD_REQUEST,
+            "{bad}"
+        );
+    }
+    Ok(())
+}

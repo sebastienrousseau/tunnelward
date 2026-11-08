@@ -143,17 +143,20 @@ fn loopback_only(dev: &Dev) -> Result<(), Error> {
 }
 
 /// The ingress and admin listeners, and the connector listener on a
-/// free loopback port.
-async fn listeners(dev: &Dev) -> Result<Listeners, String> {
+/// free loopback port, with where the connector and agents connect.
+async fn listeners(dev: &Dev) -> Result<(Listeners, SocketAddr, SocketAddr), String> {
     let admin = match dev.admin {
         Some(addr) => Some((bind(addr).await?, AdminConfig::default())),
         None => None,
     };
-    Ok(Listeners {
+    let listeners = Listeners {
         connectors: bind(SocketAddr::from(([127, 0, 0, 1], 0))).await?,
         ingress: bind(dev.listen).await?,
         admin,
-    })
+    };
+    let at = |l: &tokio::net::TcpListener| l.local_addr().map_err(|e| e.to_string());
+    let (connectors, agents) = (at(&listeners.connectors)?, at(&listeners.ingress)?);
+    Ok((listeners, connectors, agents))
 }
 
 /// The connector in front of `to`, once its route is registered.
@@ -182,15 +185,14 @@ pub(crate) async fn run(dev: Dev) -> Result<(), Error> {
     loopback_only(&dev)?;
     let (connector_identity, connector_cert) = self_signed(CONNECTOR_NAME)?;
     let (gateway, gateway_cert) = gateway(connector_cert)?;
-    let listeners = listeners(&dev).await?;
-    let at = listeners.connectors.local_addr()?;
+    let (listeners, at, agents) = listeners(&dev).await?;
     let serving = gateway.clone();
     let servers = tokio::spawn(async move { until_one_stops(&serving, listeners).await });
     let _connector =
         start_connector(&dev, &gateway, at, (connector_identity, gateway_cert), &to).await?;
     println!(
-        "tunnelward dev: ready. http://{} -> http://{to} (route {})",
-        dev.listen, dev.route
+        "tunnelward dev: ready. http://{agents} -> http://{to} (route {})",
+        dev.route
     );
     Ok(servers.await??)
 }

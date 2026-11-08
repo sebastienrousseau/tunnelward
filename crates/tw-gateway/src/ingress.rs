@@ -19,13 +19,15 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use http::header::{CONTENT_LENGTH, HOST, RETRY_AFTER};
-use http::{HeaderValue, Request, Response, StatusCode, Version};
+use http::header::{CONTENT_LENGTH, CONTENT_TYPE, HOST, RETRY_AFTER};
+use http::{HeaderValue, Method, Request, Response, StatusCode, Version};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::{Body, Frame, Incoming, SizeHint};
 
+use crate::cors::{self, Cors};
 use crate::forwarding::{Stamp, rewrite};
+use crate::provenance;
 use crate::{ClientAddr, Gateway, RequestInfo, ResponseBody, SendError};
 
 /// The ingress response body: a connector's stream, or the gateway's own
@@ -71,10 +73,10 @@ impl hyper::service::Service<Request<Incoming>> for Ingress {
     }
 }
 
-/// A refusal: the status, the reason for observers, and any `Retry-After`.
 /// The response header naming a refusal's error id.
 const TW_ERROR: http::HeaderName = http::HeaderName::from_static("tw-error");
 
+/// A refusal: the status, the reason for observers, and any `Retry-After`.
 struct Refusal {
     /// The stable error id (`docs/errors.md`).
     id: &'static str,
@@ -100,19 +102,36 @@ impl Ingress {
         let inner = &self.gateway.inner;
         let ingress = &inner.config.ingress;
         let client = ClientAddr::resolve(self.peer, request.headers(), &ingress.trusted_proxies);
+        let headers = request.headers();
         let info = RequestInfo {
             id: inner.next_request.fetch_add(1, Ordering::Relaxed),
             method: request.method().clone(),
             uri: request.uri().clone(),
             client,
+            request_id: provenance::request_id(),
+            user_agent: provenance::declared(headers, "user-agent"),
+            traceparent: provenance::traceparent(headers),
+            mcp_session: provenance::declared(headers, tunnelward_mcp::SESSION_HEADER),
         };
         for o in &ingress.observers {
             o.on_request(&info);
         }
-        match self.forward(request, &info).await {
-            Ok(response) => self.observed(response, info, started),
-            Err(refusal) => self.refuse(&info, &refusal, started),
+        let cors = cors::decide(&ingress.cors, &request);
+        let mut response = match cors {
+            Cors::Preflight(ref headers) => preflight(headers, &info),
+            Cors::Refused => {
+                let refusal = Refusal::new("TW-I007", StatusCode::FORBIDDEN, "origin not allowed");
+                self.refuse(&info, &refusal, started)
+            }
+            Cors::None | Cors::Allowed(_) => match self.forward(request, &info).await {
+                Ok(response) => self.observed(response, info, started),
+                Err(refusal) => self.refuse(&info, &refusal, started),
+            },
+        };
+        if let Cors::Allowed(headers) = cors {
+            response.headers_mut().extend(headers);
         }
+        response
     }
 
     async fn forward(
@@ -122,7 +141,8 @@ impl Ingress {
     ) -> Result<Response<ResponseBody>, Refusal> {
         let ingress = &self.gateway.inner.config.ingress;
         self.admit(&request, info)?;
-        let request = self.buffer(request).await?;
+        let (request, body) = self.buffer(request).await?;
+        self.envelope(&request, &body, info);
         let request = self.restate(request, info);
         match tokio::time::timeout(ingress.request_timeout, self.gateway.send(request)).await {
             Ok(Ok(response)) => Ok(response),
@@ -166,8 +186,11 @@ impl Ingress {
             })
     }
 
-    /// Reads the body, stopping at `max_body`.
-    async fn buffer(&self, request: Request<Incoming>) -> Result<Request<Full<Bytes>>, Refusal> {
+    /// Reads the body, stopping at `max_body`; returns it beside the request.
+    async fn buffer(
+        &self,
+        request: Request<Incoming>,
+    ) -> Result<(Request<Full<Bytes>>, Bytes), Refusal> {
         let max = self.gateway.inner.config.ingress.max_body;
         let (parts, body) = request.into_parts();
         let collected = Limited::new(body, max).collect().await.map_err(|e| {
@@ -181,7 +204,8 @@ impl Ingress {
                 Refusal::new("TW-I005", StatusCode::BAD_REQUEST, "request body failed")
             }
         })?;
-        Ok(Request::from_parts(parts, Full::new(collected.to_bytes())))
+        let body = collected.to_bytes();
+        Ok((Request::from_parts(parts, Full::new(body.clone())), body))
     }
 
     /// States the resolved client in the forwarding headers.
@@ -215,7 +239,26 @@ impl Ingress {
             legacy: ingress.legacy_forwarded,
         };
         rewrite(request.headers_mut(), &stamp);
+        stamp_request_id(request.headers_mut(), info);
         request
+    }
+
+    /// Tells observers the MCP envelope of a JSON POST, if it is one.
+    fn envelope(&self, request: &Request<Full<Bytes>>, body: &Bytes, info: &RequestInfo) {
+        let observers = &self.gateway.inner.config.ingress.observers;
+        let json = request
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(tunnelward_mcp::is_json);
+        if observers.is_empty() || request.method() != Method::POST || !json {
+            return;
+        }
+        if let Ok(envelope) = tunnelward_mcp::parse(body) {
+            for o in observers {
+                o.on_envelope(info, &envelope);
+            }
+        }
     }
 
     fn observed(
@@ -228,6 +271,8 @@ impl Ingress {
         for o in &observers {
             o.on_response(&info, response.status(), started.elapsed());
         }
+        let mut response = response;
+        stamp_request_id(response.headers_mut(), &info);
         response.map(|body| {
             Observed {
                 inner: body,
@@ -265,6 +310,7 @@ impl Ingress {
         response
             .headers_mut()
             .insert(TW_ERROR, HeaderValue::from_static(refusal.id));
+        stamp_request_id(response.headers_mut(), info);
         if let Some(wait) = refusal.retry_after {
             let secs = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
             response
@@ -272,6 +318,24 @@ impl Ingress {
                 .insert(RETRY_AFTER, HeaderValue::from(secs.max(1)));
         }
         response
+    }
+}
+
+/// The gateway's own answer to an allowed CORS preflight: 204, the CORS
+/// headers, and the request id. The connector never sees it.
+fn preflight(headers: &http::HeaderMap, info: &RequestInfo) -> Response<IngressBody> {
+    let mut response = Response::new(Full::new(Bytes::new()).map_err(|e| match e {}).boxed());
+    *response.status_mut() = StatusCode::NO_CONTENT;
+    response.headers_mut().extend(headers.clone());
+    stamp_request_id(response.headers_mut(), info);
+    response
+}
+
+/// Names the request's id in its response (`tw-request-id`), replacing
+/// any the connector set.
+fn stamp_request_id(headers: &mut http::HeaderMap, info: &RequestInfo) {
+    if let Ok(id) = HeaderValue::from_str(&info.request_id) {
+        headers.insert(provenance::REQUEST_ID, id);
     }
 }
 

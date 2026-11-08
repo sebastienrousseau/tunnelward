@@ -21,6 +21,7 @@ mod admit;
 mod cidr;
 mod client_addr;
 mod config;
+mod cors;
 mod drain;
 mod error;
 mod forwarding;
@@ -29,17 +30,20 @@ mod kill;
 mod listener;
 mod observer;
 mod pool;
+mod provenance;
 pub mod proxy_protocol;
 mod ratelimit;
 mod registry;
 mod resolver;
 mod retry;
 mod route;
+mod tls;
 
 pub use admin::{AdminConfig, Connection, Inventory, Redaction};
 pub use cidr::{Cidr, CidrError};
 pub use client_addr::ClientAddr;
 pub use config::{Config, IngressConfig};
+pub use cors::CorsRule;
 pub use drain::{DrainReport, DrainTarget};
 pub use error::{AdmitError, SendError};
 pub use ingress::{Ingress, IngressBody};
@@ -86,7 +90,10 @@ pub struct Gateway {
 
 struct Inner {
     config: Config,
-    acceptor: TlsAcceptor,
+    /// The connector listener's TLS, replaceable at runtime (G16).
+    acceptor: std::sync::RwLock<TlsAcceptor>,
+    /// The ingress TLS, if any, replaceable at runtime (G16).
+    ingress_tls: std::sync::RwLock<Option<TlsAcceptor>>,
     registry: Registry,
     limiter: ratelimit::Limiter,
     next_request: std::sync::atomic::AtomicU64,
@@ -98,12 +105,14 @@ impl Gateway {
     /// A gateway with no connectors yet.
     #[must_use]
     pub fn new(config: Config) -> Self {
-        let acceptor = TlsAcceptor::from(config.tls.clone());
+        let acceptor = std::sync::RwLock::new(TlsAcceptor::from(config.tls.clone()));
+        let ingress_tls = std::sync::RwLock::new(config.ingress.tls.clone().map(TlsAcceptor::from));
         let limiter = ratelimit::Limiter::new(config.ingress.rate_limit);
         Self {
             inner: Arc::new(Inner {
                 config,
                 acceptor,
+                ingress_tls,
                 registry: Registry::default(),
                 limiter,
                 next_request: std::sync::atomic::AtomicU64::new(0),

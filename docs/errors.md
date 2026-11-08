@@ -166,6 +166,12 @@ by default). 413, before any of the body is read.
 
 **Request timeout.** No response arrived within `request_timeout`. 504.
 
+### TW-I007
+
+**Origin not allowed.** A browser's CORS preflight came from an origin no
+`cors` rule allows for that path. 403; the connector never sees it. Add
+the origin to the path's rule if the page should reach the service.
+
 ## Connector (`TW-C`)
 
 A rejected registration reports its `TW-R` id instead.

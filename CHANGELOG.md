@@ -7,6 +7,70 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.9]
+
+### Added
+
+- `tunnelward-mcp` parses MCP envelopes (FR-2, FR-4 groundwork): from a
+  JSON POST body of at most 1 MiB, each JSON-RPC 2.0 message's kind, id
+  and method, the tool a `tools/call` names, the declared `clientInfo`
+  of `initialize`, and `params._meta.traceparent`. Arguments are never
+  kept. A `tools/call` that does not name its tool as a string is
+  refused, so no call can hide its tool from per-tool policy. A fuzz
+  target, `envelope`, joins the CI replay. The crate is published.
+- Provenance, first part (FR-14): every ingress request gets a ULID
+  request id, sent to the connector and back to the client in
+  `tw-request-id` (a client cannot choose it), refusals included.
+  `RequestInfo` records the declared `User-Agent`, a well-formed W3C
+  `traceparent` and the `Mcp-Session-Id`; observers get each JSON POST's
+  envelope through `ProxyObserver::on_envelope`.
+- Dark mode (G14): `Gateway::set_dark` by connector, route or address,
+  and `POST /dark` and `GET /dark` on the admin API. A dark connection
+  stays connected and finishes its requests but takes no new one;
+  requests for a route with only dark connections wait, then get 503
+  with `Retry-After`, and are served at once if it comes back in time.
+  Connections that arrive later and match are dark too. The internal
+  inventory shows which connections are dark. Writing it to the audit
+  log waits for the audit log (0.0.14).
+- Certificate reload without a restart (G16): `Gateway::set_tls` and
+  `Gateway::set_ingress_tls` apply to the next handshake; established
+  connections keep theirs. `tunnelward gateway` watches its file and the
+  certificates and keys it names (`[tls] reload_secs`, default 10) and
+  swaps them in after the whole file passes its checks again; a file
+  that fails keeps the running certificates and says why.
+- `tunnelward connector --config <file>`: a connector in front of a local
+  service (HTTP or a Unix socket), from a TOML file naming the gateway
+  (a fixed address, or a name looked up again every minute), its CA and
+  server name, the connector's certificate and SPIFFE ID, and its routes
+  and domains. `tunnelward config check` checks a connector's file too.
+- CORS per path (G17) for browser-based MCP clients:
+  `IngressConfig::cors` rules, and `[[ingress.cors]]` in the gateway's
+  file. An allowed origin's preflight is answered by the gateway (204,
+  the MCP request headers allowed); its real responses can be read, with
+  `Mcp-Session-Id`, `tw-request-id` and `tw-error` exposed. A preflight
+  from any other origin gets 403 (`TW-I007`). Credentials are never
+  allowed: MCP clients use bearer tokens.
+- MCP pass-through tests: `initialize` with its session header and a
+  `tools/call` answered by an SSE stream reach the client byte for byte.
+
+### Notes
+
+- MCP pass-through is tested against a minimal MCP server written for
+  the test (JSON answers, a session header, an SSE stream); the official
+  MCP conformance suite has not been run through the gateway yet.
+- `tunnelward-mcp` is new on crates.io, and trusted publishing cannot
+  create a crate, so 0.0.9's first publish is by hand like 0.0.8's.
+
+### Fixed
+
+- README build badge: it now reads `ci.yml` on `main` only, labelled
+  `Build`, like the other repositories' badges, instead of the latest
+  run on any branch.
+- The OpenSSF Scorecard badge had no results to show: a Scorecard
+  workflow now scores the repository on every push to `main` and
+  weekly, publishes to scorecard.dev and uploads its findings to code
+  scanning.
+
 ## [0.0.8]
 
 ### Added

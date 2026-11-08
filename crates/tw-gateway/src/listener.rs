@@ -27,11 +27,12 @@ impl Gateway {
     ///
     /// The listener's accept error.
     pub async fn serve_ingress(&self, listener: TcpListener) -> std::io::Result<()> {
-        let acceptor = self.inner.config.ingress.tls.clone().map(TlsAcceptor::from);
         loop {
             let (tcp, peer) = listener.accept().await?;
             let gateway = self.clone();
-            let acceptor = acceptor.clone();
+            // Read per connection, so a certificate reload (G16) applies
+            // to the next client.
+            let acceptor = self.ingress_acceptor();
             tokio::spawn(async move { gateway.ingress_connection(tcp, peer, acceptor).await });
         }
     }

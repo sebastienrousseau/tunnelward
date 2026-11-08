@@ -14,12 +14,17 @@
 //! cert = "gateway.crt"          # PEM chain, leaf first
 //! key = "gateway.key"           # PEM private key
 //! client_ca = "connectors.crt"  # PEM roots connector certificates chain to
+//! reload_secs = 10              # how often to look for renewed files
 //!
 //! [ingress]                     # optional; plain HTTP without cert and key
 //! cert = "ingress.crt"
 //! key = "ingress.key"
 //! trusted_proxies = ["10.0.0.0/8"]
 //! proxy_protocol = false
+//!
+//! [[ingress.cors]]              # optional, per path (G17)
+//! path = "/mcp"
+//! origins = ["https://app.example.org"]
 //!
 //! [connectors]
 //! allow = ["10.1.0.0/16"]       # empty: any source
@@ -38,7 +43,7 @@ use tunnelward_crypto::rustls::RootCertStore;
 use tunnelward_crypto::rustls::pki_types::pem::PemObject;
 use tunnelward_crypto::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tunnelward_crypto::{ClientAuth, Identity, KeyExchange, server_config};
-use tunnelward_gateway::{AdminConfig, Cidr, Config};
+use tunnelward_gateway::{AdminConfig, Cidr, Config, CorsRule};
 use tunnelward_proto::ALPN;
 
 /// The whole file.
@@ -69,6 +74,7 @@ struct Tls {
     cert: PathBuf,
     key: PathBuf,
     client_ca: PathBuf,
+    reload_secs: Option<u64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -80,6 +86,42 @@ struct Ingress {
     trusted_proxies: Vec<String>,
     #[serde(default)]
     proxy_protocol: bool,
+    #[serde(default)]
+    cors: Vec<CorsPart>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CorsPart {
+    path: String,
+    origins: Vec<String>,
+}
+
+/// An origin as browsers send it: `*`, or a scheme and host with no path.
+fn is_origin(origin: &str) -> bool {
+    let rest = origin
+        .strip_prefix("https://")
+        .or_else(|| origin.strip_prefix("http://"));
+    origin == "*" || rest.is_some_and(|host| !host.is_empty() && !host.contains('/'))
+}
+
+fn cors(parts: &[CorsPart], problems: &mut Problems) -> Vec<CorsRule> {
+    for part in parts {
+        if !part.path.starts_with('/') {
+            problems.push(format!(
+                "[[ingress.cors]] path {:?}: start it with /",
+                part.path
+            ));
+        }
+        let bad = part.origins.iter().filter(|o| !is_origin(o));
+        problems.extend(
+            bad.map(|o| format!("[[ingress.cors]] origin {o:?}: give scheme://host[:port] or *")),
+        );
+    }
+    parts
+        .iter()
+        .map(|p| CorsRule::new(p.path.clone(), p.origins.clone()))
+        .collect()
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -104,6 +146,11 @@ pub(crate) struct Checked {
     pub(crate) listen: Listen,
     pub(crate) gateway: Config,
     pub(crate) admin: AdminConfig,
+    /// The file and every certificate and key it names, to watch for
+    /// renewal (G16).
+    pub(crate) watched: Vec<PathBuf>,
+    /// How often to look at them.
+    pub(crate) reload_every: std::time::Duration,
 }
 
 /// Reads and parses `path`. A parse error names the line and column.
@@ -113,7 +160,7 @@ pub(crate) fn load(path: &Path) -> Result<File, String> {
 }
 
 /// Paths in the file are relative to the file's directory.
-fn resolve(base: &Path, path: &Path) -> PathBuf {
+pub(crate) fn resolve(base: &Path, path: &Path) -> PathBuf {
     if path.is_absolute() {
         path.to_owned()
     } else {
@@ -121,7 +168,7 @@ fn resolve(base: &Path, path: &Path) -> PathBuf {
     }
 }
 
-fn chain(path: &Path) -> Result<Vec<CertificateDer<'static>>, String> {
+pub(crate) fn chain(path: &Path) -> Result<Vec<CertificateDer<'static>>, String> {
     let certs = CertificateDer::pem_file_iter(path)
         .and_then(Iterator::collect::<Result<Vec<_>, _>>)
         .map_err(|e| format!("{}: {e}", path.display()))?;
@@ -131,7 +178,7 @@ fn chain(path: &Path) -> Result<Vec<CertificateDer<'static>>, String> {
     Ok(certs)
 }
 
-fn identity(cert: &Path, key: &Path) -> Result<Identity, String> {
+pub(crate) fn identity(cert: &Path, key: &Path) -> Result<Identity, String> {
     let key = PrivateKeyDer::from_pem_file(key).map_err(|e| format!("{}: {e}", key.display()))?;
     Ok(Identity {
         chain: chain(cert)?,
@@ -139,7 +186,7 @@ fn identity(cert: &Path, key: &Path) -> Result<Identity, String> {
     })
 }
 
-fn roots(path: &Path) -> Result<Arc<RootCertStore>, String> {
+pub(crate) fn roots(path: &Path) -> Result<Arc<RootCertStore>, String> {
     let mut store = RootCertStore::empty();
     for cert in chain(path)? {
         store
@@ -223,6 +270,7 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
     );
     let allow = cidrs("[connectors] allow", &file.connectors.allow, &mut problems);
     let admin = admin(&file.listen, &file.admin, &mut problems);
+    let cors = cors(&file.ingress.cors, &mut problems);
     let (Some(tls), Some(ingress_tls), true) = (tls, ingress_tls, problems.is_empty()) else {
         return Err(problems);
     };
@@ -231,12 +279,25 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
     gateway.ingress.tls = ingress_tls.map(Arc::new);
     gateway.ingress.trusted_proxies = trusted;
     gateway.ingress.proxy_protocol = file.ingress.proxy_protocol;
+    gateway.ingress.cors = cors;
     if let Some(secs) = file.connectors.lease_secs {
         gateway.lease_secs = secs;
     }
+    let tls = &file.tls;
+    let mut watched = vec![path.to_owned()];
+    watched.extend([&tls.cert, &tls.key, &tls.client_ca].map(|p| resolve(base, p)));
+    watched.extend(
+        [&file.ingress.cert, &file.ingress.key]
+            .into_iter()
+            .flatten()
+            .map(|p| resolve(base, p)),
+    );
+    let reload_every = std::time::Duration::from_secs(tls.reload_secs.unwrap_or(10).max(1));
     Ok(Checked {
         listen: file.listen,
         gateway,
         admin,
+        watched,
+        reload_every,
     })
 }

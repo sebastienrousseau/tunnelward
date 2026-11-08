@@ -16,6 +16,27 @@ pub(crate) struct Listeners {
     pub(crate) admin: Option<(TcpListener, AdminConfig)>,
 }
 
+impl Listeners {
+    /// Where each listener is bound, port 0 resolved:
+    /// `connectors on A, agents on B[, admin on C]`.
+    pub(crate) fn describe(&self) -> String {
+        let addr = |l: &TcpListener| {
+            l.local_addr()
+                .map_or_else(|e| e.to_string(), |a| a.to_string())
+        };
+        let admin = self
+            .admin
+            .as_ref()
+            .map(|(l, _)| format!(", admin on {}", addr(l)));
+        format!(
+            "connectors on {}, agents on {}{}",
+            addr(&self.connectors),
+            addr(&self.ingress),
+            admin.unwrap_or_default()
+        )
+    }
+}
+
 /// Binds `addr`, naming it in the error.
 pub(crate) async fn bind(addr: SocketAddr) -> Result<TcpListener, String> {
     TcpListener::bind(addr)

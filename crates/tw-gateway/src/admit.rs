@@ -81,12 +81,7 @@ impl Gateway {
     where
         IO: AsyncRead + AsyncWrite + Unpin,
     {
-        let mut tls = self
-            .inner
-            .acceptor
-            .accept(io)
-            .await
-            .map_err(AdmitError::Tls)?;
+        let mut tls = self.acceptor().accept(io).await.map_err(AdmitError::Tls)?;
         if tls.get_ref().1.alpn_protocol() != Some(ALPN) {
             return Err(AdmitError::Alpn);
         }

@@ -11,8 +11,16 @@ license = "MIT OR Apache-2.0"
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-# Not published until the crate has an API worth depending on.
-publish = false
+readme.workspace = true
+keywords = ["mcp", "json-rpc", "gateway", "parser", "agents"]
+categories = ["network-programming", "parser-implementations"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
 
 [lints]
 workspace = true
