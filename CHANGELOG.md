@@ -24,6 +24,14 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   `RequestInfo` records the declared `User-Agent`, a well-formed W3C
   `traceparent` and the `Mcp-Session-Id`; observers get each JSON POST's
   envelope through `ProxyObserver::on_envelope`.
+- Dark mode (G14): `Gateway::set_dark` by connector, route or address,
+  and `POST /dark` and `GET /dark` on the admin API. A dark connection
+  stays connected and finishes its requests but takes no new one;
+  requests for a route with only dark connections wait, then get 503
+  with `Retry-After`, and are served at once if it comes back in time.
+  Connections that arrive later and match are dark too. The internal
+  inventory shows which connections are dark. Writing it to the audit
+  log waits for the audit log (0.0.14).
 - MCP pass-through tests: `initialize` with its session header and a
   `tools/call` answered by an SSE stream reach the client byte for byte.
 

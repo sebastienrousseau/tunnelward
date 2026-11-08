@@ -11,6 +11,8 @@
 //! | GET | `/inventory[?redaction=internal]` | the [`Inventory`] as JSON |
 //! | GET | `/metrics` | the inventory's counters, Prometheus text |
 //! | POST | `/drain?connector=<hex>\|route=<r>\|peer=<ip>[&deadline_ms=<n>]` | the [`DrainReport`](crate::DrainReport) as JSON |
+//! | POST | `/dark?connector=<hex>\|route=<r>\|peer=<ip>&on=true\|false` | turns a target dark or back (G14) |
+//! | GET | `/dark` | the dark targets as JSON |
 //!
 //! Every request needs `Authorization: Bearer <token>` when
 //! [`AdminConfig::token`] is set; without a token only loopback clients
@@ -142,6 +144,25 @@ fn drain_target(query: &str) -> Option<DrainTarget> {
     param(query, "peer")?.parse().ok().map(DrainTarget::Peer)
 }
 
+/// The answer to a method a path does not take, or to an unknown path.
+fn elsewhere(path: &str) -> Answer {
+    match path {
+        "/healthz" | "/readyz" | "/inventory" | "/metrics" | "/drain" | "/dark" => {
+            text(StatusCode::METHOD_NOT_ALLOWED, "method not allowed\n")
+        }
+        _ => text(StatusCode::NOT_FOUND, "not found\n"),
+    }
+}
+
+/// A target as `kind:value`, for the API's answers.
+fn label(target: &DrainTarget) -> String {
+    match target {
+        DrainTarget::Connector(id) => format!("connector:{}", inventory::hex(&id.0)),
+        DrainTarget::Route(route) => format!("route:{route}"),
+        DrainTarget::Peer(ip) => format!("peer:{ip}"),
+    }
+}
+
 fn drain_deadline(query: &str) -> Option<Duration> {
     match param(query, "deadline_ms") {
         None => Some(DEFAULT_DRAIN),
@@ -201,10 +222,19 @@ impl Gateway {
             return text(StatusCode::UNAUTHORIZED, "unauthorized\n");
         }
         let query = request.uri().query().unwrap_or("");
-        match (request.method(), request.uri().path()) {
-            (&Method::GET, "/healthz") => text(StatusCode::OK, "ok\n"),
-            (&Method::GET, "/readyz") => self.readiness(),
-            (&Method::GET, "/inventory") => {
+        let path = request.uri().path();
+        match *request.method() {
+            Method::GET => self.get(path, query),
+            Method::POST => self.post(path, query).await,
+            _ => elsewhere(path),
+        }
+    }
+
+    fn get(&self, path: &str, query: &str) -> Answer {
+        match path {
+            "/healthz" => text(StatusCode::OK, "ok\n"),
+            "/readyz" => self.readiness(),
+            "/inventory" => {
                 let internal = param(query, "redaction") == Some("internal");
                 let redaction = if internal {
                     Redaction::Internal
@@ -213,15 +243,20 @@ impl Gateway {
                 };
                 json(&self.inventory(redaction))
             }
-            (&Method::GET, "/metrics") => {
+            "/metrics" => {
                 let body = inventory::metrics(&self.inventory(Redaction::Public));
                 Response::new(Full::new(Bytes::from(body)))
             }
-            (&Method::POST, "/drain") => self.drain_request(query).await,
-            (_, "/healthz" | "/readyz" | "/inventory" | "/metrics" | "/drain") => {
-                text(StatusCode::METHOD_NOT_ALLOWED, "method not allowed\n")
-            }
-            _ => text(StatusCode::NOT_FOUND, "not found\n"),
+            "/dark" => json(&serde_json::json!({ "dark": self.dark_labels() })),
+            _ => elsewhere(path),
+        }
+    }
+
+    async fn post(&self, path: &str, query: &str) -> Answer {
+        match path {
+            "/drain" => self.drain_request(query).await,
+            "/dark" => self.dark_request(query),
+            _ => elsewhere(path),
         }
     }
 
@@ -231,6 +266,26 @@ impl Gateway {
         } else {
             text(StatusCode::SERVICE_UNAVAILABLE, "not ready\n")
         }
+    }
+
+    fn dark_labels(&self) -> Vec<String> {
+        self.dark().iter().map(label).collect()
+    }
+
+    fn dark_request(&self, query: &str) -> Answer {
+        let on = match param(query, "on") {
+            Some("true") => true,
+            Some("false") => false,
+            _ => return text(StatusCode::BAD_REQUEST, "name on=true or on=false\n"),
+        };
+        let Some(target) = drain_target(query) else {
+            return text(
+                StatusCode::BAD_REQUEST,
+                "name connector=<32 hex>, route=<route> or peer=<ip>\n",
+            );
+        };
+        let changed = self.set_dark(target, on);
+        json(&serde_json::json!({ "changed": changed, "dark": self.dark_labels() }))
     }
 
     async fn drain_request(&self, query: &str) -> Answer {

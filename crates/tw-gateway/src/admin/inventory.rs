@@ -62,6 +62,8 @@ pub struct Connection {
     pub in_flight: u32,
     /// Whether it is draining.
     pub draining: bool,
+    /// Whether it is dark: connected, but taking no new request (G14).
+    pub dark: bool,
 }
 
 impl From<Snapshot> for Connection {
@@ -74,6 +76,7 @@ impl From<Snapshot> for Connection {
             capacity: s.capacity,
             in_flight: s.in_flight,
             draining: s.draining,
+            dark: s.dark,
         }
     }
 }
