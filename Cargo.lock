@@ -739,6 +739,23 @@ name = "tunnelward-audit"
 version = "0.0.13"
 
 [[package]]
+name = "tunnelward-bench"
+version = "0.0.13"
+dependencies = [
+ "bytes",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "tokio",
+ "tunnelward-connector",
+ "tunnelward-crypto",
+ "tunnelward-gateway",
+ "tunnelward-proto",
+ "tunnelward-testpki",
+]
+
+[[package]]
 name = "tunnelward-connector"
 version = "0.0.13"
 dependencies = [

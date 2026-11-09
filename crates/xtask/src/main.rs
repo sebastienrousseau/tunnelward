@@ -11,7 +11,8 @@
 //! nightly toolchain, so they are separate tasks with their own CI jobs.
 //! `cargo xtask fuzz-targets` prints the targets as a JSON array, for the
 //! weekly workflow's one job per target. `cargo xtask kani` runs the Kani
-//! proofs of the frame parser (needs `cargo kani`).
+//! proofs of the frame parser (needs `cargo kani`); `cargo xtask bench`
+//! runs the benchmarks (`docs/benchmarks.md`).
 
 use std::env;
 use std::fs;
@@ -126,6 +127,23 @@ const KANI: &[Step] = &[Step {
     env: &[],
 }];
 
+/// The benchmarks against NFR-1 to NFR-3, from a release build
+/// (`docs/benchmarks.md`).
+const BENCH: &[Step] = &[Step {
+    name: "bench",
+    program: "cargo",
+    args: &[
+        "run",
+        "--release",
+        "--locked",
+        "-p",
+        "tunnelward-bench",
+        "--",
+        "all",
+    ],
+    env: &[],
+}];
+
 /// Fuzz targets, each with a committed seed corpus in `fuzz/seeds/<name>`.
 const FUZZ_TARGETS: &[&str] = &["decode", "envelope", "proxy", "svid"];
 
@@ -225,15 +243,23 @@ fn fuzz_secs(arg: Option<&str>) -> Result<u32, String> {
 }
 
 const USAGE: &str =
-    "usage: cargo xtask <ci | miri | kani | fuzz [seconds] [target] | fuzz-targets>";
+    "usage: cargo xtask <ci | miri | kani | bench | fuzz [seconds] [target] | fuzz-targets>";
+
+/// The tasks that run a list of steps, by name.
+const TASKS: [(&str, &[Step]); 4] = [
+    ("ci", STEPS),
+    ("miri", MIRI),
+    ("kani", KANI),
+    ("bench", BENCH),
+];
 
 /// Runs the task `args` names.
 fn task(args: &[String]) -> Result<(), String> {
     let arg = |i: usize| args.get(i).map(String::as_str);
+    if let Some((_, steps)) = TASKS.iter().find(|(name, _)| Some(*name) == arg(0)) {
+        return run_all(steps);
+    }
     match arg(0) {
-        Some("ci") => run_all(STEPS),
-        Some("miri") => run_all(MIRI),
-        Some("kani") => run_all(KANI),
         Some("fuzz") => fuzz(fuzz_secs(arg(1))?, &fuzz_targets(arg(2))?),
         Some("fuzz-targets") => {
             println!("{}", fuzz_targets_json());

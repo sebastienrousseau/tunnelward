@@ -24,6 +24,14 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   404. Sessions, message size and the replay buffer are bounded. The
   `stdio-echo` example is a small stdio server to try it with, and the
   tests run it end to end through a gateway.
+- The first benchmark numbers against NFR-1 to NFR-3, in
+  `docs/benchmarks.md`, from `cargo xtask bench` (a new, unpublished
+  `tunnelward-bench` crate using only the workspace's own dependencies).
+  The gateway and tunnel add 125 to 160 µs at p50 to a 1 KiB MCP call
+  (budget 500 µs). The p99, memory per in-flight request and core
+  scaling could not be measured on the laptop used, and an idle connector
+  connection costs about 120 KiB of resident memory against a 64 KiB
+  target; the document says why for each.
 
 - Mismatches between claims and evidence (FR-14): a `User-Agent` or MCP
   `clientInfo` that names an AI provider (Claude or Anthropic, ChatGPT or

@@ -169,6 +169,7 @@ its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
 | Post-quantum signatures | Provider snapshots signed with a composite ML-DSA-65 + Ed25519 key; both halves must verify; ML-DSA-65 checked against NIST ACVP vectors | Shipped in 0.0.12 |
 | Claim mismatches | A `User-Agent` or MCP `clientInfo` naming a provider the gateway did not see is recorded as a mismatch, and policy can forbid such calls | Shipped in 0.0.13 |
 | stdio bridge | A connector serves a local stdio MCP server as Streamable HTTP through the tunnel: one process per session, an event stream with `Last-Event-ID` resumption (`[target] stdio`) | Shipped in 0.0.13 |
+| Benchmarks | Added latency, memory per connection and scaling measured against NFR-1 to NFR-3, with method and caveats (`docs/benchmarks.md`, `cargo xtask bench`) | Shipped in 0.0.13 |
 
 ---
 

@@ -10,6 +10,7 @@ resolver = "3"
 members = [
   "crates/tw-attest",
   "crates/tw-audit",
+  "crates/tw-bench",
   "crates/tw-cli",
   "crates/tw-connector",
   "crates/tw-crypto",
