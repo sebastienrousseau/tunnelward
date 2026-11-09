@@ -241,7 +241,7 @@ fn enrol_ca(args: &Args) -> Result<(), Outcome> {
     let name = args.get("name").unwrap_or("Tunnelward enrolment CA");
     let days = args.parsed("days")?.unwrap_or(3650);
     enrol::make_ca(Path::new(cert), Path::new(key), name, days).map_err(Outcome::Failed)?;
-    println!("{cert}\n{key}");
+    println!("enrolment CA written; name both files in [enrolment] ca_cert and ca_key");
     Ok(())
 }
 

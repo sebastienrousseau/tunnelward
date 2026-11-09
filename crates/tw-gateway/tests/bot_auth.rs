@@ -230,12 +230,23 @@ mod through_the_ingress {
         Ok((ingress, tags))
     }
 
-    /// A GET to `ingress` signed by `key` for `authority`.
+    /// A fresh random nonce, as a signing agent sends.
+    fn nonce() -> Res<String> {
+        use aws_lc_rs::rand::{SecureRandom, SystemRandom};
+        let mut bytes = [0_u8; 32];
+        SystemRandom::new()
+            .fill(&mut bytes)
+            .map_err(|_| "no randomness")?;
+        Ok(b64(&bytes))
+    }
+
+    /// A GET to `ingress` signed by `key` for `authority`, with a fresh
+    /// nonce.
     fn signed(
         key: &Ed25519KeyPair,
         authority: &str,
-        nonce: &str,
     ) -> Res<hyper::Request<http_body_util::Full<bytes::Bytes>>> {
+        let nonce = nonce()?;
         let thumb = format!(
             r#"{{"crv":"Ed25519","kty":"OKP","x":"{}"}}"#,
             b64(key.public_key().as_ref())
@@ -283,7 +294,7 @@ mod through_the_ingress {
     async fn a_verified_signature_tags_the_request_at_signature_level() -> Res<()> {
         let key = Ed25519KeyPair::generate().map_err(|_| "keygen")?;
         let (ingress, tags) = gateway(&key, OnInvalid::Reject).await?;
-        let _answer = h1(&ingress, signed(&key, "mcp.example.org", "n1")?).await?;
+        let _answer = h1(&ingress, signed(&key, "mcp.example.org")?).await?;
         let tag = last_tag(&tags).ok_or("no tag")?;
         assert_eq!(
             (tag.provider.as_str(), tag.agent.as_str(), tag.level),
@@ -296,14 +307,14 @@ mod through_the_ingress {
     async fn a_failing_signature_is_refused_or_downgraded_as_configured() -> Res<()> {
         let key = Ed25519KeyPair::generate().map_err(|_| "keygen")?;
         let (ingress, _) = gateway(&key, OnInvalid::Reject).await?;
-        let (status, headers, _) = h1(&ingress, signed(&key, "elsewhere.test", "n2")?).await?;
+        let (status, headers, _) = h1(&ingress, signed(&key, "elsewhere.test")?).await?;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert_eq!(
             headers.get("tw-error").map(HeaderValue::as_bytes),
             Some(&b"TW-I010"[..])
         );
         let (ingress, tags) = gateway(&key, OnInvalid::Downgrade).await?;
-        let (status, _, _) = h1(&ingress, signed(&key, "elsewhere.test", "n3")?).await?;
+        let (status, _, _) = h1(&ingress, signed(&key, "elsewhere.test")?).await?;
         assert_ne!(status, StatusCode::UNAUTHORIZED, "downgraded, not refused");
         assert_eq!(last_tag(&tags), None, "and not tagged");
         Ok(())
