@@ -9,6 +9,19 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 
 ## [0.0.13]
 
+### Added
+
+- Mismatches between claims and evidence (FR-14): a `User-Agent` or MCP
+  `clientInfo` that names an AI provider (Claude or Anthropic, ChatGPT or
+  OpenAI, by their published agent names) is checked against the
+  provider the gateway saw, from published ranges or a verified
+  signature. When it is another provider or none, the request carries a
+  `Mismatch` (`RequestInfo::mismatches`), its evidence stays at the level
+  the gateway established, and policy rules can match on it (`mismatch =
+  true` in the policy file, `Rule::mismatch`), for example to forbid a
+  script dressed as Claude. The plan's risk score is not built: no input
+  for it exists yet.
+
 ### Fixed
 
 - A request that arrived just after a connector registered could get

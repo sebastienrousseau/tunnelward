@@ -67,6 +67,9 @@ pub struct Call<'a> {
     pub tool: Option<&'a str>,
     /// How well the sender is known.
     pub evidence: Evidence,
+    /// The request claims something the evidence does not back, such as
+    /// a `User-Agent` naming a provider the gateway did not see (FR-14).
+    pub mismatch: bool,
 }
 
 /// What a rule does to the calls it matches.
@@ -97,6 +100,9 @@ pub struct Rule {
     pub tools: Vec<String>,
     /// The least evidence a call needs for the rule to match.
     pub evidence: Option<Evidence>,
+    /// Matches only calls with (`true`) or without (`false`) a mismatch
+    /// between claims and evidence; `None` matches either.
+    pub mismatch: Option<bool>,
 }
 
 impl Rule {
@@ -111,6 +117,7 @@ impl Rule {
             methods: Vec::new(),
             tools: Vec::new(),
             evidence: None,
+            mismatch: None,
         }
     }
 
@@ -123,6 +130,7 @@ impl Rule {
             && any_of(&self.methods, Some(call.method), glob)
             && any_of(&self.tools, call.tool, glob)
             && self.evidence.is_none_or(|least| call.evidence >= least)
+            && self.mismatch.is_none_or(|m| m == call.mismatch)
     }
 }
 
@@ -255,6 +263,7 @@ mod tests {
             method: "tools/call",
             tool: Some(tool),
             evidence,
+            mismatch: false,
         }
     }
 
@@ -372,6 +381,25 @@ mod tests {
             ..Rule::any(Effect::Permit)
         };
         assert!(anyone.matches(&no_agent), "* matches a missing value");
+    }
+
+    #[test]
+    fn a_rule_can_forbid_calls_whose_claims_do_not_hold() {
+        let forbid = Rule {
+            mismatch: Some(true),
+            ..Rule::any(Effect::Forbid)
+        };
+        let p = policy(vec![permit(&["*"]), forbid]);
+        let honest = call("read", Evidence::Network);
+        let dressed_up = Call {
+            mismatch: true,
+            ..honest.clone()
+        };
+        assert!(matches!(p.decide(&honest), Decision::Allow { .. }));
+        assert_eq!(
+            p.decide(&dressed_up),
+            Decision::Deny("forbidden by rule 2".into())
+        );
     }
 
     #[test]

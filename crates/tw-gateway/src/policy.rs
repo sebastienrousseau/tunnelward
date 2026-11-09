@@ -54,6 +54,7 @@ fn call<'a>(info: &'a RequestInfo, method: &'a str, tool: Option<&'a str>) -> Ca
         method,
         tool,
         evidence: info.evidence,
+        mismatch: !info.mismatches.is_empty(),
     }
 }
 

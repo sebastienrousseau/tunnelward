@@ -43,6 +43,10 @@ pub struct RequestInfo {
     /// How well the sender is known (FR-14), once the token and any
     /// signature have been checked.
     pub evidence: tunnelward_policy::Evidence,
+    /// What the request claims about itself and the evidence does not
+    /// back (FR-14): a `User-Agent` or `clientInfo` naming a provider the
+    /// gateway did not see.
+    pub mismatches: Vec<crate::Mismatch>,
 }
 
 /// Called at each step of an ingress request. Every method has an empty

@@ -20,6 +20,9 @@
 //! methods = ["tools/call"]          # http:GET for plain requests
 //! tools = ["read_*"]
 //! evidence = "network"              # least: declared, network, cryptographic
+//! mismatch = true                   # only calls whose User-Agent or
+//!                                   # clientInfo names a provider the
+//!                                   # gateway did not see (or false: none)
 //! ```
 //!
 //! ```toml
@@ -75,6 +78,7 @@ struct RulePart {
     #[serde(default)]
     tools: Vec<String>,
     evidence: Option<String>,
+    mismatch: Option<bool>,
 }
 
 fn effect(name: &str, at: &str, problems: &mut Problems) -> Effect {
@@ -115,6 +119,7 @@ fn rule(part: &RulePart, at: &str, problems: &mut Problems) -> Rule {
             .evidence
             .as_deref()
             .and_then(|e| evidence(e, at, problems)),
+        mismatch: part.mismatch,
     }
 }
 
@@ -164,6 +169,8 @@ struct Case {
     method: String,
     tool: Option<String>,
     evidence: String,
+    #[serde(default)]
+    mismatch: bool,
     expect: String,
 }
 
@@ -192,6 +199,7 @@ fn run_case(policy: &Policy, case: &Case) -> (String, bool) {
         method: &case.method,
         tool: case.tool.as_deref(),
         evidence: level,
+        mismatch: case.mismatch,
     };
     let (got, why) = match policy.decide(&call) {
         Decision::Allow { high_impact: true } => ("allow", "high impact".to_owned()),

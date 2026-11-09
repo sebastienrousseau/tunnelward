@@ -20,6 +20,10 @@ tools = ["read_*", "transfer"]
 [[rules]]
 effect = "forbid"
 tools = ["read_secrets"]
+
+[[rules]]
+effect = "forbid"
+mismatch = true
 "#;
 
 const CASES: &str = r#"
@@ -39,6 +43,16 @@ path = "/mcp"
 method = "tools/call"
 tool = "read_secrets"
 evidence = "cryptographic"
+expect = "deny"
+
+[[case]]
+name = "a claim the evidence does not back is refused"
+agent = "claude"
+path = "/mcp"
+method = "tools/call"
+tool = "read_balance"
+evidence = "declared"
+mismatch = true
 expect = "deny"
 
 [[case]]
@@ -71,7 +85,7 @@ fn cases_that_match_the_policy_pass() -> Res<()> {
         text(&out.stdout),
         text(&out.stderr)
     );
-    assert!(text(&out.stdout).contains("3 cases, 0 failed"));
+    assert!(text(&out.stdout).contains("4 cases, 0 failed"));
     Ok(std::fs::remove_dir_all(dir)?)
 }
 
@@ -88,7 +102,7 @@ fn a_case_the_policy_decides_otherwise_fails() -> Res<()> {
         stdout.contains("FAIL a forbid wins: expected allow, got deny"),
         "{stdout}"
     );
-    assert!(stdout.contains("3 cases, 1 failed"), "{stdout}");
+    assert!(stdout.contains("4 cases, 1 failed"), "{stdout}");
     Ok(std::fs::remove_dir_all(dir)?)
 }
 
