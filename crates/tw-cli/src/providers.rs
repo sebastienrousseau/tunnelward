@@ -5,7 +5,7 @@
 //! tags requests with (FR-12).
 //!
 //! ```text
-//! tunnelward providers keygen --out signing.key   # prints the public key (hex)
+//! tunnelward providers keygen --out signing.key   # writes signing.key.pub too
 //! tunnelward providers build --out providers.json [--version N]
 //! tunnelward providers sign --key signing.key providers.json   # writes providers.json.sig
 //! ```
@@ -16,12 +16,16 @@
 //! the build.
 
 use std::path::{Path, PathBuf};
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use aws_lc_rs::rand::SystemRandom;
-use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
 use serde::Deserialize;
+use tunnelward_crypto::composite;
 use tunnelward_gateway::Cidr;
+
+mod keys;
+
+pub(crate) use keys::{keygen, sign};
 
 /// How a source lists its ranges.
 #[derive(Debug, Clone, Copy)]
@@ -183,38 +187,6 @@ pub(crate) fn unhex(text: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-/// Writes a new Ed25519 key (PKCS#8) to `out`, never over an existing
-/// file, readable by its owner only; returns the public key in hex.
-pub(crate) fn keygen(out: &Path) -> Result<String, String> {
-    let pkcs8 = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new())
-        .map_err(|_| "key generation failed".to_owned())?;
-    let pair = Ed25519KeyPair::from_pkcs8(pkcs8.as_ref())
-        .map_err(|_| "the new key does not load".to_owned())?;
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    let mut file = options
-        .open(out)
-        .map_err(|e| format!("{}: {e}", out.display()))?;
-    std::io::Write::write_all(&mut file, pkcs8.as_ref())
-        .map_err(|e| format!("{}: {e}", out.display()))?;
-    Ok(hex(pair.public_key().as_ref()))
-}
-
-/// Signs `snapshot` with the key in `key`; writes `<snapshot>.sig` and
-/// returns its path.
-pub(crate) fn sign(key: &Path, snapshot: &Path) -> Result<PathBuf, String> {
-    let pkcs8 = std::fs::read(key).map_err(|e| format!("{}: {e}", key.display()))?;
-    let pair = Ed25519KeyPair::from_pkcs8(&pkcs8)
-        .map_err(|_| format!("{}: not an Ed25519 key", key.display()))?;
-    let bytes = std::fs::read(snapshot).map_err(|e| format!("{}: {e}", snapshot.display()))?;
-    let out = signature_path(snapshot);
-    std::fs::write(&out, pair.sign(&bytes).as_ref())
-        .map_err(|e| format!("{}: {e}", out.display()))?;
-    Ok(out)
-}
-
 /// Where a snapshot's signature lives: beside it, with `.sig` added.
 pub(crate) fn signature_path(snapshot: &Path) -> PathBuf {
     let mut name = snapshot.as_os_str().to_owned();
@@ -280,7 +252,8 @@ mod tests {
         publish(dir, &key, 1)?;
         let section = Section {
             snapshot: Some(PathBuf::from("providers.json")),
-            keys: vec![public],
+            keys: Vec::new(),
+            key_files: vec![public],
             reload_secs: Some(1),
             on_invalid: None,
             ca: None,
@@ -325,7 +298,9 @@ mod tests {
 /// ```toml
 /// [providers]
 /// snapshot = "providers.json"   # its signature is providers.json.sig
-/// keys = ["<hex Ed25519 public key>"]   # from `tunnelward providers keygen`
+/// key_files = ["signing.key.pub"]   # from `tunnelward providers keygen`
+/// keys = ["<hex>"]              # or keys inline: an Ed25519 key (64 hex)
+///                               # or a composite one
 /// reload_secs = 300             # how often to look for a newer snapshot
 /// ```
 #[derive(Debug, serde::Deserialize)]
@@ -334,11 +309,48 @@ pub(crate) struct Section {
     snapshot: Option<PathBuf>,
     #[serde(default)]
     keys: Vec<String>,
+    #[serde(default)]
+    key_files: Vec<PathBuf>,
     reload_secs: Option<u64>,
     on_invalid: Option<String>,
     ca: Option<PathBuf>,
     #[serde(default)]
     signers: Vec<crate::signers::SignerPart>,
+}
+
+/// A public key from hex: Ed25519 (32 bytes) or composite.
+fn public_key(hex: &str) -> Option<Vec<u8>> {
+    unhex(hex.trim()).filter(|b| b.len() == 32 || b.len() == composite::PUBLIC_LEN)
+}
+
+/// The keys `keys` and `key_files` name, each checked.
+fn trusted_keys(base: &Path, section: &Section, problems: &mut Vec<String>) -> Vec<Vec<u8>> {
+    let inline = section
+        .keys
+        .iter()
+        .map(|k| (format!("[providers] key {k:?}"), Ok(k.clone())));
+    let files = section.key_files.iter().map(|f| {
+        let path = crate::config::resolve(base, f);
+        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string());
+        (format!("[providers] key_files {}", path.display()), text)
+    });
+    let keys: Vec<Vec<u8>> = inline
+        .chain(files)
+        .filter_map(|(at, text)| {
+            let key = text.as_deref().ok().and_then(public_key);
+            if key.is_none() {
+                let why = text
+                    .err()
+                    .unwrap_or_else(|| "not an Ed25519 or composite public key".into());
+                problems.push(format!("{at}: {why}"));
+            }
+            key
+        })
+        .collect();
+    if section.keys.is_empty() && section.key_files.is_empty() {
+        problems.push("[providers]: name at least one key in keys or key_files".into());
+    }
+    keys
 }
 
 /// The checked section: the snapshot, if any, and the Web Bot Auth
@@ -389,20 +401,7 @@ fn check_snapshot(
     section: &Section,
     problems: &mut Vec<String>,
 ) -> Option<Loaded> {
-    let keys: Vec<Vec<u8>> = section
-        .keys
-        .iter()
-        .filter_map(|k| {
-            let key = unhex(k).filter(|b| b.len() == 32);
-            if key.is_none() {
-                problems.push(format!("[providers] key {k:?}: give 64 hex characters"));
-            }
-            key
-        })
-        .collect();
-    if section.keys.is_empty() {
-        problems.push("[providers] keys: name at least one".into());
-    }
+    let keys = trusted_keys(base, section, problems);
     let providers = std::sync::Arc::new(tunnelward_gateway::Providers::new(keys));
     let snapshot = crate::config::resolve(base, path);
     load(&providers, &snapshot)

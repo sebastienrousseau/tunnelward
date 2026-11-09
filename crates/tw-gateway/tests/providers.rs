@@ -164,3 +164,27 @@ async fn ingress_requests_carry_their_provider_tag() -> Res<()> {
     );
     Ok(())
 }
+
+#[test]
+fn a_composite_key_needs_both_halves_of_its_signature() -> Res<()> {
+    use tunnelward_crypto::composite::SigningKey;
+    let (key, _) = SigningKey::generate()?;
+    let providers = Providers::new(vec![key.public_key()]);
+    let snap = snapshot(1, "192.0.2.0/24");
+    let signature = key.sign(&snap)?;
+    assert_eq!(providers.load(&snap, &signature), Ok(1), "its version");
+    let next = snapshot(2, "192.0.2.0/24");
+    let full = key.sign(&next)?;
+    assert_eq!(
+        providers.load(&next, &full[..64]),
+        Err(ProviderError::Signature),
+        "the Ed25519 half alone"
+    );
+    let ed25519 = signer()?;
+    assert_eq!(
+        providers.load(&next, ed25519.sign(&next).as_ref()),
+        Err(ProviderError::Signature),
+        "an Ed25519 signature for a composite key"
+    );
+    Ok(())
+}

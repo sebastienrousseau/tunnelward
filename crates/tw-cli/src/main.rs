@@ -46,7 +46,8 @@ Commands:
   doctor [--config <file>]
                  Check this machine and, given a file, its configuration
   providers keygen --out <file>
-                 Make an Ed25519 key for signing provider snapshots
+                 Make a composite ML-DSA-65 + Ed25519 key for signing
+                 provider snapshots; its public key goes to <file>.pub
   providers build --out <file> [--version <n>]
                  Fetch providers' published egress ranges into a snapshot
   providers sign --key <file> <snapshot>
@@ -187,10 +188,8 @@ fn providers_usage() -> UsageError {
 
 fn providers_keygen(args: &Args) -> Result<(), Outcome> {
     let out = args.get("out").ok_or_else(providers_usage)?;
-    println!(
-        "{}",
-        providers::keygen(Path::new(out)).map_err(Outcome::Failed)?
-    );
+    let public = providers::keygen(Path::new(out)).map_err(Outcome::Failed)?;
+    println!("{out}\n{}", public.display());
     Ok(())
 }
 

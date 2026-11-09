@@ -18,6 +18,7 @@
 //! # let _ = negotiated_group;
 //! ```
 
+pub mod composite;
 mod config;
 mod holder;
 mod identity;

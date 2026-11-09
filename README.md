@@ -166,6 +166,7 @@ its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
 | Shared state | Replay caches and rate limits shared by several gateways through a Redis-compatible store (`[state]`), so a replay is caught whichever gateway it reaches; replay checks fail closed and rate limits fail open when the store is down | Shipped in 0.0.12 |
 | Token replay defences | DPoP-bound tokens (RFC 9449) work only with a proof by their key; certificate-bound tokens (RFC 8705) only from their certificate; paths can demand bound or single-use tokens (`[[agents.paths]]`); replays refused across gateways | Shipped in 0.0.12 |
 | Tool policy | Permit or forbid each MCP call by agent, provider, path, method, tool and evidence level, with the D6 baseline; a denied call gets a JSON-RPC error and never reaches the connector; hot reload and `tunnelward policy test`; idempotency keys on high-impact tools | Shipped in 0.0.12 |
+| Post-quantum signatures | Provider snapshots signed with a composite ML-DSA-65 + Ed25519 key; both halves must verify; ML-DSA-65 checked against NIST ACVP vectors | Shipped in 0.0.12 |
 
 ---
 

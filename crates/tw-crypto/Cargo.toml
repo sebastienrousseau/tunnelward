@@ -15,10 +15,17 @@ readme.workspace = true
 keywords = ["tls", "post-quantum", "ml-kem", "rustls", "mtls"]
 categories = ["cryptography", "network-programming"]
 
+# NIST's ML-DSA vectors carry NIST's licence, not this crate's: they and
+# the test that reads them stay in the repository.
+exclude = ["tests/ml_dsa_acvp.rs", "tests/vectors"]
+
 [dependencies]
+# Composite ML-DSA-65 + Ed25519 signatures.
+aws-lc-rs.workspace = true
 rustls.workspace = true
 
 [dev-dependencies]
+aws-lc-rs.workspace = true
 tunnelward-testpki.workspace = true
 
 [lints]

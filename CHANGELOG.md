@@ -71,12 +71,26 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   the first call's outcome is unknown, repeats get 502 (`TW-P005`) so the
   tool never runs twice to find out.
 
+- Composite post-quantum signatures: `tunnelward_crypto::composite`
+  signs with ML-DSA-65 (FIPS 204) and Ed25519 over the same
+  domain-labelled message, and verifies only when both halves do, so a
+  flaw in either algorithm alone does not let a signature be forged.
+  Provider snapshots use it: `tunnelward providers keygen` makes a
+  composite key and writes its public half to `<key>.pub`, which
+  `[providers] key_files` names; a composite key accepts only a composite
+  signature, so its post-quantum half cannot be stripped. Ed25519 keys
+  made before 0.0.12 still sign and verify. ML-DSA-65 is checked against
+  NIST ACVP vectors, kept with NIST's notice. The format is Tunnelward's
+  own, not the IETF LAMPS composite draft's.
+
 ### Changed
 
 - `BotAuth::verify` is async and takes the request parts as a tuple and
   the `SharedState` to record nonces in. `ClientAuth` has an `AnyHolder`
   variant; `AgentAuth` has `token_rules`, `dpop_window` and
-  `certificate_bound`; `Ingress::with_client_certificate` is new. `RateLimit` has a `gateways`
+  `certificate_bound`; `Ingress::with_client_certificate` is new.
+- `tunnelward providers keygen` makes composite keys and prints the
+  paths of the key and its public half instead of a hex Ed25519 key. `RateLimit` has a `gateways`
   field (default 1).
 
 ### Fixed

@@ -4,8 +4,10 @@
 //! Provider identification at the network level (FR-12): which AI
 //! provider's published egress ranges a client address is in.
 //!
-//! The ranges come in a snapshot, JSON with a version, signed with
-//! Ed25519 by a key the gateway trusts. A snapshot is accepted whole or
+//! The ranges come in a snapshot, JSON with a version, signed by a key
+//! the gateway trusts: a composite ML-DSA-65 + Ed25519 key, whose
+//! signature needs both halves to verify, or (as before 0.0.12) an
+//! Ed25519 key alone. A snapshot is accepted whole or
 //! not at all, and never replaces a newer one, so an attacker who can
 //! serve files cannot widen the ranges or roll them back.
 //!
@@ -24,8 +26,21 @@ use std::sync::{Arc, PoisonError, RwLock};
 
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use serde::Deserialize;
+use tunnelward_crypto::composite;
 
 use crate::Cidr;
+
+/// Whether `signature` over `message` is by `key`: composite when the
+/// key is, Ed25519 when it is 32 bytes.
+fn signed_by(key: &[u8], message: &[u8], signature: &[u8]) -> bool {
+    match key.len() {
+        composite::PUBLIC_LEN => composite::verify(key, message, signature),
+        32 => UnparsedPublicKey::new(&ED25519, key)
+            .verify(message, signature)
+            .is_ok(),
+        _ => false,
+    }
+}
 
 /// The provider a request's address belongs to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,8 +142,11 @@ impl std::fmt::Debug for Providers {
 }
 
 impl Providers {
-    /// Nothing loaded yet; snapshots must be signed by one of `keys`
-    /// (raw 32-byte Ed25519 public keys).
+    /// Nothing loaded yet; snapshots must be signed by one of `keys`:
+    /// composite public keys
+    /// ([`tunnelward_crypto::composite::PUBLIC_LEN`] bytes), or raw
+    /// 32-byte Ed25519 keys. A composite key accepts only a composite
+    /// signature, so its post-quantum half cannot be stripped off.
     #[must_use]
     pub fn new(keys: Vec<Vec<u8>>) -> Self {
         Self {
@@ -150,19 +168,15 @@ impl Providers {
             .clone()
     }
 
-    /// Loads `snapshot` if `signature` (64 raw bytes) is a trusted key's
-    /// Ed25519 signature over exactly those bytes, it parses, and it is
-    /// not older than the loaded one. Returns its version.
+    /// Loads `snapshot` if `signature` is a trusted key's signature over
+    /// exactly those bytes, it parses, and it is not older than the loaded
+    /// one. Returns its version.
     ///
     /// # Errors
     ///
     /// [`ProviderError`]; the loaded snapshot stays.
     pub fn load(&self, snapshot: &[u8], signature: &[u8]) -> Result<u64, ProviderError> {
-        let signed = self.keys.iter().any(|k| {
-            UnparsedPublicKey::new(&ED25519, k)
-                .verify(snapshot, signature)
-                .is_ok()
-        });
+        let signed = self.keys.iter().any(|k| signed_by(k, snapshot, signature));
         if !signed {
             return Err(ProviderError::Signature);
         }
