@@ -7,8 +7,10 @@
 //! and stops at the first failure. CI calls this command and nothing
 //! else, so a check added here is a check added to CI.
 //!
-//! `cargo xtask miri` and `cargo xtask fuzz [seconds]` need a nightly
-//! toolchain, so they are separate tasks with their own CI jobs.
+//! `cargo xtask miri` and `cargo xtask fuzz [seconds] [target]` need a
+//! nightly toolchain, so they are separate tasks with their own CI jobs.
+//! `cargo xtask fuzz-targets` prints the targets as a JSON array, for the
+//! weekly workflow's one job per target.
 
 use std::env;
 use std::fs;
@@ -81,6 +83,12 @@ const STEPS: &[Step] = &[
         env: &[],
     },
     Step {
+        name: "readme",
+        program: "bash",
+        args: &["scripts/readme-check.sh"],
+        env: &[],
+    },
+    Step {
         name: "semver",
         program: "bash",
         args: &["scripts/semver.sh"],
@@ -141,12 +149,31 @@ fn run_all(steps: &[Step]) -> Result<(), String> {
     Ok(())
 }
 
+/// The targets to run: `only` alone when given, which must be one of
+/// [`FUZZ_TARGETS`], else all of them.
+fn fuzz_targets(only: Option<&str>) -> Result<Vec<&'static str>, String> {
+    match only {
+        None => Ok(FUZZ_TARGETS.to_vec()),
+        Some(name) => FUZZ_TARGETS
+            .iter()
+            .find(|t| **t == name)
+            .map(|t| vec![*t])
+            .ok_or_else(|| format!("fuzz: no target `{name}`; the targets are {FUZZ_TARGETS:?}")),
+    }
+}
+
+/// [`FUZZ_TARGETS`] as a JSON array.
+fn fuzz_targets_json() -> String {
+    let quoted: Vec<String> = FUZZ_TARGETS.iter().map(|t| format!("\"{t}\"")).collect();
+    format!("[{}]", quoted.join(","))
+}
+
 /// Replays each target's seeds, then fuzzes it for `secs` seconds. New
 /// inputs go to the untracked `fuzz/corpus/<name>`; the seeds stay as
 /// committed.
-fn fuzz(secs: u32) -> Result<(), String> {
+fn fuzz(secs: u32, targets: &[&str]) -> Result<(), String> {
     let host = host_triple()?;
-    FUZZ_TARGETS.iter().try_for_each(|target| {
+    targets.iter().try_for_each(|target| {
         let corpus = format!("fuzz/corpus/{target}");
         fs::create_dir_all(&corpus).map_err(|e| format!("fuzz: cannot create {corpus}: {e}"))?;
         println!("==> fuzz {target} for {secs} s");
@@ -187,14 +214,19 @@ fn fuzz_secs(arg: Option<&str>) -> Result<u32, String> {
     })
 }
 
-const USAGE: &str = "usage: cargo xtask <ci | miri | fuzz [seconds]>";
+const USAGE: &str = "usage: cargo xtask <ci | miri | fuzz [seconds] [target] | fuzz-targets>";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("ci") => run_all(STEPS),
         Some("miri") => run_all(MIRI),
-        Some("fuzz") => fuzz_secs(args.get(1).map(String::as_str)).and_then(fuzz),
+        Some("fuzz") => fuzz_secs(args.get(1).map(String::as_str))
+            .and_then(|secs| fuzz(secs, &fuzz_targets(args.get(2).map(String::as_str))?)),
+        Some("fuzz-targets") => {
+            println!("{}", fuzz_targets_json());
+            Ok(())
+        }
         _ => Err(USAGE.to_owned()),
     };
     match result {
@@ -203,5 +235,25 @@ fn main() -> ExitCode {
             eprintln!("xtask: {msg}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn one_target_or_all_and_never_an_unknown_one() {
+        assert_eq!(fuzz_targets(None), Ok(FUZZ_TARGETS.to_vec()));
+        assert_eq!(fuzz_targets(Some("svid")), Ok(vec!["svid"]));
+        assert!(fuzz_targets(Some("nope")).is_err());
+    }
+
+    #[test]
+    fn the_targets_print_as_a_json_array() {
+        assert_eq!(
+            fuzz_targets_json(),
+            r#"["decode","envelope","proxy","svid"]"#
+        );
     }
 }

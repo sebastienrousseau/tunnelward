@@ -22,21 +22,44 @@ pub(crate) async fn run(path: &Path) -> Result<(), String> {
         every: checked.reload_every,
     };
     let gateway = Gateway::new(checked.gateway);
-    let listen = &checked.listen;
+    let listeners = listeners(&checked.listen, checked.admin).await?;
+    println!("tunnelward gateway: {}", listeners.describe());
+    let mut tasks = vec![tokio::spawn(reload(
+        path.to_owned(),
+        gateway.clone(),
+        watch,
+    ))];
+    let every = checked.key_refresh;
+    tasks.extend(
+        checked
+            .key_sets
+            .into_iter()
+            .map(|k| tokio::spawn(async move { k.keep_fresh(every).await })),
+    );
+    tasks.extend(
+        checked
+            .providers
+            .map(|p| tokio::spawn(crate::providers::keep_fresh(p))),
+    );
+    let stopped = until_one_stops(&gateway, listeners).await;
+    tasks.iter().for_each(tokio::task::JoinHandle::abort);
+    stopped
+}
+
+/// Binds every listener `listen` names.
+async fn listeners(
+    listen: &config::Listen,
+    admin: tunnelward_gateway::AdminConfig,
+) -> Result<Listeners, String> {
     let admin = match listen.admin {
-        Some(addr) => Some((bind(addr).await?, checked.admin)),
+        Some(addr) => Some((bind(addr).await?, admin)),
         None => None,
     };
-    let listeners = Listeners {
+    Ok(Listeners {
         connectors: bind(listen.connectors).await?,
         ingress: bind(listen.ingress).await?,
         admin,
-    };
-    println!("tunnelward gateway: {}", listeners.describe());
-    let reload = tokio::spawn(reload(path.to_owned(), gateway.clone(), watch));
-    let stopped = until_one_stops(&gateway, listeners).await;
-    reload.abort();
-    stopped
+    })
 }
 
 /// The files to watch for renewal, when they were last seen, and how

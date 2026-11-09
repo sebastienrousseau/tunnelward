@@ -16,19 +16,25 @@ use core::task::{Context, Poll};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use bytes::Bytes;
-use http::header::{CONTENT_LENGTH, CONTENT_TYPE, HOST, RETRY_AFTER};
+use http::header::{
+    AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HOST, RETRY_AFTER, WWW_AUTHENTICATE,
+};
 use http::{HeaderValue, Method, Request, Response, StatusCode, Version};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::{Body, Frame, Incoming, SizeHint};
 
+use crate::answers::{json, metadata, preflight, stamp_request_id};
+use crate::auth;
 use crate::cors::{self, Cors};
+use crate::enrol;
 use crate::forwarding::{Stamp, rewrite};
 use crate::provenance;
-use crate::{ClientAddr, Gateway, RequestInfo, ResponseBody, SendError};
+use crate::refusal::{Refusal, refusal_for};
+use crate::{ClientAddr, Gateway, RequestInfo, ResponseBody};
 
 /// The ingress response body: a connector's stream, or the gateway's own
 /// short answer.
@@ -76,32 +82,16 @@ impl hyper::service::Service<Request<Incoming>> for Ingress {
 /// The response header naming a refusal's error id.
 const TW_ERROR: http::HeaderName = http::HeaderName::from_static("tw-error");
 
-/// A refusal: the status, the reason for observers, and any `Retry-After`.
-struct Refusal {
-    /// The stable error id (`docs/errors.md`).
-    id: &'static str,
-    status: StatusCode,
-    reason: String,
-    retry_after: Option<Duration>,
-}
-
-impl Refusal {
-    fn new(id: &'static str, status: StatusCode, reason: impl Into<String>) -> Self {
-        Self {
-            id,
-            status,
-            reason: reason.into(),
-            retry_after: None,
-        }
-    }
-}
-
 impl Ingress {
     async fn handle(self, request: Request<Incoming>) -> Response<IngressBody> {
         let started = Instant::now();
         let inner = &self.gateway.inner;
         let ingress = &inner.config.ingress;
         let client = ClientAddr::resolve(self.peer, request.headers(), &ingress.trusted_proxies);
+        let provider = ingress
+            .providers
+            .as_ref()
+            .and_then(|p| p.lookup(client.client));
         let headers = request.headers();
         let info = RequestInfo {
             id: inner.next_request.fetch_add(1, Ordering::Relaxed),
@@ -112,9 +102,19 @@ impl Ingress {
             user_agent: provenance::declared(headers, "user-agent"),
             traceparent: provenance::traceparent(headers),
             mcp_session: provenance::declared(headers, tunnelward_mcp::SESSION_HEADER),
+            client_id: None,
+            provider,
         };
         for o in &ingress.observers {
             o.on_request(&info);
+        }
+        if let Some(enrolment) = &ingress.enrolment
+            && enrol::is_enrolment_path(request.uri().path())
+        {
+            return self.enrol(enrolment, request, info, started).await;
+        }
+        if let Some(response) = self.metadata(&request, &info) {
+            return response;
         }
         let cors = cors::decide(&ingress.cors, &request);
         let mut response = match cors {
@@ -123,15 +123,69 @@ impl Ingress {
                 let refusal = Refusal::new("TW-I007", StatusCode::FORBIDDEN, "origin not allowed");
                 self.refuse(&info, &refusal, started)
             }
-            Cors::None | Cors::Allowed(_) => match self.forward(request, &info).await {
-                Ok(response) => self.observed(response, info, started),
-                Err(refusal) => self.refuse(&info, &refusal, started),
-            },
+            Cors::None | Cors::Allowed(_) => self.serve(request, info, started).await,
         };
         if let Cors::Allowed(headers) = cors {
             response.headers_mut().extend(headers);
         }
         response
+    }
+
+    /// The protected-resource metadata, when agent auth is on and
+    /// `request` asks for it.
+    fn metadata(
+        &self,
+        request: &Request<Incoming>,
+        info: &RequestInfo,
+    ) -> Option<Response<IngressBody>> {
+        let auth = self.gateway.inner.config.ingress.agent_auth.as_ref()?;
+        auth::is_metadata_request(auth, request.method(), request.uri().path())
+            .then(|| metadata(auth, info))
+    }
+
+    /// Authorises, then forwards: the path of every request that is not
+    /// a CORS preflight or the metadata document.
+    async fn serve(
+        &self,
+        request: Request<Incoming>,
+        mut info: RequestInfo,
+        started: Instant,
+    ) -> Response<IngressBody> {
+        let checked = self
+            .authorise(&request, &mut info)
+            .and_then(|()| self.identify(&request, &mut info));
+        let outcome = match checked {
+            Ok(()) => self.forward(request, &info).await,
+            Err(refusal) => Err(refusal),
+        };
+        match outcome {
+            Ok(response) => self.observed(response, info, started),
+            Err(refusal) => self.refuse(&info, &refusal, started),
+        }
+    }
+
+    /// Answers an enrolment or renewal (connector bootstrap): rate
+    /// limited like any request, never forwarded.
+    async fn enrol(
+        &self,
+        enrolment: &crate::Enrolment,
+        request: Request<Incoming>,
+        info: RequestInfo,
+        started: Instant,
+    ) -> Response<IngressBody> {
+        let answered = match self.admit(&request, &info) {
+            Ok(()) => enrol::respond(enrolment, request).await,
+            Err(refusal) => Err(refusal),
+        };
+        match answered {
+            Ok(body) => {
+                for o in &self.gateway.inner.config.ingress.observers {
+                    o.on_response(&info, StatusCode::OK, started.elapsed());
+                }
+                json(body, &info)
+            }
+            Err(refusal) => self.refuse(&info, &refusal, started),
+        }
     }
 
     async fn forward(
@@ -153,6 +207,56 @@ impl Ingress {
                 "no response within the request timeout",
             )),
         }
+    }
+
+    /// With [`crate::AgentAuth`] on, admits only a request whose bearer
+    /// token passes, recording its client id.
+    fn authorise(
+        &self,
+        request: &Request<Incoming>,
+        info: &mut RequestInfo,
+    ) -> Result<(), Refusal> {
+        let Some(auth) = &self.gateway.inner.config.ingress.agent_auth else {
+            return Ok(());
+        };
+        let principal = auth::authorise(auth, request.headers()).map_err(|r| Refusal {
+            challenge: Some(r.challenge),
+            ..Refusal::new(r.id, r.status, r.reason)
+        })?;
+        info.client_id = principal.client_id;
+        Ok(())
+    }
+
+    /// With [`crate::BotAuth`] on, raises the provider tag to `signature`
+    /// for a verified Web Bot Auth signature; a failing one is refused or
+    /// ignored as configured.
+    fn identify(&self, request: &Request<Incoming>, info: &mut RequestInfo) -> Result<(), Refusal> {
+        let Some(bot_auth) = &self.gateway.inner.config.ingress.bot_auth else {
+            return Ok(());
+        };
+        let authority = request
+            .uri()
+            .authority()
+            .map(http::uri::Authority::as_str)
+            .or_else(|| request.headers().get(HOST).and_then(|h| h.to_str().ok()))
+            .unwrap_or_default();
+        let verdict = bot_auth.verify(
+            request.method(),
+            authority,
+            request.uri().path(),
+            request.headers(),
+            std::time::SystemTime::now(),
+        );
+        match verdict {
+            Ok(Some(signer)) => info.provider = Some(crate::ProviderTag::signed(signer)),
+            Err(e) if bot_auth.on_invalid == crate::OnInvalid::Reject => {
+                let reason = format!("the Web Bot Auth signature fails: {e}");
+                return Err(Refusal::new("TW-I010", StatusCode::UNAUTHORIZED, reason));
+            }
+            // Unsigned, or a failing signature downgraded: no signature tag.
+            Ok(None) | Err(_) => {}
+        }
+        Ok(())
     }
 
     /// Checks that cost nothing: URL length, declared body size, rate.
@@ -240,6 +344,10 @@ impl Ingress {
         };
         rewrite(request.headers_mut(), &stamp);
         stamp_request_id(request.headers_mut(), info);
+        if ingress.agent_auth.is_some() {
+            // The token is for the gateway; passing it on is forbidden.
+            request.headers_mut().remove(AUTHORIZATION);
+        }
         request
     }
 
@@ -311,6 +419,13 @@ impl Ingress {
             .headers_mut()
             .insert(TW_ERROR, HeaderValue::from_static(refusal.id));
         stamp_request_id(response.headers_mut(), info);
+        if let Some(value) = refusal
+            .challenge
+            .as_deref()
+            .and_then(|c| HeaderValue::from_str(c).ok())
+        {
+            response.headers_mut().insert(WWW_AUTHENTICATE, value);
+        }
         if let Some(wait) = refusal.retry_after {
             let secs = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
             response
@@ -318,39 +433,6 @@ impl Ingress {
                 .insert(RETRY_AFTER, HeaderValue::from(secs.max(1)));
         }
         response
-    }
-}
-
-/// The gateway's own answer to an allowed CORS preflight: 204, the CORS
-/// headers, and the request id. The connector never sees it.
-fn preflight(headers: &http::HeaderMap, info: &RequestInfo) -> Response<IngressBody> {
-    let mut response = Response::new(Full::new(Bytes::new()).map_err(|e| match e {}).boxed());
-    *response.status_mut() = StatusCode::NO_CONTENT;
-    response.headers_mut().extend(headers.clone());
-    stamp_request_id(response.headers_mut(), info);
-    response
-}
-
-/// Names the request's id in its response (`tw-request-id`), replacing
-/// any the connector set.
-fn stamp_request_id(headers: &mut http::HeaderMap, info: &RequestInfo) {
-    if let Ok(id) = HeaderValue::from_str(&info.request_id) {
-        headers.insert(provenance::REQUEST_ID, id);
-    }
-}
-
-fn refusal_for(error: &SendError) -> Refusal {
-    let id = error.id();
-    match error {
-        SendError::NoRoute => {
-            Refusal::new(id, StatusCode::NOT_FOUND, "no connector serves this route")
-        }
-        SendError::Unavailable { retry_after } => Refusal {
-            retry_after: Some(*retry_after),
-            ..Refusal::new(id, StatusCode::SERVICE_UNAVAILABLE, "no connector free")
-        },
-        SendError::BadRequest(_) => Refusal::new(id, StatusCode::BAD_REQUEST, error.to_string()),
-        _ => Refusal::new(id, StatusCode::BAD_GATEWAY, error.to_string()),
     }
 }
 

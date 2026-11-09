@@ -583,14 +583,14 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tunnelward-crypto"
-version = "0.0.10"
+version = "0.0.11"
 dependencies = [
  "rustls",
 ]
 
 [[package]]
 name = "tunnelward-gateway"
-version = "0.0.10"
+version = "0.0.11"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -604,20 +604,28 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tunnelward-crypto",
+ "tunnelward-identity",
  "tunnelward-mcp",
  "tunnelward-proto",
 ]
 
 [[package]]
 name = "tunnelward-identity"
-version = "0.0.10"
+version = "0.0.11"
 dependencies = [
+ "aws-lc-rs",
+ "bytes",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "tokio",
  "tunnelward-proto",
 ]
 
 [[package]]
 name = "tunnelward-mcp"
-version = "0.0.10"
+version = "0.0.11"
 dependencies = [
  "serde",
  "serde_json",
@@ -625,7 +633,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-proto"
-version = "0.0.10"
+version = "0.0.11"
 dependencies = [
  "cbor4ii",
  "serde",

@@ -7,6 +7,73 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.11]
+
+### Added
+
+- Agent-side authorisation, per the MCP authorisation specification: with
+  `IngressConfig::agent_auth` (`[agents]` in the gateway file) the
+  gateway is an OAuth 2.1 resource server. Every request needs a bearer
+  JWT access token from a listed issuer, signed with one of its keys
+  (ES256, RS256, PS256 or EdDSA; never `none` or a shared secret), whose
+  `aud` is the gateway's resource (RFC 8707), in date, with the scopes
+  asked for. Otherwise 401 `TW-I008` or 403 `TW-I009`, with a
+  `WWW-Authenticate` challenge naming the metadata. The gateway serves
+  its protected-resource metadata (RFC 9728), strips the token before a
+  connector sees it, and records the token's `client_id` for observers.
+  Issuer keys come from a JWK Set file or are fetched from `jwks_uri`
+  over HTTPS, refreshed every 10 minutes and sooner for an unknown key
+  id; a failed fetch keeps the old keys. Token checks are in-house on
+  aws-lc-rs: no JWT or base64 crate joins cargo-vet.
+- Connector SVIDs that rotate without a restart. `tunnelward connector`
+  takes its X.509-SVID from the SPIFFE Workload API
+  (`[identity] workload_api = "unix:///..."`), following the agent's
+  stream as it rotates and reconnecting if the agent restarts, or from
+  `cert` and `key` files read again when they change. Each SVID must be
+  for the configured SPIFFE ID, proven by its certificate rather than by
+  the agent's label; one that is not is refused and the current kept.
+  New handshakes present the new SVID; established connections move to
+  it at their next lease renewal. Library parts:
+  `tunnelward_identity::workload` (gRPC over a Unix socket on hyper, an
+  in-house protobuf reader; Unix only) and
+  `tunnelward_crypto::{RotatingIdentity, client_config_rotating}`.
+- Enrolment tokens: a connector with no SVID gets one from the gateway.
+  `tunnelward enrol ca` makes an ECDSA P-256 CA; with `[enrolment]` the
+  gateway issues SVIDs from it and its connector listener trusts it.
+  `tunnelward enrol token --spiffe-id <id>` prints a one-time token
+  bound to that ID; only its SHA-256 is stored, in a directory the CLI
+  and gateways share, and redeeming it is an atomic rename, so it works
+  once. A connector with `[identity.enrol]` POSTs the token and a
+  signing request to `/.well-known/tunnelward/enrol` on the ingress and
+  gets an SVID (default lifetime 1 h), keeps it and its key in
+  `state_dir`, and two thirds into its life renews at
+  `/.well-known/tunnelward/renew` with a new key, proving it holds the
+  current SVID's key. `tunnelward enrol revoke` stops an identity's
+  renewals. Refusals are `TW-I011`. Certificates, signing requests and
+  key identifiers are written in-house on aws-lc-rs; OpenSSL verifies the
+  CA and an issued SVID in strict mode.
+- Provider identification at the network level (FR-12). A gateway with
+  `[providers]` loads a snapshot of AI providers' published egress
+  ranges, signed with Ed25519 by a key it trusts, and tags each request
+  whose client address is in one (`RequestInfo::provider`: provider,
+  agent, `level = "network"`, snapshot version). A snapshot is accepted
+  whole or not at all and never replaces a newer one; the gateway looks
+  for a newer one every 5 minutes. `tunnelward providers build` fetches
+  each provider's own list (Anthropic's outbound ranges from its IP
+  addresses page; OpenAI's chatgpt-user, chatgpt-actions, searchbot and
+  gptbot files), `keygen` and `sign` make and sign it. An address match
+  says where a request came from, not who sent it.
+- Web Bot Auth (FR-12, signature level): a request signed per
+  draft-ietf-webbotauth-httpsig-protocol (RFC 9421 HTTP message
+  signatures, `tag="web-bot-auth"`, Ed25519, a `keyid` that is the
+  key's RFC 7638 thumbprint, covering `@authority` and
+  `signature-agent`) by an agent listed in `[[providers.signers]]` is
+  tagged at `level = "signature"`. Its key directory is fetched from the
+  configured URL only, never one a request names. `created` must be
+  within five minutes and a nonce is accepted once. A failing signature
+  is refused (401 `TW-I010`) or served unsigned, per `on_invalid`. Both
+  Ed25519 test vectors of the draft (Appendix E.2) verify.
+
 ## [0.0.10]
 
 ### Added

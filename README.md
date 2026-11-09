@@ -24,7 +24,7 @@ Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/release
 </p>
 
 <p align="center">
-  <img src=".github/demo.gif" alt="A terminal runs tunnelward dev in front of a local web server; curl through the tunnel prints hello from a private service, and the admin API shows one connector with two connections" width="100%" />
+  <img src=".github/demo.gif" alt="A terminal prints the tunnelward version, then runs tunnelward dev in front of a local web server; curl through the tunnel prints hello from a private service, and the admin API shows one connector with two connections" width="100%" />
 </p>
 
 ---
@@ -78,12 +78,16 @@ A container image is at `ghcr.io/sebastienrousseau/tunnelward`.
 
 ```toml
 [dependencies]
-tunnelward-connector = "0.0.8"   # embed a connector in your service
-tunnelward-gateway = "0.0.8"     # embed a gateway in your server
+tunnelward-connector = "0.0.11"   # embed a connector in your service
+tunnelward-gateway = "0.0.11"     # embed a gateway in your server
 ```
 
 `tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
-the TLS configuration underneath; `tunnelward-mcp` parses MCP envelopes. API documentation is on
+the TLS configuration underneath; `tunnelward-identity` reads a
+connector's SPIFFE ID from its X.509-SVID, fetches SVIDs from the
+SPIFFE Workload API, and holds the CA a gateway enrols connectors with;
+`tunnelward-mcp` parses MCP
+envelopes. API documentation is on
 [docs.rs](https://docs.rs/tunnelward-connector).
 
 ---
@@ -91,7 +95,8 @@ the TLS configuration underneath; `tunnelward-mcp` parses MCP envelopes. API doc
 ## Requirements
 
 - Rust 1.89 or newer ([policy](docs/POLICIES.md)).
-- CI tests Linux, macOS and Windows on stable, and Linux on 1.89.
+- CI tests Linux (x86_64 and aarch64), macOS and Windows on stable, and
+  Linux on 1.89.
 
 ---
 
@@ -116,14 +121,16 @@ at startup, and every listener stays on loopback. Add
 ## The Tunnelward ecosystem
 
 One crate per concern, so the protocol core can be fuzzed and audited on
-its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-gateway`, `tunnelward-connector` and `tunnelward` have code; the others are placeholders
-until the release the plan gives them.
+its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
+`tunnelward-mcp`, `tunnelward-gateway`, `tunnelward-connector` and
+`tunnelward` have code; `tunnelward-attest`, `tunnelward-policy` and
+`tunnelward-audit` are placeholders until the release the plan gives them.
 
 | Component | Purpose | Use case |
 | :--- | :--- | :--- |
 | `tunnelward-proto` | Register frames, limits, error codes | Parsing what a connector sends before its identity is known |
 | `tunnelward-crypto` | rustls configuration with hybrid post-quantum key exchange | X25519MLKEM768 on every TLS hop |
-| `tunnelward-identity` | The SPIFFE ID in an X.509-SVID; enrolment tokens later | Proving which workload a connector is |
+| `tunnelward-identity` | The SPIFFE ID in an X.509-SVID; the Workload API client; the enrolment CA and signing requests | Proving which workload a connector is |
 | `tunnelward-attest` | passmcp attestation verification | Admitting only MCP servers that passed passmcp |
 | `tunnelward-policy` | Cedar policy per MCP tool | Allowing or denying each `tools/call` |
 | `tunnelward-mcp` | MCP envelope parsing, Streamable HTTP, SSE | Reading the method and tool name without parsing the body |
@@ -148,16 +155,26 @@ until the release the plan gives them.
 | Operations | Drain by connector, route or address with a deadline; graceful connector shutdown; connector source allowlist | Shipped in 0.0.6 |
 | Ingress | HTTP/1.1 and HTTP/2 (TLS, ALPN) for agents; streaming responses with backpressure; client address from trusted proxies only, PROXY v1/v2; URL, body, timeout and rate limits; observer hooks | Shipped in 0.0.7 |
 | Crypto | TLS 1.3 only; hybrid PQ key exchange (X25519MLKEM768) first, optional hybrid-only; mutual TLS | Shipped in 0.0.3 |
+| Operating | Admin API on its own listener (health, readiness, inventory with redaction, metrics, drain); `tunnelward dev`, `gateway`, `config check` and `doctor`; stable error ids | Shipped in 0.0.8 |
+| MCP and provenance | MCP envelope parsing (method, tool, declared client); a request id on every request; declared User-Agent and `traceparent` recorded | Shipped in 0.0.9 |
+| Live changes | Dark mode per connector, route or address; certificates reloaded from disk without a restart; `tunnelward connector`; CORS per path | Shipped in 0.0.9 |
+| Connector identity | The registered SPIFFE ID must be the one in the connector's X.509-SVID; routes owned by identities; registrations per source, domains per gateway and routes per identity enforced | Shipped in 0.0.10 |
+| Agent authorisation | OAuth 2.1 resource server per the MCP authorisation spec: bearer JWTs (ES256, RS256, PS256, EdDSA) checked against each issuer's JWK Set, audience, expiry and scopes; protected-resource metadata (RFC 9728); tokens never passed to connectors | Shipped in 0.0.11 |
+| SVID rotation | Connector SVIDs from the SPIFFE Workload API or from files, rotated without a restart; an SVID for another identity is refused | Shipped in 0.0.11 |
+| Enrolment | A connector with no SVID redeems a one-time token bound to a SPIFFE ID for a short-lived SVID from the gateway's CA, then renews with a new key before it expires; `tunnelward enrol ca`, `token` and `revoke` | Shipped in 0.0.11 |
+| Provider identification | Requests from Anthropic's and OpenAI's published egress ranges tagged with the provider, from a signed, versioned snapshot (`tunnelward providers`); Web Bot Auth signatures (RFC 9421) from listed agents raise the tag to signature level, with a nonce replay check | Shipped in 0.0.11 |
 
 ---
 
 ## Ecosystem comparison
 
-No comparison is published yet: there is nothing built to compare. `docs/COMPARISON.md` will be written, with evidence, once the tunnel works.
+Tunnelward's own column, with the test that shows each. A comparison
+with other tunnels and MCP gateways needs a sourced claim for each of
+them, and is not written yet.
 
-| Project | Inbound port needed | Admission by attestation | Self-hosted |
-| :--- | :---: | :---: | :---: |
-| **Tunnelward** | Not yet built | Not yet built | Not yet built |
+| Project | Inbound port needed | Connector identity checked | Admission by attestation | Self-hosted |
+| :--- | :---: | :---: | :---: | :---: |
+| **Tunnelward** | No: connectors dial out (`tests/tunnel.rs`) | Yes: SPIFFE ID from the SVID (`tests/ownership.rs`) | Not yet (FR-5, planned) | Yes |
 
 See [`docs/COMPARISON.md`](docs/COMPARISON.md) for the evidence and complete matrix.
 
@@ -185,8 +202,11 @@ The workspace has no Cargo features yet.
 
 `tunnelward gateway --config tunnelward.toml` runs a gateway from a TOML
 file: its listeners, its TLS certificates (picked up again when renewed),
-the agent ingress with CORS rules, the connector allowlist and the admin
-token. `tunnelward connector --config connector.toml` runs a connector
+the agent ingress with CORS rules, the connector allowlist and route
+owners, the admin token, and the OAuth issuers agents' tokens must come
+from (`[agents]`, documented in [`agents.rs`](crates/tw-cli/src/agents.rs)),
+and the signed provider snapshot requests are tagged with (`[providers]`,
+documented in [`providers.rs`](crates/tw-cli/src/providers.rs)). `tunnelward connector --config connector.toml` runs a connector
 in front of a local service. Each format, with every key, is documented
 at the top of [`config.rs`](crates/tw-cli/src/config.rs) and
 [`connector.rs`](crates/tw-cli/src/connector.rs).

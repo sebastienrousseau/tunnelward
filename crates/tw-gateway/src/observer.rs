@@ -34,6 +34,12 @@ pub struct RequestInfo {
     pub traceparent: Option<String>,
     /// The MCP session (`Mcp-Session-Id`), when the client sent one.
     pub mcp_session: Option<String>,
+    /// The OAuth client the agent's token names (`client_id`, else
+    /// `azp`), once [`crate::AgentAuth`] has checked it.
+    pub client_id: Option<String>,
+    /// The provider whose published ranges hold the client address
+    /// (FR-12, network-level evidence only).
+    pub provider: Option<crate::ProviderTag>,
 }
 
 /// Called at each step of an ingress request. Every method has an empty

@@ -185,6 +185,47 @@ by default). 413, before any of the body is read.
 `cors` rule allows for that path. 403; the connector never sees it. Add
 the origin to the path's rule if the page should reach the service.
 
+### TW-I008
+
+**Unauthorized.** Agent authorisation (`[agents]`) is on and the request
+has no bearer token, or its token fails a check: an issuer not listed, a
+signature no key of that issuer verifies, an `aud` that is not the
+gateway's `resource`, or an `exp` or `nbf` outside the 60 s leeway. 401
+with `WWW-Authenticate`, whose `error_description` names the check and
+whose `resource_metadata` points at the gateway's protected-resource
+metadata, where an MCP client finds the authorisation server. Get a token
+for the resource from one of the listed issuers.
+
+### TW-I009
+
+**Insufficient scope.** The token is valid but does not grant every scope
+in `[agents] scopes`. 403 with `WWW-Authenticate: Bearer
+error="insufficient_scope"` naming the scopes. Ask the authorisation
+server for a token with them.
+
+### TW-I010
+
+**Web Bot Auth signature fails.** The request carries a
+`tag="web-bot-auth"` signature that does not pass: its `Signature-Agent`
+is not in `[[providers.signers]]`, its `keyid` is not in that agent's key
+directory, it does not verify, `created` is more than five minutes old
+(or more than one minute ahead), it has expired, or its nonce was used
+before. 401, only with `[providers] on_invalid = "reject"`; with
+`"downgrade"` the request is served without a signature-level tag. The
+reason names the check.
+
+### TW-I011
+
+**Enrolment refused.** A POST to `/.well-known/tunnelward/enrol` or
+`/renew` did not get an SVID. 403 when the token is unknown, already used
+or expired (issue a new one with `tunnelward enrol token`), or, for a
+renewal, when the SVID is not a current one from this gateway's CA, its
+identity was revoked (`tunnelward enrol revoke`), or the proof does not
+verify with the SVID's key (an expired SVID cannot renew: enrol again
+with a new token). 400 for a body or signing request that does not parse,
+405 for a method other than POST, 413 for a body over 64 KiB, 500 when the token store cannot be
+read or written. The reason names which.
+
 ## Connector (`TW-C`)
 
 A rejected registration reports its `TW-R` id instead.

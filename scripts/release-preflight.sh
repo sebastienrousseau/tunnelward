@@ -40,7 +40,7 @@ for kind in dependabot code-scanning secret-scanning; do
   esac
 done
 issues="$(gh issue list --repo "$repo" --state open --json number --jq length)"
-[[ "$issues" == 0 ]] && ok "no open issues" || bad "$issues open issues"
+if [[ "$issues" == 0 ]]; then ok "no open issues"; else bad "$issues open issues"; fi
 
 echo "== tree"
 check "on main" test "$(git branch --show-current)" = main
@@ -63,6 +63,22 @@ if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
   check "points at the release commit" test "$(git rev-parse "$tag^{commit}")" = "$target"
   check "not on origin yet" bash -c "! git ls-remote --exit-code --tags origin refs/tags/$tag"
 fi
+
+echo "== README and demo"
+check "README in step with $version (scripts/readme-check.sh)" bash scripts/readme-check.sh
+# The demo shows `tunnelward --version`, so it is rendered again after
+# every version bump: its last commit must descend from the bump.
+bump="$(git log --format=%H --reverse -S"version = \"$version\"" -- Cargo.toml | head -1)"
+demo="$(git log -1 --format=%H -- .github/demo.gif)"
+check "demo re-rendered after the $version bump (make demo)" \
+  bash -c "[ -n '$bump' ] && [ -n '$demo' ] && git merge-base --is-ancestor '$bump' '$demo'"
+# Each badge must render a value, not an error.
+while IFS= read -r url; do
+  title="$(curl -s -A 'tunnelward-release' "$url" | grep -o '<title>[^<]*</title>' | head -1)"
+  label="$(sed -E 's/.*(img.shields.io\/[a-z-]+\/[a-z-]*).*/\1/' <<< "$url")"
+  check "badge $label renders (${title:-no title})" \
+    bash -c "[ -n '$title' ] && ! grep -qiE 'inaccessible|invalid|not found|unknown|no releases|error' <<< '$title'"
+done < <(grep -o 'src="https://img.shields.io[^"]*"' README.md | sed 's/^src="//; s/"$//; s/&amp;/\&/g')
 
 publishable="$(cargo metadata --format-version 1 --no-deps --locked | jq '[.packages[] | select(.publish != [])] | length')"
 if [[ "$publishable" != 0 ]]; then

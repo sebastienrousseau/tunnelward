@@ -3,14 +3,20 @@
 
 //! The `tunnelward` command-line tool.
 
+mod agents;
 mod args;
 mod config;
 mod connector;
 mod dev;
 mod devcert;
 mod doctor;
+mod enrol;
+mod enrolled;
 mod gateway;
+mod providers;
 mod serve;
+mod signers;
+mod svid;
 
 use std::env;
 use std::net::SocketAddr;
@@ -37,6 +43,19 @@ Commands:
                  Check a gateway's or a connector's file and list every problem
   doctor [--config <file>]
                  Check this machine and, given a file, its configuration
+  providers keygen --out <file>
+                 Make an Ed25519 key for signing provider snapshots
+  providers build --out <file> [--version <n>]
+                 Fetch providers' published egress ranges into a snapshot
+  providers sign --key <file> <snapshot>
+                 Sign a snapshot; writes <snapshot>.sig
+  enrol ca --cert <file> --key <file> [--name <cn>] [--days <n>]
+                 Make the CA a gateway issues connector SVIDs from
+                 Defaults: --name \"Tunnelward enrolment CA\", --days 3650
+  enrol token --config <gateway file> --spiffe-id <id> [--ttl-secs <n>]
+                 Print a one-time token that enrols <id> (default 3600 s)
+  enrol revoke --config <gateway file> --spiffe-id <id>
+                 Stop <id>'s renewals; its SVID lapses when it expires
 
 Options:
   -h, --help     Print this help
@@ -147,10 +166,116 @@ fn doctor(args: &[String]) -> Result<(), Outcome> {
     }
 }
 
+fn providers(args: &[String]) -> Result<(), Outcome> {
+    let args = Args::parse(args, &["out", "version", "key"])?;
+    match args.positional.as_slice() {
+        [command] if command == "keygen" => providers_keygen(&args),
+        [command] if command == "build" => providers_build(&args),
+        [command, snapshot] if command == "sign" => providers_sign(&args, snapshot),
+        _ => Err(providers_usage().into()),
+    }
+}
+
+fn providers_usage() -> UsageError {
+    UsageError("usage: tunnelward providers keygen|build|sign (see --help)".into())
+}
+
+fn providers_keygen(args: &Args) -> Result<(), Outcome> {
+    let out = args.get("out").ok_or_else(providers_usage)?;
+    println!(
+        "{}",
+        providers::keygen(Path::new(out)).map_err(Outcome::Failed)?
+    );
+    Ok(())
+}
+
+fn providers_build(args: &Args) -> Result<(), Outcome> {
+    let out = args.get("out").ok_or_else(providers_usage)?;
+    let version = args
+        .parsed("version")?
+        .unwrap_or_else(providers::default_version);
+    let roots = agents::system_roots(None).map_err(Outcome::Failed)?;
+    let snapshot = runtime()?
+        .block_on(providers::build(version, roots))
+        .map_err(Outcome::Failed)?;
+    std::fs::write(out, snapshot).map_err(|e| Outcome::Failed(format!("{out}: {e}")))?;
+    println!("{out}: version {version}");
+    Ok(())
+}
+
+fn providers_sign(args: &Args, snapshot: &str) -> Result<(), Outcome> {
+    let key = args.get("key").ok_or_else(providers_usage)?;
+    let sig = providers::sign(Path::new(key), Path::new(snapshot)).map_err(Outcome::Failed)?;
+    println!("{}", sig.display());
+    Ok(())
+}
+
+fn enrol(args: &[String]) -> Result<(), Outcome> {
+    let args = Args::parse(
+        args,
+        &[
+            "cert",
+            "key",
+            "name",
+            "days",
+            "config",
+            "spiffe-id",
+            "ttl-secs",
+        ],
+    )?;
+    match args.positional.as_slice() {
+        [command] if command == "ca" => enrol_ca(&args),
+        [command] if command == "token" => enrol_token(&args),
+        [command] if command == "revoke" => enrol_revoke(&args),
+        _ => Err(enrol_usage().into()),
+    }
+}
+
+fn enrol_usage() -> UsageError {
+    UsageError("usage: tunnelward enrol ca|token|revoke (see --help)".into())
+}
+
+fn enrol_ca(args: &Args) -> Result<(), Outcome> {
+    let cert = args.get("cert").ok_or_else(enrol_usage)?;
+    let key = args.get("key").ok_or_else(enrol_usage)?;
+    let name = args.get("name").unwrap_or("Tunnelward enrolment CA");
+    let days = args.parsed("days")?.unwrap_or(3650);
+    enrol::make_ca(Path::new(cert), Path::new(key), name, days).map_err(Outcome::Failed)?;
+    println!("enrolment CA written; name both files in [enrolment] ca_cert and ca_key");
+    Ok(())
+}
+
+/// The gateway file and SPIFFE ID every enrol command but `ca` needs.
+fn enrol_target(args: &Args) -> Result<(&Path, &str), UsageError> {
+    let config = args.get("config").ok_or_else(enrol_usage)?;
+    let id = args.get("spiffe-id").ok_or_else(enrol_usage)?;
+    Ok((Path::new(config), id))
+}
+
+fn enrol_token(args: &Args) -> Result<(), Outcome> {
+    let (config, id) = enrol_target(args)?;
+    let ttl = std::time::Duration::from_secs(args.parsed("ttl-secs")?.unwrap_or(3600));
+    println!(
+        "{}",
+        enrol::token(config, id, ttl).map_err(Outcome::Failed)?
+    );
+    Ok(())
+}
+
+fn enrol_revoke(args: &Args) -> Result<(), Outcome> {
+    let (config, id) = enrol_target(args)?;
+    if enrol::revoke(config, id).map_err(Outcome::Failed)? {
+        println!("{id}: revoked; its SVID lapses when it expires");
+        Ok(())
+    } else {
+        Err(Outcome::Failed(format!("{id} is not enrolled")))
+    }
+}
+
 type Command = fn(&[String]) -> Result<(), Outcome>;
 
 /// Every command, by the names that call it.
-const COMMANDS: [(&[&str], Command); 7] = [
+const COMMANDS: [(&[&str], Command); 9] = [
     (&["-h", "--help"], |_| {
         print!("{USAGE}");
         Ok(())
@@ -164,6 +289,8 @@ const COMMANDS: [(&[&str], Command); 7] = [
     (&["connector"], connector),
     (&["config"], config_check),
     (&["doctor"], doctor),
+    (&["providers"], providers),
+    (&["enrol"], enrol),
 ];
 
 fn dispatch(args: &[String]) -> Outcome {

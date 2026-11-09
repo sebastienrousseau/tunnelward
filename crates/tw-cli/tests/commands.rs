@@ -6,84 +6,13 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Output, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
+mod common;
+
+use common::{Res, pki_dir, text, tunnelward, write_config};
 use tunnelward_testpki as pki;
-
-type Res<T> = Result<T, Box<dyn std::error::Error>>;
-
-fn tunnelward(args: &[&str]) -> std::io::Result<Output> {
-    Command::new(env!("CARGO_BIN_EXE_tunnelward"))
-        .args(args)
-        .output()
-}
-
-fn text(bytes: &[u8]) -> String {
-    String::from_utf8_lossy(bytes).into_owned()
-}
-
-/// Standard base64, as PEM needs it.
-fn base64(bytes: &[u8]) -> String {
-    const ABC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::new();
-    for chunk in bytes.chunks(3) {
-        let n =
-            chunk.iter().fold(0_u32, |acc, b| acc << 8 | u32::from(*b)) << (8 * (3 - chunk.len()));
-        for i in 0..4 {
-            let sextet = (n >> (18 - 6 * i)) & 63;
-            out.push(if i <= chunk.len() {
-                char::from(ABC[sextet as usize])
-            } else {
-                '='
-            });
-        }
-    }
-    out
-}
-
-fn pem(label: &str, der: &[u8]) -> String {
-    let body = base64(der);
-    let lines: Vec<&str> = body
-        .as_bytes()
-        .chunks(64)
-        .filter_map(|c| std::str::from_utf8(c).ok())
-        .collect();
-    format!(
-        "-----BEGIN {label}-----\n{}\n-----END {label}-----\n",
-        lines.join("\n")
-    )
-}
-
-/// A fresh directory holding the test PKI as PEM files.
-fn pki_dir(name: &str) -> Res<PathBuf> {
-    let dir = std::env::temp_dir().join(format!("tunnelward-{name}-{}", std::process::id()));
-    std::fs::create_dir_all(&dir)?;
-    std::fs::write(dir.join("gateway.crt"), pem("CERTIFICATE", pki::GATEWAY.0))?;
-    std::fs::write(dir.join("gateway.key"), pem("PRIVATE KEY", pki::GATEWAY.1))?;
-    std::fs::write(dir.join("ca.crt"), pem("CERTIFICATE", pki::CA))?;
-    std::fs::write(
-        dir.join("connector.crt"),
-        pem("CERTIFICATE", pki::CONNECTOR.0),
-    )?;
-    std::fs::write(
-        dir.join("connector.key"),
-        pem("PRIVATE KEY", pki::CONNECTOR.1),
-    )?;
-    Ok(dir)
-}
-
-fn write_config(dir: &Path, extra: &str) -> Res<PathBuf> {
-    let path = dir.join("tunnelward.toml");
-    std::fs::write(
-        &path,
-        format!(
-            "[listen]\nconnectors = \"127.0.0.1:0\"\ningress = \"127.0.0.1:0\"\n\n\
-             [tls]\ncert = \"gateway.crt\"\nkey = \"gateway.key\"\nclient_ca = \"ca.crt\"\n{extra}"
-        ),
-    )?;
-    Ok(path)
-}
 
 #[test]
 fn a_good_config_checks_ok() -> Res<()> {
@@ -297,7 +226,10 @@ fn the_gateway_reloads_renewed_certificates_and_keeps_good_ones() -> Res<()> {
 
     std::fs::write(dir.join("gateway.key"), "not a key")?;
     expect(&err, "not reloaded, keeping the running certificates")?;
-    std::fs::write(dir.join("gateway.key"), pem("PRIVATE KEY", pki::GATEWAY.1))?;
+    std::fs::write(
+        dir.join("gateway.key"),
+        pki::pem("PRIVATE KEY", pki::GATEWAY.1),
+    )?;
     expect(&out, "certificates reloaded")?;
     drop(child);
     Ok(std::fs::remove_dir_all(dir)?)
