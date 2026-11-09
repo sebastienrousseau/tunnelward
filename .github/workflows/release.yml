@@ -300,7 +300,10 @@ jobs:
             echo "::error::not on crates.io yet: ${new[*]}. Publish $VERSION by hand (.git/publish-crates.sh $VERSION), add each new crate's trusted publisher, then rerun this job."
             exit 1
           fi
-          excludes="$(printf -- '--exclude %s ' ${done_[@]+"${done_[@]}"})"
+          # One --exclude per published crate, and none when there are
+          # none: printf with no arguments still prints its format once.
+          excludes=""
+          for c in ${done_[@]+"${done_[@]}"}; do excludes+="--exclude $c "; done
           echo "excludes=$excludes" >> "$GITHUB_OUTPUT"
           echo "run=$([ "$todo" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - if: steps.check.outputs.run == 'true'
