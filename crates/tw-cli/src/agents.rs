@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::Deserialize;
+use tunnelward_crypto::rustls::RootCertStore;
 use tunnelward_gateway::{AgentAuth, Issuer, KeySet};
 
 use crate::config::{Problems, resolve, roots};
@@ -102,10 +103,7 @@ fn issuer(
         (Some(_), Some(_)) => Err("give jwks_uri or jwks, not both".to_owned()),
         (None, None) => Err("give jwks_uri or jwks".to_owned()),
         (None, Some(file)) => fixed(&resolve(base, file)),
-        (Some(url), None) => ca_roots(base, agents)
-            .and_then(|r| KeySet::from_url(url, r).map_err(|e| e.to_string()))
-            .map(Arc::new)
-            .inspect(|k| fetched.push(k.clone())),
+        (Some(url), None) => fetched_from(base, agents, url).inspect(|k| fetched.push(k.clone())),
     };
     match keys {
         Ok(keys) => Some(Issuer {
@@ -117,6 +115,17 @@ fn issuer(
             None
         }
     }
+}
+
+/// The key set fetched from `url`. The URL is checked first: without a
+/// CA bundle (Windows has none) the bundle's problem would hide the
+/// URL's.
+fn fetched_from(base: &Path, agents: &Agents, url: &str) -> Result<Arc<KeySet>, String> {
+    KeySet::from_url(url, Arc::new(RootCertStore::empty())).map_err(|e| e.to_string())?;
+    let roots = ca_roots(base, agents)?;
+    KeySet::from_url(url, roots)
+        .map(Arc::new)
+        .map_err(|e| e.to_string())
 }
 
 fn fixed(path: &Path) -> Result<Arc<KeySet>, String> {

@@ -44,7 +44,27 @@ pub(crate) fn check(
     ca: Option<PathBuf>,
     problems: &mut Vec<String>,
 ) -> Option<(Arc<BotAuth>, Vec<Arc<KeySet>>)> {
-    let on_invalid = match on_invalid.unwrap_or("reject") {
+    let on_invalid = policy(on_invalid, problems);
+    let roots = crate::agents::system_roots(ca)
+        .map_err(|e| problems.push(format!("[providers] ca: {e}")))
+        .ok();
+    // Each signer is checked even without roots (Windows has no CA
+    // bundle file), so every problem is listed at once.
+    let checking = roots
+        .clone()
+        .unwrap_or_else(|| Arc::new(tunnelward_crypto::rustls::RootCertStore::empty()));
+    let signers: Vec<Signer> = parts
+        .iter()
+        .filter_map(|p| signer(p, &checking).map_err(|e| problems.push(e)).ok())
+        .collect();
+    roots?;
+    let keys = signers.iter().map(|s| s.keys.clone()).collect();
+    Some((Arc::new(BotAuth::new(signers, on_invalid?)), keys))
+}
+
+/// `[providers] on_invalid`, `reject` when absent.
+fn policy(on_invalid: Option<&str>, problems: &mut Vec<String>) -> Option<OnInvalid> {
+    match on_invalid.unwrap_or("reject") {
         "reject" => Some(OnInvalid::Reject),
         "downgrade" => Some(OnInvalid::Downgrade),
         other => {
@@ -53,16 +73,7 @@ pub(crate) fn check(
             ));
             None
         }
-    };
-    let roots = crate::agents::system_roots(ca)
-        .map_err(|e| problems.push(format!("[providers] ca: {e}")))
-        .ok()?;
-    let signers: Vec<Signer> = parts
-        .iter()
-        .filter_map(|p| signer(p, &roots).map_err(|e| problems.push(e)).ok())
-        .collect();
-    let keys = signers.iter().map(|s| s.keys.clone()).collect();
-    Some((Arc::new(BotAuth::new(signers, on_invalid?)), keys))
+    }
 }
 
 fn signer(
