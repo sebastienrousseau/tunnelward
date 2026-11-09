@@ -16,7 +16,7 @@ use core::task::{Context, Poll};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use bytes::Bytes;
 use http::header::{
@@ -32,7 +32,8 @@ use crate::auth;
 use crate::cors::{self, Cors};
 use crate::forwarding::{Stamp, rewrite};
 use crate::provenance;
-use crate::{ClientAddr, Gateway, RequestInfo, ResponseBody, SendError};
+use crate::refusal::{Refusal, refusal_for};
+use crate::{ClientAddr, Gateway, RequestInfo, ResponseBody};
 
 /// The ingress response body: a connector's stream, or the gateway's own
 /// short answer.
@@ -79,29 +80,6 @@ impl hyper::service::Service<Request<Incoming>> for Ingress {
 
 /// The response header naming a refusal's error id.
 const TW_ERROR: http::HeaderName = http::HeaderName::from_static("tw-error");
-
-/// A refusal: the status, the reason for observers, and any `Retry-After`.
-struct Refusal {
-    /// The stable error id (`docs/errors.md`).
-    id: &'static str,
-    status: StatusCode,
-    reason: String,
-    retry_after: Option<Duration>,
-    /// `WWW-Authenticate`, for an authorisation refusal.
-    challenge: Option<String>,
-}
-
-impl Refusal {
-    fn new(id: &'static str, status: StatusCode, reason: impl Into<String>) -> Self {
-        Self {
-            id,
-            status,
-            reason: reason.into(),
-            retry_after: None,
-            challenge: None,
-        }
-    }
-}
 
 impl Ingress {
     async fn handle(self, request: Request<Incoming>) -> Response<IngressBody> {
@@ -157,7 +135,10 @@ impl Ingress {
         mut info: RequestInfo,
         started: Instant,
     ) -> Response<IngressBody> {
-        let outcome = match self.authorise(&request, &mut info) {
+        let checked = self
+            .authorise(&request, &mut info)
+            .and_then(|()| self.identify(&request, &mut info));
+        let outcome = match checked {
             Ok(()) => self.forward(request, &info).await,
             Err(refusal) => Err(refusal),
         };
@@ -203,6 +184,38 @@ impl Ingress {
             ..Refusal::new(r.id, r.status, r.reason)
         })?;
         info.client_id = principal.client_id;
+        Ok(())
+    }
+
+    /// With [`crate::BotAuth`] on, raises the provider tag to `signature`
+    /// for a verified Web Bot Auth signature; a failing one is refused or
+    /// ignored as configured.
+    fn identify(&self, request: &Request<Incoming>, info: &mut RequestInfo) -> Result<(), Refusal> {
+        let Some(bot_auth) = &self.gateway.inner.config.ingress.bot_auth else {
+            return Ok(());
+        };
+        let authority = request
+            .uri()
+            .authority()
+            .map(http::uri::Authority::as_str)
+            .or_else(|| request.headers().get(HOST).and_then(|h| h.to_str().ok()))
+            .unwrap_or_default();
+        let verdict = bot_auth.verify(
+            request.method(),
+            authority,
+            request.uri().path(),
+            request.headers(),
+            std::time::SystemTime::now(),
+        );
+        match verdict {
+            Ok(Some(signer)) => info.provider = Some(crate::ProviderTag::signed(signer)),
+            Err(e) if bot_auth.on_invalid == crate::OnInvalid::Reject => {
+                let reason = format!("the Web Bot Auth signature fails: {e}");
+                return Err(Refusal::new("TW-I010", StatusCode::UNAUTHORIZED, reason));
+            }
+            // Unsigned, or a failing signature downgraded: no signature tag.
+            Ok(None) | Err(_) => {}
+        }
         Ok(())
     }
 
@@ -410,21 +423,6 @@ fn metadata(auth: &crate::AgentAuth, info: &RequestInfo) -> Response<IngressBody
 fn stamp_request_id(headers: &mut http::HeaderMap, info: &RequestInfo) {
     if let Ok(id) = HeaderValue::from_str(&info.request_id) {
         headers.insert(provenance::REQUEST_ID, id);
-    }
-}
-
-fn refusal_for(error: &SendError) -> Refusal {
-    let id = error.id();
-    match error {
-        SendError::NoRoute => {
-            Refusal::new(id, StatusCode::NOT_FOUND, "no connector serves this route")
-        }
-        SendError::Unavailable { retry_after } => Refusal {
-            retry_after: Some(*retry_after),
-            ..Refusal::new(id, StatusCode::SERVICE_UNAVAILABLE, "no connector free")
-        },
-        SendError::BadRequest(_) => Refusal::new(id, StatusCode::BAD_REQUEST, error.to_string()),
-        _ => Refusal::new(id, StatusCode::BAD_GATEWAY, error.to_string()),
     }
 }
 

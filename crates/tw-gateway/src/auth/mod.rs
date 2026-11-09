@@ -19,7 +19,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use http::HeaderMap;
 use http::header::AUTHORIZATION;
 
+pub(crate) use jwk::Alg;
 pub use keys::{KeyError, KeySet};
+
+/// Standard base64 with padding, as Structured Fields byte sequences use.
+pub(crate) fn b64_standard(text: &str) -> Option<Vec<u8>> {
+    b64::decode_standard(text)
+}
 
 /// Where the protected-resource metadata lives (RFC 9728 section 3).
 const WELL_KNOWN: &str = "/.well-known/oauth-protected-resource";

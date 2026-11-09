@@ -13,6 +13,7 @@ mod doctor;
 mod gateway;
 mod providers;
 mod serve;
+mod signers;
 mod svid;
 
 use std::env;

@@ -19,6 +19,7 @@
 mod admin;
 mod admit;
 mod auth;
+mod botauth;
 mod cidr;
 mod claims;
 mod client_addr;
@@ -37,14 +38,17 @@ mod provenance;
 mod providers;
 pub mod proxy_protocol;
 mod ratelimit;
+mod refusal;
 mod registry;
 mod resolver;
 mod retry;
 mod route;
+mod sfv;
 mod tls;
 
 pub use admin::{AdminConfig, Connection, Inventory, Redaction};
 pub use auth::{AgentAuth, Issuer, KeyError, KeySet};
+pub use botauth::{BotAuth, BotAuthError, OnInvalid, Signer};
 pub use cidr::{Cidr, CidrError};
 pub use client_addr::ClientAddr;
 pub use config::{Config, IngressConfig, RouteOwner};

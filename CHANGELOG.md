@@ -48,6 +48,16 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   addresses page; OpenAI's chatgpt-user, chatgpt-actions, searchbot and
   gptbot files), `keygen` and `sign` make and sign it. An address match
   says where a request came from, not who sent it.
+- Web Bot Auth (FR-12, signature level): a request signed per
+  draft-ietf-webbotauth-httpsig-protocol (RFC 9421 HTTP message
+  signatures, `tag="web-bot-auth"`, Ed25519, a `keyid` that is the
+  key's RFC 7638 thumbprint, covering `@authority` and
+  `signature-agent`) by an agent listed in `[[providers.signers]]` is
+  tagged at `level = "signature"`. Its key directory is fetched from the
+  configured URL only, never one a request names. `created` must be
+  within five minutes and a nonce is accepted once. A failing signature
+  is refused (401 `TW-I010`) or served unsigned, per `on_invalid`. Both
+  Ed25519 test vectors of the draft (Appendix E.2) verify.
 
 ## [0.0.10]
 

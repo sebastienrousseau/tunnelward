@@ -54,7 +54,7 @@ fn a_signed_snapshot_tags_addresses_in_its_ranges() -> Res<()> {
             provider: "anthropic".into(),
             agent: "outbound".into(),
             level: "network",
-            snapshot: 3,
+            snapshot: Some(3),
         })
     );
     assert!(providers.lookup(ip("153.61.208.1")?).is_some());
@@ -160,7 +160,7 @@ async fn ingress_requests_carry_their_provider_tag() -> Res<()> {
     let tag = seen.first().cloned().flatten();
     assert_eq!(
         tag.map(|t| (t.provider, t.snapshot)),
-        Some(("test".to_owned(), 7))
+        Some(("test".to_owned(), Some(7)))
     );
     Ok(())
 }

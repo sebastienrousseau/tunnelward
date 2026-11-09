@@ -37,8 +37,21 @@ pub struct ProviderTag {
     pub agent: String,
     /// How strong the evidence is: `network` for an address match.
     pub level: &'static str,
-    /// The snapshot version that matched.
-    pub snapshot: u64,
+    /// The snapshot version that matched; `None` for a signature.
+    pub snapshot: Option<u64>,
+}
+
+impl ProviderTag {
+    /// The tag a verified Web Bot Auth signature from `signer` earns.
+    #[must_use]
+    pub fn signed(signer: &crate::Signer) -> Self {
+        Self {
+            provider: signer.provider.clone(),
+            agent: signer.agent.clone(),
+            level: "signature",
+            snapshot: None,
+        }
+    }
 }
 
 /// Why a snapshot was not loaded.
@@ -180,7 +193,7 @@ impl Providers {
             provider: entry.provider.clone(),
             agent: entry.agent.clone(),
             level: "network",
-            snapshot: snapshot.version,
+            snapshot: Some(snapshot.version),
         })
     }
 }

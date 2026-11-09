@@ -23,7 +23,7 @@ index_path() { # name
 
 excluded=()
 while IFS= read -r name; do
-  code="$(curl -s -o /dev/null -w '%{http_code}' "https://index.crates.io/$(index_path "$name")")"
+  code="$(curl -s --retry 3 --retry-all-errors -o /dev/null -w '%{http_code}' "https://index.crates.io/$(index_path "$name")")"
   case $code in
     200) ;;
     404) echo "semver: $name has no release on crates.io yet; skipped"; excluded+=(--exclude "$name") ;;

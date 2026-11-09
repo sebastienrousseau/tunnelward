@@ -270,22 +270,33 @@ mod tests {
         sign(key, &snap).map(drop)
     }
 
+    /// A fresh directory with a key and a signed v1 snapshot, loaded
+    /// and set to be looked at every 20 ms.
+    fn setup(dir: &Path) -> Result<(PathBuf, Loaded), String> {
+        let _fresh = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        let key = dir.join("signing.key");
+        let public = keygen(&key)?;
+        publish(dir, &key, 1)?;
+        let section = Section {
+            snapshot: Some(PathBuf::from("providers.json")),
+            keys: vec![public],
+            reload_secs: Some(1),
+            on_invalid: None,
+            ca: None,
+            signers: Vec::new(),
+        };
+        let mut problems = Vec::new();
+        let checked = check(dir, &section, &mut problems).ok_or(problems.join("; "))?;
+        let mut loaded = checked.snapshot.ok_or("no snapshot loaded")?;
+        loaded.every = std::time::Duration::from_millis(20);
+        Ok((key, loaded))
+    }
+
     #[tokio::test]
     async fn a_newer_snapshot_is_picked_up_and_a_rollback_is_not() -> Result<(), String> {
         let dir = std::env::temp_dir().join(format!("tw-providers-{}", std::process::id()));
-        let _fresh = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let key = dir.join("signing.key");
-        let public = keygen(&key)?;
-        publish(&dir, &key, 1)?;
-        let section = Section {
-            snapshot: PathBuf::from("providers.json"),
-            keys: vec![public],
-            reload_secs: Some(1),
-        };
-        let mut problems = Vec::new();
-        let mut loaded = check(&dir, &section, &mut problems).ok_or(problems.join("; "))?;
-        loaded.every = std::time::Duration::from_millis(20);
+        let (key, loaded) = setup(&dir)?;
         let providers = loaded.providers.clone();
         let task = tokio::spawn(keep_fresh(loaded));
         let settle = || tokio::time::sleep(std::time::Duration::from_millis(1100));
@@ -320,9 +331,48 @@ mod tests {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Section {
-    snapshot: PathBuf,
+    snapshot: Option<PathBuf>,
+    #[serde(default)]
     keys: Vec<String>,
     reload_secs: Option<u64>,
+    on_invalid: Option<String>,
+    ca: Option<PathBuf>,
+    #[serde(default)]
+    signers: Vec<crate::signers::SignerPart>,
+}
+
+/// The checked section: the snapshot, if any, and the Web Bot Auth
+/// verifier, if any signers are listed.
+pub(crate) struct Checked {
+    pub(crate) snapshot: Option<Loaded>,
+    pub(crate) bot_auth: Option<std::sync::Arc<tunnelward_gateway::BotAuth>>,
+    /// The signers' key directories, to keep fresh.
+    pub(crate) signer_keys: Vec<std::sync::Arc<tunnelward_gateway::KeySet>>,
+}
+
+/// Checks `section` (from a file in `base`).
+pub(crate) fn check(base: &Path, section: &Section, problems: &mut Vec<String>) -> Option<Checked> {
+    let before = problems.len();
+    let snapshot = section
+        .snapshot
+        .as_ref()
+        .and_then(|s| check_snapshot(base, s, section, problems));
+    let mut checked = Checked {
+        snapshot,
+        bot_auth: None,
+        signer_keys: Vec::new(),
+    };
+    if !section.signers.is_empty() {
+        let ca = section.ca.as_ref().map(|c| crate::config::resolve(base, c));
+        let on_invalid = section.on_invalid.as_deref();
+        if let Some((auth, keys)) =
+            crate::signers::check(&section.signers, on_invalid, ca, problems)
+        {
+            checked.bot_auth = Some(auth);
+            checked.signer_keys = keys;
+        }
+    }
+    (problems.len() == before).then_some(checked)
 }
 
 /// A checked section: the loaded snapshot and how to keep it fresh.
@@ -332,8 +382,13 @@ pub(crate) struct Loaded {
     every: std::time::Duration,
 }
 
-/// Checks `section` (from a file in `base`) and loads its snapshot.
-pub(crate) fn check(base: &Path, section: &Section, problems: &mut Vec<String>) -> Option<Loaded> {
+/// Checks the snapshot part of `section` and loads it.
+fn check_snapshot(
+    base: &Path,
+    path: &Path,
+    section: &Section,
+    problems: &mut Vec<String>,
+) -> Option<Loaded> {
     let keys: Vec<Vec<u8>> = section
         .keys
         .iter()
@@ -349,7 +404,7 @@ pub(crate) fn check(base: &Path, section: &Section, problems: &mut Vec<String>) 
         problems.push("[providers] keys: name at least one".into());
     }
     let providers = std::sync::Arc::new(tunnelward_gateway::Providers::new(keys));
-    let snapshot = crate::config::resolve(base, &section.snapshot);
+    let snapshot = crate::config::resolve(base, path);
     load(&providers, &snapshot)
         .map_err(|e| problems.push(format!("[providers] {e}")))
         .ok()?;

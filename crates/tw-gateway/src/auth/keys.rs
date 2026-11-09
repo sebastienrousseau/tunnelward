@@ -157,6 +157,20 @@ impl KeySet {
         })
     }
 
+    /// The Ed25519 key whose thumbprint is `thumbprint`. A miss asks
+    /// [`KeySet::keep_fresh`] to refetch.
+    pub(crate) fn ed25519(&self, thumbprint: &str) -> Option<Key> {
+        let keys = self.keys.read().unwrap_or_else(PoisonError::into_inner);
+        let found = keys
+            .iter()
+            .find(|k| k.ed25519_thumbprint().as_deref() == Some(thumbprint))
+            .cloned();
+        if found.is_none() {
+            self.wanted.notify_one();
+        }
+        found
+    }
+
     /// The keys that may verify a token signed with `alg` and naming
     /// `kid`. An unknown `kid` asks [`KeySet::keep_fresh`] to refetch.
     pub(crate) fn candidates(&self, alg: Alg, name: &str, kid: Option<&str>) -> Vec<Key> {

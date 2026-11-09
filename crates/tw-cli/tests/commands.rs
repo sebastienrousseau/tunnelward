@@ -6,84 +6,13 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Output, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
+mod common;
+
+use common::{Res, pki_dir, text, tunnelward, write_config};
 use tunnelward_testpki as pki;
-
-type Res<T> = Result<T, Box<dyn std::error::Error>>;
-
-fn tunnelward(args: &[&str]) -> std::io::Result<Output> {
-    Command::new(env!("CARGO_BIN_EXE_tunnelward"))
-        .args(args)
-        .output()
-}
-
-fn text(bytes: &[u8]) -> String {
-    String::from_utf8_lossy(bytes).into_owned()
-}
-
-/// Standard base64, as PEM needs it.
-fn base64(bytes: &[u8]) -> String {
-    const ABC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::new();
-    for chunk in bytes.chunks(3) {
-        let n =
-            chunk.iter().fold(0_u32, |acc, b| acc << 8 | u32::from(*b)) << (8 * (3 - chunk.len()));
-        for i in 0..4 {
-            let sextet = (n >> (18 - 6 * i)) & 63;
-            out.push(if i <= chunk.len() {
-                char::from(ABC[sextet as usize])
-            } else {
-                '='
-            });
-        }
-    }
-    out
-}
-
-fn pem(label: &str, der: &[u8]) -> String {
-    let body = base64(der);
-    let lines: Vec<&str> = body
-        .as_bytes()
-        .chunks(64)
-        .filter_map(|c| std::str::from_utf8(c).ok())
-        .collect();
-    format!(
-        "-----BEGIN {label}-----\n{}\n-----END {label}-----\n",
-        lines.join("\n")
-    )
-}
-
-/// A fresh directory holding the test PKI as PEM files.
-fn pki_dir(name: &str) -> Res<PathBuf> {
-    let dir = std::env::temp_dir().join(format!("tunnelward-{name}-{}", std::process::id()));
-    std::fs::create_dir_all(&dir)?;
-    std::fs::write(dir.join("gateway.crt"), pem("CERTIFICATE", pki::GATEWAY.0))?;
-    std::fs::write(dir.join("gateway.key"), pem("PRIVATE KEY", pki::GATEWAY.1))?;
-    std::fs::write(dir.join("ca.crt"), pem("CERTIFICATE", pki::CA))?;
-    std::fs::write(
-        dir.join("connector.crt"),
-        pem("CERTIFICATE", pki::CONNECTOR.0),
-    )?;
-    std::fs::write(
-        dir.join("connector.key"),
-        pem("PRIVATE KEY", pki::CONNECTOR.1),
-    )?;
-    Ok(dir)
-}
-
-fn write_config(dir: &Path, extra: &str) -> Res<PathBuf> {
-    let path = dir.join("tunnelward.toml");
-    std::fs::write(
-        &path,
-        format!(
-            "[listen]\nconnectors = \"127.0.0.1:0\"\ningress = \"127.0.0.1:0\"\n\n\
-             [tls]\ncert = \"gateway.crt\"\nkey = \"gateway.key\"\nclient_ca = \"ca.crt\"\n{extra}"
-        ),
-    )?;
-    Ok(path)
-}
 
 #[test]
 fn a_good_config_checks_ok() -> Res<()> {
@@ -126,84 +55,6 @@ fn a_bad_config_lists_every_problem() -> Res<()> {
         );
     }
     Ok(std::fs::remove_dir_all(dir)?)
-}
-
-#[test]
-fn agent_auth_checks_ok_or_lists_its_problems() -> Res<()> {
-    let dir = pki_dir("agents")?;
-    std::fs::write(dir.join("keys.json"), r#"{"keys":[]}"#)?;
-    let good = "[agents]\nresource = \"https://mcp.example.org\"\nscopes = [\"mcp\"]\n\
-                [[agents.issuers]]\nissuer = \"https://as.example.org\"\njwks = \"keys.json\"\n";
-    let path = write_config(&dir, good)?;
-    let out = tunnelward(&["config", "check", &path.to_string_lossy()])?;
-    assert!(out.status.success(), "{}", text(&out.stderr));
-    let bad = "[agents]\nresource = \"mcp.example.org\"\n\
-               [[agents.issuers]]\nissuer = \"https://a\"\n\
-               [[agents.issuers]]\nissuer = \"https://b\"\njwks = \"keys.json\"\n\
-               jwks_uri = \"https://b/jwks\"\n\
-               [[agents.issuers]]\nissuer = \"https://c\"\njwks_uri = \"http://c/jwks\"\n";
-    let path = write_config(&dir, bad)?;
-    let out = tunnelward(&["config", "check", &path.to_string_lossy()])?;
-    let errors = text(&out.stderr);
-    assert_eq!(out.status.code(), Some(1));
-    for expected in [
-        "[agents] resource \"mcp.example.org\": give the https:// URL agents use",
-        "issuer \"https://a\": give jwks_uri or jwks",
-        "issuer \"https://b\": give jwks_uri or jwks, not both",
-        "issuer \"https://c\": jwks_uri",
-    ] {
-        assert!(
-            errors.contains(expected),
-            "{expected} missing from: {errors}"
-        );
-    }
-    Ok(std::fs::remove_dir_all(dir)?)
-}
-
-#[test]
-fn a_signed_provider_snapshot_checks_ok_and_a_tampered_one_does_not() -> Res<()> {
-    let dir = pki_dir("providers")?;
-    let key = dir.join("signing.key");
-    let public = keygen(&key)?;
-    let snapshot = dir.join("providers.json");
-    write_snapshot(&snapshot, "192.0.2.0/24")?;
-    let signed = tunnelward(&[
-        "providers",
-        "sign",
-        "--key",
-        &key.to_string_lossy(),
-        &snapshot.to_string_lossy(),
-    ])?;
-    assert!(signed.status.success(), "{}", text(&signed.stderr));
-    let section = format!("[providers]\nsnapshot = \"providers.json\"\nkeys = [\"{public}\"]\n");
-    let path = write_config(&dir, &section)?;
-    let ok = tunnelward(&["config", "check", &path.to_string_lossy()])?;
-    assert!(ok.status.success(), "{}", text(&ok.stderr));
-    write_snapshot(&snapshot, "0.0.0.0/0")?;
-    let tampered = tunnelward(&["config", "check", &path.to_string_lossy()])?;
-    assert!(!tampered.status.success());
-    let errors = text(&tampered.stderr);
-    assert!(errors.contains("no trusted key signed"), "{errors}");
-    Ok(std::fs::remove_dir_all(dir)?)
-}
-
-/// `tunnelward providers keygen` into `key`; its public key, after
-/// checking a second run refuses to overwrite it.
-fn keygen(key: &Path) -> Res<String> {
-    let out = tunnelward(&["providers", "keygen", "--out", &key.to_string_lossy()])?;
-    assert!(out.status.success(), "{}", text(&out.stderr));
-    let again = tunnelward(&["providers", "keygen", "--out", &key.to_string_lossy()])?;
-    assert!(!again.status.success(), "keygen never overwrites a key");
-    let public = text(&out.stdout).trim().to_owned();
-    assert_eq!(public.len(), 64, "a hex Ed25519 public key");
-    Ok(public)
-}
-
-fn write_snapshot(path: &Path, range: &str) -> Res<()> {
-    let json = format!(
-        r#"{{"version":1,"providers":[{{"provider":"test","agent":"a","ranges":["{range}"]}}]}}"#
-    );
-    Ok(std::fs::write(path, json)?)
 }
 
 #[test]
@@ -375,7 +226,10 @@ fn the_gateway_reloads_renewed_certificates_and_keeps_good_ones() -> Res<()> {
 
     std::fs::write(dir.join("gateway.key"), "not a key")?;
     expect(&err, "not reloaded, keeping the running certificates")?;
-    std::fs::write(dir.join("gateway.key"), pem("PRIVATE KEY", pki::GATEWAY.1))?;
+    std::fs::write(
+        dir.join("gateway.key"),
+        pki::pem("PRIVATE KEY", pki::GATEWAY.1),
+    )?;
     expect(&out, "certificates reloaded")?;
     drop(child);
     Ok(std::fs::remove_dir_all(dir)?)

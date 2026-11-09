@@ -23,6 +23,34 @@ pub(crate) fn decode(text: &str) -> Option<Vec<u8>> {
     (acc == 0).then_some(out)
 }
 
+/// `text` in standard base64 (`+`, `/`) with `=` padding to a multiple
+/// of four, decoded; as RFC 9651 byte sequences use it.
+pub(crate) fn decode_standard(text: &str) -> Option<Vec<u8>> {
+    if !text.len().is_multiple_of(4) {
+        return None;
+    }
+    let body = text.trim_end_matches('=');
+    if text.len() - body.len() > 2 {
+        return None;
+    }
+    decode(&body.replace('+', "-").replace('/', "_")).filter(|_| !body.contains(['-', '_']))
+}
+
+/// `bytes` as unpadded base64url.
+pub(crate) fn encode(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n =
+            chunk.iter().fold(0_u32, |acc, &b| acc << 8 | u32::from(b)) << (8 * (3 - chunk.len()));
+        for i in 0..=chunk.len() {
+            let index = usize::try_from((n >> (18 - 6 * i)) & 63).unwrap_or(0);
+            out.push(char::from(ALPHABET[index]));
+        }
+    }
+    out
+}
+
 fn value(c: u8) -> Option<u8> {
     match c {
         b'A'..=b'Z' => Some(c - b'A'),
@@ -52,6 +80,23 @@ mod tests {
             assert_eq!(decode(text).as_deref(), Some(bytes), "{text}");
         }
         assert_eq!(decode("-_8").as_deref(), Some(&[0xfb, 0xff][..]));
+    }
+
+    #[test]
+    fn standard_base64_with_padding() {
+        assert_eq!(decode_standard("Zm9vYg==").as_deref(), Some(&b"foob"[..]));
+        assert_eq!(decode_standard("+/8=").as_deref(), Some(&[0xfb, 0xff][..]));
+        assert_eq!(decode_standard("Zm9vYg"), None, "unpadded");
+        assert_eq!(decode_standard("-_8="), None, "url alphabet");
+        assert_eq!(decode_standard("Z==="), None);
+    }
+
+    #[test]
+    fn encoding_round_trips() {
+        for bytes in [&b""[..], b"f", b"fo", b"foo", b"foob", &[0xfb, 0xff]] {
+            assert_eq!(decode(&encode(bytes)).as_deref(), Some(bytes));
+        }
+        assert_eq!(encode(b"foobar"), "Zm9vYmFy");
     }
 
     #[test]

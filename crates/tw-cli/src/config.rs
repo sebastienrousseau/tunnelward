@@ -370,7 +370,13 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
     gateway.connector_allow = allow;
     gateway.route_owners = owners;
     let (key_sets, key_refresh) = with_agents(&mut gateway, agents);
+    let (providers, bot_auth, signer_keys) = match providers {
+        Some(p) => (p.snapshot, p.bot_auth, p.signer_keys),
+        None => (None, None, Vec::new()),
+    };
     gateway.ingress.providers = providers.as_ref().map(|p| p.providers.clone());
+    gateway.ingress.bot_auth = bot_auth;
+    let key_sets = [key_sets, signer_keys].concat();
     gateway.ingress.tls = ingress_tls.map(Arc::new);
     gateway.ingress.trusted_proxies = trusted;
     gateway.ingress.proxy_protocol = file.ingress.proxy_protocol;

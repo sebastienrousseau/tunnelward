@@ -94,6 +94,8 @@ pub struct IngressConfig {
     pub agent_auth: Option<crate::AgentAuth>,
     /// Published provider ranges; requests from them are tagged (FR-12).
     pub providers: Option<std::sync::Arc<crate::Providers>>,
+    /// Agents whose Web Bot Auth signatures are verified (FR-12).
+    pub bot_auth: Option<std::sync::Arc<crate::BotAuth>>,
 }
 
 impl Default for IngressConfig {
@@ -116,6 +118,7 @@ impl Default for IngressConfig {
             cors: Vec::new(),
             agent_auth: None,
             providers: None,
+            bot_auth: None,
         }
     }
 }

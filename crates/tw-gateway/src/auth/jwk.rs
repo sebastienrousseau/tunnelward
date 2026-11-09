@@ -142,6 +142,20 @@ fn p256(jwk: &Jwk) -> Option<Material> {
 }
 
 impl Key {
+    /// The RFC 7638 thumbprint of an Ed25519 key (RFC 8037 A.3): what
+    /// Web Bot Auth uses as its `keyid`. `None` for other keys.
+    pub(crate) fn ed25519_thumbprint(&self) -> Option<String> {
+        let Material::Ed25519(x) = &self.material else {
+            return None;
+        };
+        let canonical = format!(
+            r#"{{"crv":"Ed25519","kty":"OKP","x":"{}"}}"#,
+            b64::encode(x)
+        );
+        let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, canonical.as_bytes());
+        Some(b64::encode(digest.as_ref()))
+    }
+
     /// Whether this key may verify a signature made with `alg`.
     pub(crate) fn fits(&self, alg: Alg, name: &str) -> bool {
         let kind = matches!(

@@ -203,6 +203,17 @@ in `[agents] scopes`. 403 with `WWW-Authenticate: Bearer
 error="insufficient_scope"` naming the scopes. Ask the authorisation
 server for a token with them.
 
+### TW-I010
+
+**Web Bot Auth signature fails.** The request carries a
+`tag="web-bot-auth"` signature that does not pass: its `Signature-Agent`
+is not in `[[providers.signers]]`, its `keyid` is not in that agent's key
+directory, it does not verify, `created` is more than five minutes old
+(or more than one minute ahead), it has expired, or its nonce was used
+before. 401, only with `[providers] on_invalid = "reject"`; with
+`"downgrade"` the request is served without a signature-level tag. The
+reason names the check.
+
 ## Connector (`TW-C`)
 
 A rejected registration reports its `TW-R` id instead.

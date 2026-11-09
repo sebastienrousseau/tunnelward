@@ -160,7 +160,7 @@ its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
 | Connector identity | The registered SPIFFE ID must be the one in the connector's X.509-SVID; routes owned by identities; registrations per source, domains per gateway and routes per identity enforced | Shipped in 0.0.10 |
 | Agent authorisation | OAuth 2.1 resource server per the MCP authorisation spec: bearer JWTs (ES256, RS256, PS256, EdDSA) checked against each issuer's JWK Set, audience, expiry and scopes; protected-resource metadata (RFC 9728); tokens never passed to connectors | Shipped in 0.0.11 |
 | SVID rotation | Connector SVIDs from the SPIFFE Workload API or from files, rotated without a restart; an SVID for another identity is refused | Shipped in 0.0.11 |
-| Provider identification | Requests from Anthropic's and OpenAI's published egress ranges tagged with the provider, from a signed, versioned snapshot (`tunnelward providers`); network-level evidence only | Shipped in 0.0.11 |
+| Provider identification | Requests from Anthropic's and OpenAI's published egress ranges tagged with the provider, from a signed, versioned snapshot (`tunnelward providers`); Web Bot Auth signatures (RFC 9421) from listed agents raise the tag to signature level, with a nonce replay check | Shipped in 0.0.11 |
 
 ---
 
