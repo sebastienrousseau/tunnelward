@@ -742,11 +742,13 @@ version = "0.0.13"
 name = "tunnelward-connector"
 version = "0.0.13"
 dependencies = [
+ "aws-lc-rs",
  "bytes",
  "http",
  "http-body-util",
  "hyper",
  "hyper-util",
+ "serde_json",
  "tokio",
  "tokio-rustls",
  "tunnelward-crypto",

@@ -168,6 +168,7 @@ its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
 | Tool policy | Permit or forbid each MCP call by agent, provider, path, method, tool and evidence level, with the D6 baseline; a denied call gets a JSON-RPC error and never reaches the connector; hot reload and `tunnelward policy test`; idempotency keys on high-impact tools | Shipped in 0.0.12 |
 | Post-quantum signatures | Provider snapshots signed with a composite ML-DSA-65 + Ed25519 key; both halves must verify; ML-DSA-65 checked against NIST ACVP vectors | Shipped in 0.0.12 |
 | Claim mismatches | A `User-Agent` or MCP `clientInfo` naming a provider the gateway did not see is recorded as a mismatch, and policy can forbid such calls | Shipped in 0.0.13 |
+| stdio bridge | A connector serves a local stdio MCP server as Streamable HTTP through the tunnel: one process per session, an event stream with `Last-Event-ID` resumption (`[target] stdio`) | Shipped in 0.0.13 |
 
 ---
 

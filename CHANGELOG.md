@@ -11,6 +11,20 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 
 ### Added
 
+- The stdio bridge (FR-6): a connector can serve a local MCP server that
+  speaks JSON-RPC over stdio, as MCP Streamable HTTP through the tunnel.
+  `[target] stdio = ["command", "args"]` (with optional `env`,
+  `max_sessions`, `idle_secs`), or `StdioBridge` in the library. Each
+  session gets its own process, started by `initialize` and named by
+  `Mcp-Session-Id`. A POST's requests are answered with their responses;
+  notifications get 202. A GET with `Accept: text/event-stream` streams
+  what the server sends on its own, as numbered events, and a client
+  that reconnects with `Last-Event-ID` gets what it missed. DELETE, the
+  process exiting, or 10 idle minutes end a session, whose id then gets
+  404. Sessions, message size and the replay buffer are bounded. The
+  `stdio-echo` example is a small stdio server to try it with, and the
+  tests run it end to end through a gateway.
+
 - Mismatches between claims and evidence (FR-14): a `User-Agent` or MCP
   `clientInfo` that names an AI provider (Claude or Anthropic, ChatGPT or
   OpenAI, by their published agent names) is checked against the

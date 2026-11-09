@@ -5,6 +5,7 @@
 
 mod agents;
 mod args;
+mod backend;
 mod config;
 mod connector;
 mod dev;
