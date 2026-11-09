@@ -50,8 +50,11 @@ fn case(block: &str) -> Res<Case> {
     ))
 }
 
+/// The cases, whatever line endings the checkout gave the file (CRLF
+/// on Windows).
 fn cases() -> Res<Vec<Case>> {
     VECTORS
+        .replace("\r\n", "\n")
         .split("\n\n")
         .filter(|b| b.contains("pk = "))
         .map(case)
