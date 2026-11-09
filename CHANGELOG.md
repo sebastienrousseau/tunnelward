@@ -9,6 +9,25 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 
 ## [0.0.12]
 
+### Added
+
+- State shared across gateways (ADR 0004): `Config::state` takes a
+  `SharedState`, the one interface for replay caches, idempotency keys
+  and rate counters. `InMemory` (the default) serves one gateway. Web
+  Bot Auth nonces are recorded there, so a signature replayed to another
+  gateway sharing the store is refused, and a store that cannot answer
+  refuses the signature (fail closed). With a shared store the ingress
+  rate limit is counted there, in windows of `burst / per_second`; if
+  the store fails each gateway falls back to its share of the limit,
+  `RateLimit::gateways` (fail open). Entries live for a time-to-live on
+  the store's clock, so gateways need not agree on the time.
+
+### Changed
+
+- `BotAuth::verify` is async and takes the request parts as a tuple and
+  the `SharedState` to record nonces in. `RateLimit` has a `gateways`
+  field (default 1).
+
 ### Fixed
 
 - The release workflow's crates.io job passed cargo a bare `--exclude`

@@ -12,9 +12,8 @@
 //! `created` must be within five minutes, and a nonce seen before is a
 //! replay, so a captured signature cannot be reused for long.
 
-use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use http::{HeaderMap, Method};
@@ -22,9 +21,8 @@ use http::{HeaderMap, Method};
 use crate::KeySet;
 use crate::auth::Alg;
 use crate::sfv::{self, Bare, Item, Member};
+use crate::state::SharedState;
 
-/// Most nonces remembered at once.
-const MAX_NONCES: usize = 100_000;
 /// Clock skew allowed on `created`.
 const SKEW: u64 = 60;
 
@@ -83,7 +81,8 @@ impl std::fmt::Display for BotAuthError {
 
 impl std::error::Error for BotAuthError {}
 
-/// The signers a gateway trusts, and the nonces it has seen.
+/// The signers a gateway trusts. The nonces it has seen are in the
+/// gateway's [`SharedState`], so a replay to another gateway is caught.
 #[derive(Debug)]
 pub struct BotAuth {
     /// The agents accepted.
@@ -92,7 +91,6 @@ pub struct BotAuth {
     pub on_invalid: OnInvalid,
     /// How old `created` may be.
     pub max_age: Duration,
-    nonces: Mutex<HashMap<String, u64>>,
 }
 
 /// The request parts a signature can cover.
@@ -122,7 +120,6 @@ impl BotAuth {
             signers,
             on_invalid,
             max_age: Duration::from_secs(300),
-            nonces: Mutex::new(HashMap::new()),
         }
     }
 
@@ -132,15 +129,15 @@ impl BotAuth {
     ///
     /// # Errors
     ///
-    /// [`BotAuthError`] for a signature that is there but fails.
-    pub fn verify(
+    /// [`BotAuthError`] for a signature that is there but fails, or whose
+    /// nonce `state` cannot check (the check fails closed).
+    pub async fn verify(
         &self,
-        method: &Method,
-        authority: &str,
-        path: &str,
-        headers: &HeaderMap,
+        request: (&Method, &str, &str, &HeaderMap),
         now: SystemTime,
+        state: &dyn SharedState,
     ) -> Result<Option<&Signer>, BotAuthError> {
+        let (method, authority, path, headers) = request;
         let request = Signed {
             method,
             authority,
@@ -153,7 +150,7 @@ impl BotAuth {
         let signer = self.signer(headers, &sig)?;
         self.in_window(&sig, now)?;
         verify_with(signer, &request, &sig)?;
-        self.fresh_nonce(&sig)?;
+        self.fresh_nonce(&sig, now, state).await?;
         Ok(Some(signer))
     }
 
@@ -175,32 +172,75 @@ impl BotAuth {
             .ok_or(BotAuthError::Expired)
     }
 
-    /// Records the nonce; a seen one is a replay. Called only after the
-    /// signature verified, so unsigned junk cannot fill the cache.
-    fn fresh_nonce(&self, sig: &Signature) -> Result<(), BotAuthError> {
+    /// Records the nonce until the signature could no longer be fresh;
+    /// a seen one is a replay. Called only after the signature verified,
+    /// so unsigned junk cannot fill the store.
+    async fn fresh_nonce(
+        &self,
+        sig: &Signature,
+        now: SystemTime,
+        state: &dyn SharedState,
+    ) -> Result<(), BotAuthError> {
         let Some(nonce) = &sig.nonce else {
             return Ok(());
         };
+        // Long enough that the signature is stale before the nonce is
+        // forgotten, counted from `now`.
         let forget_after = sig.created.saturating_add(self.max_age.as_secs() + SKEW);
-        let mut seen = self.nonces.lock().unwrap_or_else(PoisonError::into_inner);
-        if seen.contains_key(nonce) {
-            return Err(BotAuthError::Replayed);
+        let ttl = Duration::from_secs(forget_after.saturating_sub(unix(now)).max(1));
+        match state.first_use(&format!("nonce:{nonce}"), ttl).await {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(BotAuthError::Replayed),
+            Err(_) => Err(BotAuthError::Malformed(
+                "the nonce cannot be checked for replay",
+            )),
         }
-        if seen.len() >= MAX_NONCES {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-            seen.retain(|_, until| *until > now);
-            if seen.len() >= MAX_NONCES {
-                return Err(BotAuthError::Malformed(
-                    "too many recent nonces to check for replay",
-                ));
-            }
-        }
-        seen.insert(nonce.clone(), forget_after);
-        Ok(())
     }
+}
+
+fn unix(at: SystemTime) -> u64 {
+    at.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+/// Raises `info`'s provider tag to `signature` for a verified signature;
+/// a failing one is refused (`TW-I010`) or ignored as configured.
+pub(crate) async fn identify<B>(
+    bot_auth: &BotAuth,
+    state: &dyn SharedState,
+    request: &http::Request<B>,
+    info: &mut crate::RequestInfo,
+) -> Result<(), crate::refusal::Refusal> {
+    let authority = request
+        .uri()
+        .authority()
+        .map(http::uri::Authority::as_str)
+        .or_else(|| {
+            request
+                .headers()
+                .get(http::header::HOST)
+                .and_then(|h| h.to_str().ok())
+        })
+        .unwrap_or_default();
+    let parts = (
+        request.method(),
+        authority,
+        request.uri().path(),
+        request.headers(),
+    );
+    match bot_auth.verify(parts, SystemTime::now(), state).await {
+        Ok(Some(signer)) => info.provider = Some(crate::ProviderTag::signed(signer)),
+        Err(e) if bot_auth.on_invalid == OnInvalid::Reject => {
+            let reason = format!("the Web Bot Auth signature fails: {e}");
+            return Err(crate::refusal::Refusal::new(
+                "TW-I010",
+                http::StatusCode::UNAUTHORIZED,
+                reason,
+            ));
+        }
+        // Unsigned, or a failing signature downgraded: no signature tag.
+        Ok(None) | Err(_) => {}
+    }
+    Ok(())
 }
 
 /// Fails unless `sig` verifies with `signer`'s key named by its keyid.

@@ -151,10 +151,7 @@ impl Ingress {
         mut info: RequestInfo,
         started: Instant,
     ) -> Response<IngressBody> {
-        let checked = self
-            .authorise(&request, &mut info)
-            .and_then(|()| self.identify(&request, &mut info));
-        let outcome = match checked {
+        let outcome = match self.check(&request, &mut info).await {
             Ok(()) => self.forward(request, &info).await,
             Err(refusal) => Err(refusal),
         };
@@ -173,7 +170,7 @@ impl Ingress {
         info: RequestInfo,
         started: Instant,
     ) -> Response<IngressBody> {
-        let answered = match self.admit(&request, &info) {
+        let answered = match self.admit(&request, &info).await {
             Ok(()) => enrol::respond(enrolment, request).await,
             Err(refusal) => Err(refusal),
         };
@@ -194,7 +191,7 @@ impl Ingress {
         info: &RequestInfo,
     ) -> Result<Response<ResponseBody>, Refusal> {
         let ingress = &self.gateway.inner.config.ingress;
-        self.admit(&request, info)?;
+        self.admit(&request, info).await?;
         let (request, body) = self.buffer(request).await?;
         self.envelope(&request, &body, info);
         let request = self.restate(request, info);
@@ -227,40 +224,25 @@ impl Ingress {
         Ok(())
     }
 
-    /// With [`crate::BotAuth`] on, raises the provider tag to `signature`
-    /// for a verified Web Bot Auth signature; a failing one is refused or
-    /// ignored as configured.
-    fn identify(&self, request: &Request<Incoming>, info: &mut RequestInfo) -> Result<(), Refusal> {
-        let Some(bot_auth) = &self.gateway.inner.config.ingress.bot_auth else {
-            return Ok(());
-        };
-        let authority = request
-            .uri()
-            .authority()
-            .map(http::uri::Authority::as_str)
-            .or_else(|| request.headers().get(HOST).and_then(|h| h.to_str().ok()))
-            .unwrap_or_default();
-        let verdict = bot_auth.verify(
-            request.method(),
-            authority,
-            request.uri().path(),
-            request.headers(),
-            std::time::SystemTime::now(),
-        );
-        match verdict {
-            Ok(Some(signer)) => info.provider = Some(crate::ProviderTag::signed(signer)),
-            Err(e) if bot_auth.on_invalid == crate::OnInvalid::Reject => {
-                let reason = format!("the Web Bot Auth signature fails: {e}");
-                return Err(Refusal::new("TW-I010", StatusCode::UNAUTHORIZED, reason));
+    /// Every check on who sent `request`: the agent's token, then its
+    /// Web Bot Auth signature.
+    async fn check(
+        &self,
+        request: &Request<Incoming>,
+        info: &mut RequestInfo,
+    ) -> Result<(), Refusal> {
+        self.authorise(request, info)?;
+        let config = &self.gateway.inner.config;
+        match &config.ingress.bot_auth {
+            Some(bot_auth) => {
+                crate::botauth::identify(bot_auth, config.state.as_ref(), request, info).await
             }
-            // Unsigned, or a failing signature downgraded: no signature tag.
-            Ok(None) | Err(_) => {}
+            None => Ok(()),
         }
-        Ok(())
     }
 
     /// Checks that cost nothing: URL length, declared body size, rate.
-    fn admit(&self, request: &Request<Incoming>, info: &RequestInfo) -> Result<(), Refusal> {
+    async fn admit(&self, request: &Request<Incoming>, info: &RequestInfo) -> Result<(), Refusal> {
         let ingress = &self.gateway.inner.config.ingress;
         if request.uri().to_string().len() > ingress.max_url_len {
             return Err(Refusal::new(
@@ -280,10 +262,15 @@ impl Ingress {
                 "declared body over the limit",
             ));
         }
-        self.gateway
-            .inner
+        let inner = &self.gateway.inner;
+        inner
             .limiter
-            .check(info.client.client, Instant::now())
+            .check(
+                inner.config.state.as_ref(),
+                info.client.client,
+                Instant::now(),
+            )
+            .await
             .map_err(|wait| Refusal {
                 retry_after: Some(wait),
                 ..Refusal::new("TW-I004", StatusCode::TOO_MANY_REQUESTS, "rate limit")

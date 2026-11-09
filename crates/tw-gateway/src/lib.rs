@@ -46,6 +46,7 @@ mod resolver;
 mod retry;
 mod route;
 mod sfv;
+mod state;
 mod tls;
 
 pub use admin::{AdminConfig, Connection, Inventory, Redaction};
@@ -65,6 +66,7 @@ pub use pool::ResponseBody;
 pub use providers::{ProviderError, ProviderTag, Providers};
 pub use ratelimit::RateLimit;
 pub use resolver::{LongestFirst, RouteResolver, Target};
+pub use state::{Claim, InMemory, SharedState, StateError, StateFuture};
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -109,7 +111,7 @@ struct Inner {
     /// The ingress TLS, if any, replaceable at runtime (G16).
     ingress_tls: std::sync::RwLock<Option<TlsAcceptor>>,
     registry: Registry,
-    limiter: ratelimit::Limiter,
+    limiter: ratelimit::IngressLimit,
     /// Registration attempts per source address.
     registrations: ratelimit::Limiter,
     next_request: std::sync::atomic::AtomicU64,
@@ -123,7 +125,7 @@ impl Gateway {
     pub fn new(config: Config) -> Self {
         let acceptor = std::sync::RwLock::new(TlsAcceptor::from(config.tls.clone()));
         let ingress_tls = std::sync::RwLock::new(config.ingress.tls.clone().map(TlsAcceptor::from));
-        let limiter = ratelimit::Limiter::new(config.ingress.rate_limit);
+        let limiter = ratelimit::IngressLimit::new(config.ingress.rate_limit);
         let registrations = ratelimit::Limiter::per_minute(config.limits.registrations_per_minute);
         Self {
             inner: Arc::new(Inner {

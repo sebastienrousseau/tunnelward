@@ -45,6 +45,9 @@ pub struct Config {
     pub route_owners: Vec<RouteOwner>,
     /// The agent-facing ingress.
     pub ingress: IngressConfig,
+    /// State shared with other gateways (ADR 0004): replay caches,
+    /// idempotency keys, rate counters. In this process by default.
+    pub state: Arc<dyn crate::SharedState>,
 }
 
 /// The identities allowed to claim one route (FR-3). Any other identity
@@ -146,6 +149,7 @@ impl Config {
             connector_allow: Vec::new(),
             route_owners: Vec::new(),
             ingress: IngressConfig::default(),
+            state: Arc::new(crate::InMemory::default()),
         }
     }
 }
