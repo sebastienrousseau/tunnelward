@@ -51,6 +51,9 @@ pub struct AgentAuth {
     pub token_rules: Vec<TokenRule>,
     /// How far a `DPoP` proof's `iat` may be from now, either way.
     pub dpop_window: Duration,
+    /// Whether the ingress asks for client certificates, so tokens bound
+    /// to one (RFC 8705) can work; the metadata says so.
+    pub certificate_bound: bool,
 }
 
 /// One authorisation server and its keys.
@@ -74,6 +77,7 @@ impl AgentAuth {
             leeway: Duration::from_secs(60),
             token_rules: Vec::new(),
             dpop_window: Duration::from_secs(60),
+            certificate_bound: false,
         }
     }
 }
@@ -298,6 +302,9 @@ pub(crate) fn metadata(auth: &AgentAuth) -> Vec<u8> {
     });
     if !auth.scopes.is_empty() {
         doc["scopes_supported"] = serde_json::json!(auth.scopes);
+    }
+    if auth.certificate_bound {
+        doc["tls_client_certificate_bound_access_tokens"] = serde_json::json!(true);
     }
     doc.to_string().into_bytes()
 }

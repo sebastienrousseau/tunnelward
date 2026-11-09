@@ -33,7 +33,11 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   key for this method, URL and token, issued within `dpop_window` (60 s);
   a copied token fails from another client. A token bound to a client
   certificate (RFC 8705, `cnf.x5t#S256`) is refused unless the connection
-  presents it. `AgentAuth::token_rules` (`[[agents.paths]]`) can demand
+  presents it: `ClientAuth::AnyHolder` (`[ingress] client_certificates =
+  true`) asks agents for a certificate, accepts any or none, and checks
+  only that the client signed the TLS 1.3 handshake with its key, which is
+  what the binding needs; the metadata then says
+  `tls_client_certificate_bound_access_tokens`. `AgentAuth::token_rules` (`[[agents.paths]]`) can demand
   bound tokens on a path, and single use of each token's `jti`. Proof and
   token `jti`s are recorded in the shared state, so a replay to another
   gateway is refused too; when the store cannot answer the request gets
@@ -44,7 +48,9 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 ### Changed
 
 - `BotAuth::verify` is async and takes the request parts as a tuple and
-  the `SharedState` to record nonces in. `RateLimit` has a `gateways`
+  the `SharedState` to record nonces in. `ClientAuth` has an `AnyHolder`
+  variant; `AgentAuth` has `token_rules`, `dpop_window` and
+  `certificate_bound`; `Ingress::with_client_certificate` is new. `RateLimit` has a `gateways`
   field (default 1).
 
 ### Fixed

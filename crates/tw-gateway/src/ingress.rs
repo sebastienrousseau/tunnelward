@@ -12,7 +12,6 @@
 
 use core::future::Future;
 use core::pin::Pin;
-use core::task::{Context, Poll};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
@@ -25,13 +24,14 @@ use http::header::{
 use http::{HeaderValue, Method, Request, Response, StatusCode, Version};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
-use hyper::body::{Body, Frame, Incoming, SizeHint};
+use hyper::body::Incoming;
 
 use crate::answers::{json, metadata, preflight, stamp_request_id};
 use crate::auth;
 use crate::cors::{self, Cors};
 use crate::enrol;
 use crate::forwarding::{Stamp, rewrite};
+use crate::observed::Observed;
 use crate::provenance;
 use crate::refusal::{Refusal, refusal_for};
 use crate::{ClientAddr, Gateway, RequestInfo, ResponseBody};
@@ -46,6 +46,8 @@ pub struct Ingress {
     gateway: Gateway,
     peer: SocketAddr,
     secure: bool,
+    /// SHA-256 of the client's TLS certificate, when it sent one.
+    client_cert: Option<[u8; 32]>,
 }
 
 impl core::fmt::Debug for Gateway {
@@ -64,7 +66,19 @@ impl Gateway {
             gateway: self.clone(),
             peer,
             secure,
+            client_cert: None,
         }
+    }
+}
+
+impl Ingress {
+    /// The same service for a client that presented the TLS certificate
+    /// `der`, which a token bound to it (RFC 8705) must name.
+    #[must_use]
+    pub fn with_client_certificate(mut self, der: &[u8]) -> Self {
+        let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, der);
+        self.client_cert = digest.as_ref().try_into().ok();
+        self
     }
 }
 
@@ -222,7 +236,7 @@ impl Ingress {
             method: request.method(),
             path: request.uri().path(),
             headers: request.headers(),
-            client_cert: None,
+            client_cert: self.client_cert.as_ref(),
         };
         let principal = auth::authorise_once(auth, config.state.as_ref(), &parts)
             .await
@@ -432,62 +446,5 @@ impl Ingress {
                 .insert(RETRY_AFTER, HeaderValue::from(secs.max(1)));
         }
         response
-    }
-}
-
-/// A response body that tells observers when it ends, and how big it was.
-struct Observed {
-    inner: ResponseBody,
-    observers: Vec<std::sync::Arc<dyn crate::ProxyObserver>>,
-    info: RequestInfo,
-    started: Instant,
-    bytes: u64,
-    done: bool,
-}
-
-impl Observed {
-    fn finish(&mut self) {
-        if !self.done {
-            self.done = true;
-            let elapsed = self.started.elapsed();
-            for o in &self.observers {
-                o.on_complete(&self.info, self.bytes, elapsed);
-            }
-        }
-    }
-}
-
-impl Drop for Observed {
-    fn drop(&mut self) {
-        self.finish();
-    }
-}
-
-impl Body for Observed {
-    type Data = Bytes;
-    type Error = hyper::Error;
-
-    fn poll_frame(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Bytes>, hyper::Error>>> {
-        let polled = Pin::new(&mut self.inner).poll_frame(cx);
-        match &polled {
-            Poll::Ready(Some(Ok(frame))) => {
-                let len = frame.data_ref().map_or(0, Bytes::len);
-                self.bytes += len as u64;
-            }
-            Poll::Ready(None | Some(Err(_))) => self.finish(),
-            Poll::Pending => {}
-        }
-        polled
-    }
-
-    fn is_end_stream(&self) -> bool {
-        self.inner.is_end_stream()
-    }
-
-    fn size_hint(&self) -> SizeHint {
-        self.inner.size_hint()
     }
 }

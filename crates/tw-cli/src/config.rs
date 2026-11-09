@@ -19,6 +19,8 @@
 //! [ingress]                     # optional; plain HTTP without cert and key
 //! cert = "ingress.crt"
 //! key = "ingress.key"
+//! client_certificates = false   # ask agents for one, for tokens bound
+//!                               # to it (RFC 8705); any is accepted"
 //! trusted_proxies = ["10.0.0.0/8"]
 //! proxy_protocol = false
 //!
@@ -112,6 +114,8 @@ struct Ingress {
     trusted_proxies: Vec<String>,
     #[serde(default)]
     proxy_protocol: bool,
+    #[serde(default)]
+    client_certificates: bool,
     #[serde(default)]
     cors: Vec<CorsPart>,
 }
@@ -299,11 +303,19 @@ fn ingress_tls(
     ingress: &Ingress,
 ) -> Result<Option<tunnelward_crypto::rustls::ServerConfig>, String> {
     match (&ingress.cert, &ingress.key) {
+        (None, None) if ingress.client_certificates => {
+            Err("[ingress] client_certificates: needs the ingress cert and key".into())
+        }
         (None, None) => Ok(None),
         (Some(cert), Some(key)) => {
             let id = identity(&resolve(base, cert), &resolve(base, key))?;
             let alpn: [&[u8]; 2] = [b"h2", b"http/1.1"];
-            server_config(id, ClientAuth::None, KeyExchange::default(), &alpn)
+            let auth = if ingress.client_certificates {
+                ClientAuth::AnyHolder
+            } else {
+                ClientAuth::None
+            };
+            server_config(id, auth, KeyExchange::default(), &alpn)
                 .map(Some)
                 .map_err(|e| format!("[ingress]: {e}"))
         }
@@ -328,14 +340,17 @@ fn admin(listen: &Listen, admin: &Admin, problems: &mut Problems) -> AdminConfig
     }
 }
 
-/// Turns agent authorisation on when `[agents]` was given; returns the
-/// key sets to fetch and how often.
+/// Turns agent authorisation on when `[agents]` was given, saying
+/// whether the ingress asks for client certificates; returns the key
+/// sets to fetch and how often.
 fn with_agents(
     gateway: &mut Config,
     agents: Option<crate::agents::Checked>,
+    certificates: bool,
 ) -> (Vec<Arc<tunnelward_gateway::KeySet>>, std::time::Duration) {
     match agents {
-        Some(a) => {
+        Some(mut a) => {
+            a.auth.certificate_bound = certificates;
             gateway.ingress.agent_auth = Some(a.auth);
             (a.fetched, a.refresh)
         }
@@ -438,7 +453,8 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
     let mut gateway = Config::new(Arc::new(tls));
     gateway.connector_allow = allow;
     gateway.route_owners = owners;
-    let (key_sets, key_refresh) = with_agents(&mut gateway, agents);
+    let (key_sets, key_refresh) =
+        with_agents(&mut gateway, agents, file.ingress.client_certificates);
     let (providers, signer_keys) = with_providers(&mut gateway, providers);
     gateway.ingress.enrolment = enrolment.map(|e| e.enrolment);
     with_state(&mut gateway, shared);

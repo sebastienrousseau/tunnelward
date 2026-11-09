@@ -19,6 +19,7 @@
 //! ```
 
 mod config;
+mod holder;
 mod identity;
 mod rotating;
 

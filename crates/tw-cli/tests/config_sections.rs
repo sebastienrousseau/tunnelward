@@ -147,3 +147,19 @@ fn agent_path_rules_check_ok_or_list_their_problems() -> Res<()> {
     }
     Ok(std::fs::remove_dir_all(dir)?)
 }
+
+#[test]
+fn client_certificates_need_ingress_tls() -> Res<()> {
+    let dir = pki_dir("client-certs")?;
+    let without = write_config(&dir, "[ingress]\nclient_certificates = true\n")?;
+    let out = tunnelward(&["config", "check", &without.to_string_lossy()])?;
+    assert_eq!(out.status.code(), Some(1));
+    assert!(text(&out.stderr).contains("client_certificates: needs the ingress cert and key"));
+    let with = write_config(
+        &dir,
+        "[ingress]\ncert = \"gateway.crt\"\nkey = \"gateway.key\"\nclient_certificates = true\n",
+    )?;
+    let out = tunnelward(&["config", "check", &with.to_string_lossy()])?;
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    Ok(std::fs::remove_dir_all(dir)?)
+}

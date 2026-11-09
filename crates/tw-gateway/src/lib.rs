@@ -34,6 +34,7 @@ mod https;
 mod ingress;
 mod kill;
 mod listener;
+mod observed;
 mod observer;
 mod pool;
 mod provenance;

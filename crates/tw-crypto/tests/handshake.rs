@@ -158,3 +158,64 @@ fn identity_debug_never_prints_the_key() {
         "{text}"
     );
 }
+
+#[test]
+fn any_holder_accepts_any_certificate_or_none() -> Res<()> {
+    let kx = KeyExchange::default();
+    for cert in [Some(pki::CONNECTOR), Some(pki::INTRUDER), None] {
+        let (_, s) = handshake(client(cert, kx)?, server(ClientAuth::AnyHolder, kx)?)?;
+        assert_eq!(s.peer_certificates().is_some(), cert.is_some());
+    }
+    Ok(())
+}
+
+/// Presents `cert` but signs the handshake with `key`'s key.
+#[derive(Debug)]
+struct Impostor(Arc<tunnelward_crypto::rustls::sign::CertifiedKey>);
+
+impl tunnelward_crypto::rustls::client::ResolvesClientCert for Impostor {
+    fn resolve(
+        &self,
+        _: &[&[u8]],
+        _: &[tunnelward_crypto::rustls::SignatureScheme],
+    ) -> Option<Arc<tunnelward_crypto::rustls::sign::CertifiedKey>> {
+        Some(self.0.clone())
+    }
+
+    fn has_certs(&self) -> bool {
+        true
+    }
+}
+
+fn impostor(cert: pki::Pair, key: pki::Pair) -> Res<ClientConfig> {
+    use tunnelward_crypto::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+    let provider = tunnelward_crypto::provider(KeyExchange::default());
+    let signing = provider
+        .key_provider
+        .load_private_key(PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+            key.1.to_vec(),
+        )))?;
+    let certified = tunnelward_crypto::rustls::sign::CertifiedKey::new(
+        vec![CertificateDer::from(cert.0.to_vec())],
+        signing,
+    );
+    let mut config = ClientConfig::builder_with_provider(provider)
+        .with_protocol_versions(&[&tunnelward_crypto::rustls::version::TLS13])?
+        .with_root_certificates(roots(pki::CA)?)
+        .with_client_cert_resolver(Arc::new(Impostor(Arc::new(certified))));
+    config.alpn_protocols = ALPN.iter().map(|p| p.to_vec()).collect();
+    Ok(config)
+}
+
+#[test]
+fn any_holder_refuses_a_certificate_without_its_key() -> Res<()> {
+    let kx = KeyExchange::default();
+    let honest = impostor(pki::CONNECTOR, pki::CONNECTOR)?;
+    assert!(handshake(honest, server(ClientAuth::AnyHolder, kx)?).is_ok());
+    let thief = impostor(pki::CONNECTOR, pki::RIVAL)?;
+    assert!(
+        handshake(thief, server(ClientAuth::AnyHolder, kx)?).is_err(),
+        "a certificate presented with another key's signature"
+    );
+    Ok(())
+}
