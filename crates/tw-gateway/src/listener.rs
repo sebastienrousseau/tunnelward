@@ -52,8 +52,12 @@ impl Gateway {
                 let Ok(tls) = acceptor.accept(tcp).await else {
                     return;
                 };
-                let h2 = tls.get_ref().1.alpn_protocol() == Some(b"h2");
-                let service = self.ingress(peer, true);
+                let session = tls.get_ref().1;
+                let h2 = session.alpn_protocol() == Some(b"h2");
+                let mut service = self.ingress(peer, true);
+                if let Some(cert) = session.peer_certificates().and_then(<[_]>::first) {
+                    service = service.with_client_certificate(cert.as_ref());
+                }
                 if h2 {
                     self.serve_http2(tls, service).await;
                 } else {

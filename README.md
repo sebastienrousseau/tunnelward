@@ -24,7 +24,7 @@ Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/release
 </p>
 
 <p align="center">
-  <img src=".github/demo.gif" alt="A terminal prints the tunnelward version, then runs tunnelward dev in front of a local web server; curl through the tunnel prints hello from a private service, and the admin API shows one connector with two connections" width="100%" />
+  <img src=".github/demo.gif" alt="A terminal prints the tunnelward version, then runs tunnelward dev in front of a local web server; curl through the tunnel prints hello from a private service, and the admin API shows one connector with two connections. Then a tool policy permits one agent to read and transfer, marks transfer high impact, and tunnelward policy test passes three cases: a read allowed, a transfer denied without cryptographic evidence, another agent denied" width="100%" />
 </p>
 
 ---
@@ -78,8 +78,8 @@ A container image is at `ghcr.io/sebastienrousseau/tunnelward`.
 
 ```toml
 [dependencies]
-tunnelward-connector = "0.0.11"   # embed a connector in your service
-tunnelward-gateway = "0.0.11"     # embed a gateway in your server
+tunnelward-connector = "0.0.12"   # embed a connector in your service
+tunnelward-gateway = "0.0.12"     # embed a gateway in your server
 ```
 
 `tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
@@ -122,8 +122,8 @@ at startup, and every listener stays on loopback. Add
 
 One crate per concern, so the protocol core can be fuzzed and audited on
 its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
-`tunnelward-mcp`, `tunnelward-gateway`, `tunnelward-connector` and
-`tunnelward` have code; `tunnelward-attest`, `tunnelward-policy` and
+`tunnelward-mcp`, `tunnelward-policy`, `tunnelward-gateway`,
+`tunnelward-connector` and `tunnelward` have code; `tunnelward-attest` and
 `tunnelward-audit` are placeholders until the release the plan gives them.
 
 | Component | Purpose | Use case |
@@ -132,7 +132,7 @@ its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
 | `tunnelward-crypto` | rustls configuration with hybrid post-quantum key exchange | X25519MLKEM768 on every TLS hop |
 | `tunnelward-identity` | The SPIFFE ID in an X.509-SVID; the Workload API client; the enrolment CA and signing requests | Proving which workload a connector is |
 | `tunnelward-attest` | passmcp attestation verification | Admitting only MCP servers that passed passmcp |
-| `tunnelward-policy` | Cedar policy per MCP tool | Allowing or denying each `tools/call` |
+| `tunnelward-policy` | Per-tool policy and evidence levels (Cedar later, behind the same trait) | Allowing or denying each `tools/call` |
 | `tunnelward-mcp` | MCP envelope parsing, Streamable HTTP, SSE | Reading the method and tool name without parsing the body |
 | `tunnelward-audit` | Hash-chained log, offline verifier | Proving what was allowed, after the fact |
 | `tunnelward-gateway` | Ingress, routing, admission, admin API | The public side agents connect to |
@@ -163,6 +163,10 @@ its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
 | SVID rotation | Connector SVIDs from the SPIFFE Workload API or from files, rotated without a restart; an SVID for another identity is refused | Shipped in 0.0.11 |
 | Enrolment | A connector with no SVID redeems a one-time token bound to a SPIFFE ID for a short-lived SVID from the gateway's CA, then renews with a new key before it expires; `tunnelward enrol ca`, `token` and `revoke` | Shipped in 0.0.11 |
 | Provider identification | Requests from Anthropic's and OpenAI's published egress ranges tagged with the provider, from a signed, versioned snapshot (`tunnelward providers`); Web Bot Auth signatures (RFC 9421) from listed agents raise the tag to signature level, with a nonce replay check | Shipped in 0.0.11 |
+| Shared state | Replay caches and rate limits shared by several gateways through a Redis-compatible store (`[state]`), so a replay is caught whichever gateway it reaches; replay checks fail closed and rate limits fail open when the store is down | Shipped in 0.0.12 |
+| Token replay defences | DPoP-bound tokens (RFC 9449) work only with a proof by their key; certificate-bound tokens (RFC 8705) only from their certificate; paths can demand bound or single-use tokens (`[[agents.paths]]`); replays refused across gateways | Shipped in 0.0.12 |
+| Tool policy | Permit or forbid each MCP call by agent, provider, path, method, tool and evidence level, with the D6 baseline; a denied call gets a JSON-RPC error and never reaches the connector; hot reload and `tunnelward policy test`; idempotency keys on high-impact tools | Shipped in 0.0.12 |
+| Post-quantum signatures | Provider snapshots signed with a composite ML-DSA-65 + Ed25519 key; both halves must verify; ML-DSA-65 checked against NIST ACVP vectors | Shipped in 0.0.12 |
 
 ---
 

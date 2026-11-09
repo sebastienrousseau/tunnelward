@@ -45,6 +45,9 @@ pub struct Config {
     pub route_owners: Vec<RouteOwner>,
     /// The agent-facing ingress.
     pub ingress: IngressConfig,
+    /// State shared with other gateways (ADR 0004): replay caches,
+    /// idempotency keys, rate counters. In this process by default.
+    pub state: Arc<dyn crate::SharedState>,
 }
 
 /// The identities allowed to claim one route (FR-3). Any other identity
@@ -99,6 +102,9 @@ pub struct IngressConfig {
     /// Connector enrolment and renewal on this ingress. `None` serves
     /// neither endpoint.
     pub enrolment: Option<std::sync::Arc<crate::Enrolment>>,
+    /// The tool policy (FR-4), replaceable at runtime with
+    /// [`crate::Gateway::set_policy`]. `None` decides nothing.
+    pub policy: Option<std::sync::Arc<dyn tunnelward_policy::PolicyEngine>>,
 }
 
 impl Default for IngressConfig {
@@ -123,6 +129,7 @@ impl Default for IngressConfig {
             providers: None,
             bot_auth: None,
             enrolment: None,
+            policy: None,
         }
     }
 }
@@ -146,6 +153,7 @@ impl Config {
             connector_allow: Vec::new(),
             route_owners: Vec::new(),
             ingress: IngressConfig::default(),
+            state: Arc::new(crate::InMemory::default()),
         }
     }
 }

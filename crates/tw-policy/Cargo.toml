@@ -3,7 +3,7 @@
 
 [package]
 name = "tunnelward-policy"
-description = "Tunnelward per-tool policy evaluation with Cedar"
+description = "Tunnelward per-tool policy: which agent may make which MCP call, given the evidence of who sent it"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,8 +11,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-# Not published until the crate has an API worth depending on.
-publish = false
+readme.workspace = true
+keywords = ["mcp", "policy", "authorization", "gateway"]
+categories = ["authentication", "network-programming"]
 
 [lints]
 workspace = true

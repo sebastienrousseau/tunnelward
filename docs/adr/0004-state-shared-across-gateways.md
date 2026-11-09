@@ -3,7 +3,9 @@
 
 # ADR 0004: State shared across gateways
 
-- Status: Accepted (design); implemented in v0.0.11
+- Status: Accepted. Implemented in v0.0.12: the `SharedState` trait, the
+  in-process store and a Redis-compatible (RESP) store. The embedded Raft
+  store is not built.
 - Date: 2026-11-07
 
 ## Context
@@ -16,7 +18,7 @@ each check must say in advance what it does then.
 
 ## Decision
 
-State sits behind one `SharedState` trait (v0.0.11), with three
+State sits behind one `SharedState` trait (v0.0.12), with three
 implementations: in-process for a single gateway, an embedded Raft store,
 and an external Redis-compatible store for high availability.
 
@@ -36,5 +38,6 @@ and an external Redis-compatible store for high availability.
 - Failing closed on replay and idempotency means a store outage refuses
   some calls. That is the safe failure for the checks that exist to stop
   a call running twice; operators see it as an alert, not as silent fraud.
-- A test in v0.0.11 replays a token across two gateways and expects the
-  second to refuse it.
+- Tests replay a Web Bot Auth nonce across two gateways sharing a store
+  and expect the second to refuse it, against an in-process store and a
+  real Valkey in CI.

@@ -31,10 +31,13 @@ mod enrol;
 mod error;
 mod forwarding;
 mod https;
+mod idempotent;
 mod ingress;
 mod kill;
 mod listener;
+mod observed;
 mod observer;
+mod policy;
 mod pool;
 mod provenance;
 mod providers;
@@ -46,10 +49,11 @@ mod resolver;
 mod retry;
 mod route;
 mod sfv;
+mod state;
 mod tls;
 
 pub use admin::{AdminConfig, Connection, Inventory, Redaction};
-pub use auth::{AgentAuth, Issuer, KeyError, KeySet};
+pub use auth::{AgentAuth, Issuer, KeyError, KeySet, TokenRule};
 pub use botauth::{BotAuth, BotAuthError, OnInvalid, Signer};
 pub use cidr::{Cidr, CidrError};
 pub use client_addr::ClientAddr;
@@ -65,6 +69,8 @@ pub use pool::ResponseBody;
 pub use providers::{ProviderError, ProviderTag, Providers};
 pub use ratelimit::RateLimit;
 pub use resolver::{LongestFirst, RouteResolver, Target};
+pub use state::{Claim, InMemory, RedisState, SharedState, StateError, StateFuture};
+pub use tunnelward_policy::{Evidence, PolicyEngine};
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -109,12 +115,14 @@ struct Inner {
     /// The ingress TLS, if any, replaceable at runtime (G16).
     ingress_tls: std::sync::RwLock<Option<TlsAcceptor>>,
     registry: Registry,
-    limiter: ratelimit::Limiter,
+    limiter: ratelimit::IngressLimit,
     /// Registration attempts per source address.
     registrations: ratelimit::Limiter,
     next_request: std::sync::atomic::AtomicU64,
     /// Whether connectors can register, for the admin API's `/readyz`.
     ready: std::sync::atomic::AtomicBool,
+    /// The tool policy, replaceable at runtime.
+    policy: std::sync::RwLock<Option<Arc<dyn tunnelward_policy::PolicyEngine>>>,
 }
 
 impl Gateway {
@@ -123,8 +131,9 @@ impl Gateway {
     pub fn new(config: Config) -> Self {
         let acceptor = std::sync::RwLock::new(TlsAcceptor::from(config.tls.clone()));
         let ingress_tls = std::sync::RwLock::new(config.ingress.tls.clone().map(TlsAcceptor::from));
-        let limiter = ratelimit::Limiter::new(config.ingress.rate_limit);
+        let limiter = ratelimit::IngressLimit::new(config.ingress.rate_limit);
         let registrations = ratelimit::Limiter::per_minute(config.limits.registrations_per_minute);
+        let policy = std::sync::RwLock::new(config.ingress.policy.clone());
         Self {
             inner: Arc::new(Inner {
                 config,
@@ -135,6 +144,7 @@ impl Gateway {
                 registrations,
                 next_request: std::sync::atomic::AtomicU64::new(0),
                 ready: std::sync::atomic::AtomicBool::new(false),
+                policy,
             }),
         }
     }

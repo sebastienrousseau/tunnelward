@@ -19,6 +19,8 @@
 //! [ingress]                     # optional; plain HTTP without cert and key
 //! cert = "ingress.crt"
 //! key = "ingress.key"
+//! client_certificates = false   # ask agents for one, for tokens bound
+//!                               # to it (RFC 8705); any is accepted"
 //! trusted_proxies = ["10.0.0.0/8"]
 //! proxy_protocol = false
 //!
@@ -44,6 +46,12 @@
 //!
 //! [enrolment]                   # optional: connectors enrol with a token
 //!                               # (see enrol.rs)
+//!
+//! [state]                       # optional: a store several gateways
+//!                               # share (see state.rs)
+//!
+//! [policy]                      # optional: tool policy (see policy.rs)
+//! file = "policy.toml"          # read again when it changes
 //! ```
 
 use std::net::SocketAddr;
@@ -57,6 +65,10 @@ use tunnelward_crypto::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tunnelward_crypto::{ClientAuth, Identity, KeyExchange, server_config};
 use tunnelward_gateway::{AdminConfig, Cidr, Config, CorsRule, RouteOwner};
 use tunnelward_proto::{ALPN, is_route, is_spiffe_id};
+
+mod assemble;
+
+use assemble::{state_and_policy, watched, with_agents, with_ingress, with_providers, with_state};
 
 /// The whole file.
 #[derive(Debug, Deserialize)]
@@ -73,6 +85,8 @@ pub(crate) struct File {
     agents: Option<crate::agents::Agents>,
     providers: Option<crate::providers::Section>,
     enrolment: Option<crate::enrol::Section>,
+    state: Option<crate::state::Section>,
+    policy: Option<crate::policy::Section>,
 }
 
 impl File {
@@ -108,6 +122,8 @@ struct Ingress {
     trusted_proxies: Vec<String>,
     #[serde(default)]
     proxy_protocol: bool,
+    #[serde(default)]
+    client_certificates: bool,
     #[serde(default)]
     cors: Vec<CorsPart>,
 }
@@ -295,11 +311,19 @@ fn ingress_tls(
     ingress: &Ingress,
 ) -> Result<Option<tunnelward_crypto::rustls::ServerConfig>, String> {
     match (&ingress.cert, &ingress.key) {
+        (None, None) if ingress.client_certificates => {
+            Err("[ingress] client_certificates: needs the ingress cert and key".into())
+        }
         (None, None) => Ok(None),
         (Some(cert), Some(key)) => {
             let id = identity(&resolve(base, cert), &resolve(base, key))?;
             let alpn: [&[u8]; 2] = [b"h2", b"http/1.1"];
-            server_config(id, ClientAuth::None, KeyExchange::default(), &alpn)
+            let auth = if ingress.client_certificates {
+                ClientAuth::AnyHolder
+            } else {
+                ClientAuth::None
+            };
+            server_config(id, auth, KeyExchange::default(), &alpn)
                 .map(Some)
                 .map_err(|e| format!("[ingress]: {e}"))
         }
@@ -322,53 +346,6 @@ fn admin(listen: &Listen, admin: &Admin, problems: &mut Problems) -> AdminConfig
             AdminConfig::default()
         }
     }
-}
-
-/// Turns agent authorisation on when `[agents]` was given; returns the
-/// key sets to fetch and how often.
-fn with_agents(
-    gateway: &mut Config,
-    agents: Option<crate::agents::Checked>,
-) -> (Vec<Arc<tunnelward_gateway::KeySet>>, std::time::Duration) {
-    match agents {
-        Some(a) => {
-            gateway.ingress.agent_auth = Some(a.auth);
-            (a.fetched, a.refresh)
-        }
-        None => (Vec::new(), std::time::Duration::from_secs(600)),
-    }
-}
-
-/// Turns provider tagging on when `[providers]` was given; returns the
-/// snapshot to keep fresh and the signers' key sets to fetch.
-fn with_providers(
-    gateway: &mut Config,
-    providers: Option<crate::providers::Checked>,
-) -> (
-    Option<crate::providers::Loaded>,
-    Vec<Arc<tunnelward_gateway::KeySet>>,
-) {
-    let Some(p) = providers else {
-        return (None, Vec::new());
-    };
-    gateway.ingress.providers = p.snapshot.as_ref().map(|s| s.providers.clone());
-    gateway.ingress.bot_auth = p.bot_auth;
-    (p.snapshot, p.signer_keys)
-}
-
-/// The file and every certificate and key it names, to watch for
-/// renewal (G16).
-fn watched(path: &Path, base: &Path, file: &File) -> Vec<PathBuf> {
-    let tls = &file.tls;
-    let mut watched = vec![path.to_owned()];
-    watched.extend([&tls.cert, &tls.key, &tls.client_ca].map(|p| resolve(base, p)));
-    watched.extend(
-        [&file.ingress.cert, &file.ingress.key]
-            .into_iter()
-            .flatten()
-            .map(|p| resolve(base, p)),
-    );
-    watched
 }
 
 /// Both listeners' TLS, the connector listener trusting `enrolment_ca`
@@ -419,20 +396,20 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         .providers
         .as_ref()
         .and_then(|p| crate::providers::check(base, p, &mut problems));
+    let (shared, policy) = state_and_policy(base, &file, &mut problems);
     let (Some((tls, ingress_tls)), true) = (tls, problems.is_empty()) else {
         return Err(problems);
     };
     let mut gateway = Config::new(Arc::new(tls));
     gateway.connector_allow = allow;
     gateway.route_owners = owners;
-    let (key_sets, key_refresh) = with_agents(&mut gateway, agents);
+    let (key_sets, key_refresh) =
+        with_agents(&mut gateway, agents, file.ingress.client_certificates);
     let (providers, signer_keys) = with_providers(&mut gateway, providers);
     gateway.ingress.enrolment = enrolment.map(|e| e.enrolment);
+    with_state(&mut gateway, shared, policy);
     let key_sets = [key_sets, signer_keys].concat();
-    gateway.ingress.tls = ingress_tls.map(Arc::new);
-    gateway.ingress.trusted_proxies = trusted;
-    gateway.ingress.proxy_protocol = file.ingress.proxy_protocol;
-    gateway.ingress.cors = cors;
+    with_ingress(&mut gateway.ingress, ingress_tls, trusted, cors, &file);
     if let Some(secs) = file.connectors.lease_secs {
         gateway.lease_secs = secs;
     }

@@ -12,7 +12,6 @@
 
 use core::future::Future;
 use core::pin::Pin;
-use core::task::{Context, Poll};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
@@ -25,13 +24,15 @@ use http::header::{
 use http::{HeaderValue, Method, Request, Response, StatusCode, Version};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
-use hyper::body::{Body, Frame, Incoming, SizeHint};
+use hyper::body::Incoming;
 
-use crate::answers::{json, metadata, preflight, stamp_request_id};
+use crate::answers::{json, metadata, preflight, ready, stamp_request_id};
 use crate::auth;
 use crate::cors::{self, Cors};
 use crate::enrol;
 use crate::forwarding::{Stamp, rewrite};
+use crate::idempotent;
+use crate::observed::Observed;
 use crate::provenance;
 use crate::refusal::{Refusal, refusal_for};
 use crate::{ClientAddr, Gateway, RequestInfo, ResponseBody};
@@ -46,6 +47,8 @@ pub struct Ingress {
     gateway: Gateway,
     peer: SocketAddr,
     secure: bool,
+    /// SHA-256 of the client's TLS certificate, when it sent one.
+    client_cert: Option<[u8; 32]>,
 }
 
 impl core::fmt::Debug for Gateway {
@@ -64,7 +67,19 @@ impl Gateway {
             gateway: self.clone(),
             peer,
             secure,
+            client_cert: None,
         }
+    }
+}
+
+impl Ingress {
+    /// The same service for a client that presented the TLS certificate
+    /// `der`, which a token bound to it (RFC 8705) must name.
+    #[must_use]
+    pub fn with_client_certificate(mut self, der: &[u8]) -> Self {
+        let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, der);
+        self.client_cert = digest.as_ref().try_into().ok();
+        self
     }
 }
 
@@ -77,6 +92,13 @@ impl hyper::service::Service<Request<Incoming>> for Ingress {
         let this = self.clone();
         Box::pin(async move { Ok(this.handle(request).await) })
     }
+}
+
+/// A forwarded request's answer: streamed from the connector, or held
+/// whole by the gateway.
+enum Forwarded {
+    Stream(Response<ResponseBody>),
+    Ready(Response<Full<Bytes>>),
 }
 
 /// The response header naming a refusal's error id.
@@ -104,6 +126,7 @@ impl Ingress {
             mcp_session: provenance::declared(headers, tunnelward_mcp::SESSION_HEADER),
             client_id: None,
             provider,
+            evidence: tunnelward_policy::Evidence::Declared,
         };
         for o in &ingress.observers {
             o.on_request(&info);
@@ -151,15 +174,16 @@ impl Ingress {
         mut info: RequestInfo,
         started: Instant,
     ) -> Response<IngressBody> {
-        let checked = self
-            .authorise(&request, &mut info)
-            .and_then(|()| self.identify(&request, &mut info));
-        let outcome = match checked {
+        let outcome = match self.check(&request, &mut info).await {
             Ok(()) => self.forward(request, &info).await,
             Err(refusal) => Err(refusal),
         };
         match outcome {
-            Ok(response) => self.observed(response, info, started),
+            Ok(Forwarded::Stream(response)) => self.observed(response, info, started),
+            Ok(Forwarded::Ready(response)) => {
+                let observers = &self.gateway.inner.config.ingress.observers;
+                ready(observers, response, &info, started)
+            }
             Err(refusal) => self.refuse(&info, &refusal, started),
         }
     }
@@ -173,7 +197,7 @@ impl Ingress {
         info: RequestInfo,
         started: Instant,
     ) -> Response<IngressBody> {
-        let answered = match self.admit(&request, &info) {
+        let answered = match self.admit(&request, &info).await {
             Ok(()) => enrol::respond(enrolment, request).await,
             Err(refusal) => Err(refusal),
         };
@@ -188,18 +212,31 @@ impl Ingress {
         }
     }
 
+    /// Admits, buffers and decides `request`, then sends it on: once
+    /// only, for a high-impact tool (FR-13).
     async fn forward(
         &self,
         request: Request<Incoming>,
         info: &RequestInfo,
-    ) -> Result<Response<ResponseBody>, Refusal> {
+    ) -> Result<Forwarded, Refusal> {
         let ingress = &self.gateway.inner.config.ingress;
-        self.admit(&request, info)?;
+        self.admit(&request, info).await?;
         let (request, body) = self.buffer(request).await?;
         self.envelope(&request, &body, info);
+        let high_impact = self.decide(&request, &body, info)?;
         let request = self.restate(request, info);
+        if high_impact {
+            let key = idempotent::key(&request, info)?;
+            let once = idempotent::send(
+                &self.gateway,
+                &key,
+                (request, &body),
+                ingress.request_timeout,
+            );
+            return once.await.map(Forwarded::Ready);
+        }
         match tokio::time::timeout(ingress.request_timeout, self.gateway.send(request)).await {
-            Ok(Ok(response)) => Ok(response),
+            Ok(Ok(response)) => Ok(Forwarded::Stream(response)),
             Ok(Err(error)) => Err(refusal_for(&error)),
             Err(_) => Err(Refusal::new(
                 "TW-I006",
@@ -209,58 +246,67 @@ impl Ingress {
         }
     }
 
-    /// With [`crate::AgentAuth`] on, admits only a request whose bearer
-    /// token passes, recording its client id.
-    fn authorise(
+    /// The policy's decision on every call in the request, if there is a
+    /// policy: whether one is to a high-impact tool.
+    fn decide(
+        &self,
+        request: &Request<Full<Bytes>>,
+        body: &Bytes,
+        info: &RequestInfo,
+    ) -> Result<bool, Refusal> {
+        let Some(engine) = self.gateway.policy() else {
+            return Ok(false);
+        };
+        let verdict = crate::policy::decide(engine.as_ref(), request.method(), body, info)?;
+        Ok(verdict == crate::policy::Verdict::Forward { high_impact: true })
+    }
+
+    /// With [`crate::AgentAuth`] on, admits only a request whose token
+    /// passes, and whose token and `DPoP` proof are not replays; records
+    /// its client id.
+    async fn authorise(
+        &self,
+        request: &Request<Incoming>,
+        info: &mut RequestInfo,
+    ) -> Result<bool, Refusal> {
+        let config = &self.gateway.inner.config;
+        let Some(auth) = &config.ingress.agent_auth else {
+            return Ok(false);
+        };
+        let parts = auth::Request {
+            method: request.method(),
+            path: request.uri().path(),
+            headers: request.headers(),
+            client_cert: self.client_cert.as_ref(),
+        };
+        let principal = auth::authorise_once(auth, config.state.as_ref(), &parts)
+            .await
+            .map_err(|r| Refusal {
+                challenge: r.challenge,
+                ..Refusal::new(r.id, r.status, r.reason)
+            })?;
+        info.client_id = principal.client_id;
+        Ok(principal.bound)
+    }
+
+    /// Every check on who sent `request`: the agent's token, then its
+    /// Web Bot Auth signature.
+    async fn check(
         &self,
         request: &Request<Incoming>,
         info: &mut RequestInfo,
     ) -> Result<(), Refusal> {
-        let Some(auth) = &self.gateway.inner.config.ingress.agent_auth else {
-            return Ok(());
-        };
-        let principal = auth::authorise(auth, request.headers()).map_err(|r| Refusal {
-            challenge: Some(r.challenge),
-            ..Refusal::new(r.id, r.status, r.reason)
-        })?;
-        info.client_id = principal.client_id;
-        Ok(())
-    }
-
-    /// With [`crate::BotAuth`] on, raises the provider tag to `signature`
-    /// for a verified Web Bot Auth signature; a failing one is refused or
-    /// ignored as configured.
-    fn identify(&self, request: &Request<Incoming>, info: &mut RequestInfo) -> Result<(), Refusal> {
-        let Some(bot_auth) = &self.gateway.inner.config.ingress.bot_auth else {
-            return Ok(());
-        };
-        let authority = request
-            .uri()
-            .authority()
-            .map(http::uri::Authority::as_str)
-            .or_else(|| request.headers().get(HOST).and_then(|h| h.to_str().ok()))
-            .unwrap_or_default();
-        let verdict = bot_auth.verify(
-            request.method(),
-            authority,
-            request.uri().path(),
-            request.headers(),
-            std::time::SystemTime::now(),
-        );
-        match verdict {
-            Ok(Some(signer)) => info.provider = Some(crate::ProviderTag::signed(signer)),
-            Err(e) if bot_auth.on_invalid == crate::OnInvalid::Reject => {
-                let reason = format!("the Web Bot Auth signature fails: {e}");
-                return Err(Refusal::new("TW-I010", StatusCode::UNAUTHORIZED, reason));
-            }
-            // Unsigned, or a failing signature downgraded: no signature tag.
-            Ok(None) | Err(_) => {}
+        let bound = self.authorise(request, info).await?;
+        let config = &self.gateway.inner.config;
+        if let Some(bot_auth) = &config.ingress.bot_auth {
+            crate::botauth::identify(bot_auth, config.state.as_ref(), request, info).await?;
         }
+        info.evidence = crate::policy::evidence(info, bound);
         Ok(())
     }
 
     /// Checks that cost nothing: URL length, declared body size, rate.
-    fn admit(&self, request: &Request<Incoming>, info: &RequestInfo) -> Result<(), Refusal> {
+    async fn admit(&self, request: &Request<Incoming>, info: &RequestInfo) -> Result<(), Refusal> {
         let ingress = &self.gateway.inner.config.ingress;
         if request.uri().to_string().len() > ingress.max_url_len {
             return Err(Refusal::new(
@@ -280,10 +326,15 @@ impl Ingress {
                 "declared body over the limit",
             ));
         }
-        self.gateway
-            .inner
+        let inner = &self.gateway.inner;
+        inner
             .limiter
-            .check(info.client.client, Instant::now())
+            .check(
+                inner.config.state.as_ref(),
+                info.client.client,
+                Instant::now(),
+            )
+            .await
             .map_err(|wait| Refusal {
                 retry_after: Some(wait),
                 ..Refusal::new("TW-I004", StatusCode::TOO_MANY_REQUESTS, "rate limit")
@@ -345,8 +396,10 @@ impl Ingress {
         rewrite(request.headers_mut(), &stamp);
         stamp_request_id(request.headers_mut(), info);
         if ingress.agent_auth.is_some() {
-            // The token is for the gateway; passing it on is forbidden.
+            // The token and its DPoP proof are for the gateway; passing
+            // them on is forbidden.
             request.headers_mut().remove(AUTHORIZATION);
+            request.headers_mut().remove("dpop");
         }
         request
     }
@@ -408,12 +461,18 @@ impl Ingress {
             o.on_response(info, refusal.status, started.elapsed());
         }
         let url = tunnelward_proto::error_url(refusal.id);
-        let text = format!(
-            "{}: {} [{}] {url}\n",
-            refusal.status, refusal.reason, refusal.id
-        );
-        let mut response =
-            Response::new(Full::new(Bytes::from(text)).map_err(|e| match e {}).boxed());
+        let body = refusal.json.clone().unwrap_or_else(|| {
+            let text = format!(
+                "{}: {} [{}] {url}\n",
+                refusal.status, refusal.reason, refusal.id
+            );
+            Bytes::from(text)
+        });
+        let mut response = Response::new(Full::new(body).map_err(|e| match e {}).boxed());
+        if refusal.json.is_some() {
+            let json = HeaderValue::from_static("application/json");
+            response.headers_mut().insert(CONTENT_TYPE, json);
+        }
         *response.status_mut() = refusal.status;
         response
             .headers_mut()
@@ -433,62 +492,5 @@ impl Ingress {
                 .insert(RETRY_AFTER, HeaderValue::from(secs.max(1)));
         }
         response
-    }
-}
-
-/// A response body that tells observers when it ends, and how big it was.
-struct Observed {
-    inner: ResponseBody,
-    observers: Vec<std::sync::Arc<dyn crate::ProxyObserver>>,
-    info: RequestInfo,
-    started: Instant,
-    bytes: u64,
-    done: bool,
-}
-
-impl Observed {
-    fn finish(&mut self) {
-        if !self.done {
-            self.done = true;
-            let elapsed = self.started.elapsed();
-            for o in &self.observers {
-                o.on_complete(&self.info, self.bytes, elapsed);
-            }
-        }
-    }
-}
-
-impl Drop for Observed {
-    fn drop(&mut self) {
-        self.finish();
-    }
-}
-
-impl Body for Observed {
-    type Data = Bytes;
-    type Error = hyper::Error;
-
-    fn poll_frame(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Bytes>, hyper::Error>>> {
-        let polled = Pin::new(&mut self.inner).poll_frame(cx);
-        match &polled {
-            Poll::Ready(Some(Ok(frame))) => {
-                let len = frame.data_ref().map_or(0, Bytes::len);
-                self.bytes += len as u64;
-            }
-            Poll::Ready(None | Some(Err(_))) => self.finish(),
-            Poll::Pending => {}
-        }
-        polled
-    }
-
-    fn is_end_stream(&self) -> bool {
-        self.inner.is_end_stream()
-    }
-
-    fn size_hint(&self) -> SizeHint {
-        self.inner.size_hint()
     }
 }

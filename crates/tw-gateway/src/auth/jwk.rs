@@ -102,6 +102,16 @@ pub(crate) fn parse_set(json: &[u8]) -> Option<Vec<Key>> {
     )
 }
 
+/// One public JWK, as a `DPoP` proof carries it in its header. `None` for
+/// a key with any private part, or of a type not accepted.
+pub(crate) fn parse_public(value: &serde_json::Value) -> Option<Key> {
+    const PRIVATE: [&str; 7] = ["d", "p", "q", "dp", "dq", "qi", "k"];
+    if PRIVATE.iter().any(|f| value.get(f).is_some()) {
+        return None;
+    }
+    key(serde_json::from_value(value.clone()).ok()?)
+}
+
 fn key(jwk: Jwk) -> Option<Key> {
     if jwk.usage.as_deref().is_some_and(|u| u != "sig") {
         return None;
@@ -145,15 +155,32 @@ impl Key {
     /// The RFC 7638 thumbprint of an Ed25519 key (RFC 8037 A.3): what
     /// Web Bot Auth uses as its `keyid`. `None` for other keys.
     pub(crate) fn ed25519_thumbprint(&self) -> Option<String> {
-        let Material::Ed25519(x) = &self.material else {
-            return None;
+        matches!(self.material, Material::Ed25519(_)).then(|| self.thumbprint())
+    }
+
+    /// The RFC 7638 SHA-256 thumbprint: the required members in
+    /// lexicographic order, no spaces. `DPoP` binds a token to it (`jkt`).
+    pub(crate) fn thumbprint(&self) -> String {
+        let canonical = match &self.material {
+            Material::P256(point) => format!(
+                r#"{{"crv":"P-256","kty":"EC","x":"{}","y":"{}"}}"#,
+                b64::encode(&point[1..33]),
+                b64::encode(&point[33..])
+            ),
+            Material::Rsa { n, e } => format!(
+                r#"{{"e":"{}","kty":"RSA","n":"{}"}}"#,
+                b64::encode(e),
+                b64::encode(n)
+            ),
+            Material::Ed25519(x) => {
+                format!(
+                    r#"{{"crv":"Ed25519","kty":"OKP","x":"{}"}}"#,
+                    b64::encode(x)
+                )
+            }
         };
-        let canonical = format!(
-            r#"{{"crv":"Ed25519","kty":"OKP","x":"{}"}}"#,
-            b64::encode(x)
-        );
         let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, canonical.as_bytes());
-        Some(b64::encode(digest.as_ref()))
+        b64::encode(digest.as_ref())
     }
 
     /// Whether this key may verify a signature made with `alg`.
@@ -216,6 +243,33 @@ mod tests {
         assert!(!keys[1].fits(Alg::Ps256, "PS256"), "its alg is RS256");
         assert!(!keys[0].fits(Alg::EdDsa, "EdDSA"));
         assert_eq!(parse_set(b"[]"), None);
+    }
+
+    /// RFC 7638 section 3.1: the example key and its thumbprint.
+    #[test]
+    fn the_rfc_7638_example_thumbprint() {
+        let n = concat!(
+            "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtV",
+            "T86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64t",
+            "Z_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2Q",
+            "vzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbO",
+            "pbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_",
+            "xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw",
+        );
+        let jwk = serde_json::json!({"kty": "RSA", "n": n, "e": "AQAB", "alg": "RS256", "kid": "2011-04-29"});
+        let key = parse_public(&jwk).map(|k| k.thumbprint());
+        assert_eq!(
+            key.as_deref(),
+            Some("NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs")
+        );
+    }
+
+    #[test]
+    fn a_jwk_with_a_private_part_is_refused() {
+        let public = serde_json::json!({"kty": "OKP", "crv": "Ed25519", "x": "AAAA"});
+        assert!(parse_public(&public).is_some());
+        let private = serde_json::json!({"kty": "OKP", "crv": "Ed25519", "x": "AAAA", "d": "AAAA"});
+        assert!(parse_public(&private).is_none());
     }
 
     /// One DER TLV's content and the rest: test-only, definite lengths.

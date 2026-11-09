@@ -24,6 +24,10 @@ pub enum ClientAuth {
     /// No client certificate. Used on agent ingress, where clients
     /// authenticate with OAuth bearer tokens instead.
     None,
+    /// Ask for a certificate, accept any or none, and check only that the
+    /// client holds its key: for tokens bound to a client certificate
+    /// (RFC 8705) on agent ingress. The certificate proves nothing else.
+    AnyHolder,
 }
 
 /// A TLS configuration could not be built.
@@ -70,6 +74,9 @@ fn verifier(auth: ClientAuth, kx: KeyExchange) -> Result<Arc<dyn ClientCertVerif
                 .map_err(Error::Verifier)
         }
         ClientAuth::None => Ok(WebPkiClientVerifier::no_client_auth()),
+        ClientAuth::AnyHolder => Ok(Arc::new(crate::holder::AnyHolder::new(
+            provider(kx).signature_verification_algorithms,
+        ))),
     }
 }
 

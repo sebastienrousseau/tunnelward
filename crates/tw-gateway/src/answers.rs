@@ -56,3 +56,22 @@ pub(crate) fn json(body: Bytes, info: &RequestInfo) -> Response<IngressBody> {
     stamp_request_id(headers, info);
     response
 }
+
+/// An answer the gateway holds whole (a replayed idempotent call), as
+/// the observers see it.
+pub(crate) fn ready(
+    observers: &[std::sync::Arc<dyn crate::ProxyObserver>],
+    response: Response<Full<Bytes>>,
+    info: &RequestInfo,
+    started: std::time::Instant,
+) -> Response<IngressBody> {
+    use hyper::body::Body as _;
+    let size = response.body().size_hint().exact().unwrap_or(0);
+    for o in observers {
+        o.on_response(info, response.status(), started.elapsed());
+        o.on_complete(info, size, started.elapsed());
+    }
+    let mut response = response.map(|b| b.map_err(|e| match e {}).boxed());
+    stamp_request_id(response.headers_mut(), info);
+    response
+}

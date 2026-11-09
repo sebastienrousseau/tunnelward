@@ -40,6 +40,21 @@ pub(crate) struct Claims {
     pub(crate) client_id: Option<String>,
     pub(crate) azp: Option<String>,
     pub(crate) scope: Option<String>,
+    /// For single-use tokens (FR-13).
+    pub(crate) jti: Option<String>,
+    /// What the token is bound to (RFC 7800): a `DPoP` key or a client
+    /// certificate.
+    pub(crate) cnf: Option<Confirmation>,
+}
+
+/// `cnf`: the key or certificate a token is bound to.
+#[derive(Deserialize)]
+pub(crate) struct Confirmation {
+    /// RFC 9449: the SHA-256 thumbprint of the `DPoP` key.
+    pub(crate) jkt: Option<String>,
+    /// RFC 8705: the SHA-256 of the client certificate.
+    #[serde(rename = "x5t#S256")]
+    pub(crate) x5t_s256: Option<String>,
 }
 
 impl Claims {

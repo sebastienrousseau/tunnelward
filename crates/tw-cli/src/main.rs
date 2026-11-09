@@ -13,9 +13,11 @@ mod doctor;
 mod enrol;
 mod enrolled;
 mod gateway;
+mod policy;
 mod providers;
 mod serve;
 mod signers;
+mod state;
 mod svid;
 
 use std::env;
@@ -44,7 +46,8 @@ Commands:
   doctor [--config <file>]
                  Check this machine and, given a file, its configuration
   providers keygen --out <file>
-                 Make an Ed25519 key for signing provider snapshots
+                 Make a composite ML-DSA-65 + Ed25519 key for signing
+                 provider snapshots; its public key goes to <file>.pub
   providers build --out <file> [--version <n>]
                  Fetch providers' published egress ranges into a snapshot
   providers sign --key <file> <snapshot>
@@ -56,6 +59,9 @@ Commands:
                  Print a one-time token that enrols <id> (default 3600 s)
   enrol revoke --config <gateway file> --spiffe-id <id>
                  Stop <id>'s renewals; its SVID lapses when it expires
+  policy test --policy <file> <cases>
+                 Run the calls in <cases> against a tool policy; fail on
+                 any decision that is not the one expected
 
 Options:
   -h, --help     Print this help
@@ -182,10 +188,8 @@ fn providers_usage() -> UsageError {
 
 fn providers_keygen(args: &Args) -> Result<(), Outcome> {
     let out = args.get("out").ok_or_else(providers_usage)?;
-    println!(
-        "{}",
-        providers::keygen(Path::new(out)).map_err(Outcome::Failed)?
-    );
+    let public = providers::keygen(Path::new(out)).map_err(Outcome::Failed)?;
+    println!("{out}\n{}", public.display());
     Ok(())
 }
 
@@ -272,10 +276,27 @@ fn enrol_revoke(args: &Args) -> Result<(), Outcome> {
     }
 }
 
+fn policy(args: &[String]) -> Result<(), Outcome> {
+    let args = Args::parse(args, &["policy"])?;
+    let usage = || UsageError("usage: tunnelward policy test --policy <file> <cases>".into());
+    let ([command, cases], Some(file)) = (args.positional.as_slice(), args.get("policy")) else {
+        return Err(usage().into());
+    };
+    if command != "test" {
+        return Err(usage().into());
+    }
+    let (report, passed) =
+        policy::test(Path::new(file), Path::new(cases)).map_err(Outcome::Failed)?;
+    println!("{report}");
+    passed
+        .then_some(())
+        .ok_or_else(|| Outcome::Failed("a policy case failed".into()))
+}
+
 type Command = fn(&[String]) -> Result<(), Outcome>;
 
 /// Every command, by the names that call it.
-const COMMANDS: [(&[&str], Command); 9] = [
+const COMMANDS: [(&[&str], Command); 10] = [
     (&["-h", "--help"], |_| {
         print!("{USAGE}");
         Ok(())
@@ -291,6 +312,7 @@ const COMMANDS: [(&[&str], Command); 9] = [
     (&["doctor"], doctor),
     (&["providers"], providers),
     (&["enrol"], enrol),
+    (&["policy"], policy),
 ];
 
 fn dispatch(args: &[String]) -> Outcome {

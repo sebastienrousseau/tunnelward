@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use http::{HeaderMap, HeaderValue, Method};
-use tunnelward_gateway::{BotAuth, BotAuthError, KeySet, OnInvalid, Signer};
+use tunnelward_gateway::{BotAuth, BotAuthError, InMemory, KeySet, OnInvalid, Signer};
 
 use common::Res;
 
@@ -51,7 +51,15 @@ fn headers(agent: &str, input: &str, signature: &str) -> Res<HeaderMap> {
     Ok(h)
 }
 
-fn verifier(agent: &str) -> Res<BotAuth> {
+/// A verifier and the store its nonces go to.
+type Verifier = (BotAuth, Arc<InMemory>);
+
+fn verifier(agent: &str) -> Res<Verifier> {
+    verifier_sharing(agent, Arc::new(InMemory::default()))
+}
+
+/// A verifier recording nonces in `state`, as a gateway sharing it would.
+fn verifier_sharing(agent: &str, state: Arc<InMemory>) -> Res<Verifier> {
     let keys = Arc::new(KeySet::from_jwks(DIRECTORY.as_bytes())?);
     let signer = Signer {
         signature_agent: agent.into(),
@@ -59,7 +67,7 @@ fn verifier(agent: &str) -> Res<BotAuth> {
         agent: "vector".into(),
         keys,
     };
-    Ok(BotAuth::new(vec![signer], OnInvalid::Reject))
+    Ok((BotAuth::new(vec![signer], OnInvalid::Reject), state))
 }
 
 /// Ten seconds after the vectors' `created`.
@@ -67,13 +75,25 @@ fn soon() -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(1_735_689_610)
 }
 
+/// Polls `future` once: the in-memory store answers at once.
+fn now_or_never<T>(future: impl std::future::Future<Output = T>) -> Option<T> {
+    let mut future = std::pin::pin!(future);
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+    match future.as_mut().poll(&mut context) {
+        std::task::Poll::Ready(out) => Some(out),
+        std::task::Poll::Pending => None,
+    }
+}
+
 fn check(
-    v: &BotAuth,
+    (v, state): &Verifier,
     authority: &str,
     h: &HeaderMap,
     at: SystemTime,
 ) -> Result<Option<String>, BotAuthError> {
-    v.verify(&Method::GET, authority, "/", h, at)
+    let verified = v.verify((&Method::GET, authority, "/", h), at, state.as_ref());
+    now_or_never(verified)
+        .unwrap_or(Err(BotAuthError::Malformed("the store did not answer")))
         .map(|s| s.map(|s| s.agent.clone()))
 }
 
@@ -110,6 +130,30 @@ fn a_nonce_is_accepted_once() -> Res<()> {
         check(&v, "example.com", &h, soon()),
         Err(BotAuthError::Replayed)
     );
+    Ok(())
+}
+
+#[test]
+fn a_nonce_used_at_one_gateway_is_refused_at_another() -> Res<()> {
+    let shared = Arc::new(InMemory::default());
+    let first = verifier_sharing(AGENT, shared.clone())?;
+    let second = verifier_sharing(AGENT, shared)?;
+    let h = dictionary_vector()?;
+    assert!(check(&first, "example.com", &h, soon())?.is_some());
+    assert_eq!(
+        check(&second, "example.com", &h, soon()),
+        Err(BotAuthError::Replayed)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_store_that_cannot_answer_refuses_the_signature() -> Res<()> {
+    let full = verifier_sharing(AGENT, Arc::new(InMemory::with_capacity(0)))?;
+    assert!(matches!(
+        check(&full, "example.com", &dictionary_vector()?, soon()),
+        Err(BotAuthError::Malformed(_))
+    ));
     Ok(())
 }
 

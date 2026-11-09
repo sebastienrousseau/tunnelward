@@ -33,6 +33,7 @@ tunnelward-connector.workspace = true
 tunnelward-crypto.workspace = true
 tunnelward-gateway.workspace = true
 tunnelward-identity.workspace = true
+tunnelward-policy.workspace = true
 tunnelward-proto.workspace = true
 
 [dev-dependencies]

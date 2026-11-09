@@ -94,13 +94,15 @@ impl Signer {
         format!(r#"{{"keys":[{}]}}"#, keys.join(","))
     }
 
-    /// A token with `claims`, signed by this key.
-    pub fn token(&self, claims: &str) -> Res<String> {
-        let alg = match self.pair {
+    fn alg(&self) -> &'static str {
+        match self.pair {
             Pair::Es256(_) => "ES256",
             Pair::EdDsa(_) => "EdDSA",
-        };
-        let header = format!(r#"{{"alg":"{alg}","kid":"{}","typ":"at+jwt"}}"#, self.kid);
+        }
+    }
+
+    /// `header` and `claims` signed by this key, as a compact JWS.
+    fn sign(&self, header: &str, claims: &str) -> Res<String> {
         let signed = format!("{}.{}", b64(header.as_bytes()), b64(claims.as_bytes()));
         let signature = match &self.pair {
             Pair::Es256(p) => p
@@ -111,6 +113,70 @@ impl Signer {
             Pair::EdDsa(p) => p.sign(signed.as_bytes()).as_ref().to_vec(),
         };
         Ok(format!("{signed}.{}", b64(&signature)))
+    }
+
+    /// A token with `claims`, signed by this key.
+    pub fn token(&self, claims: &str) -> Res<String> {
+        let header = format!(
+            r#"{{"alg":"{}","kid":"{}","typ":"at+jwt"}}"#,
+            self.alg(),
+            self.kid
+        );
+        self.sign(&header, claims)
+    }
+
+    /// The public key as a JWK with only its required members, in the
+    /// order RFC 7638 hashes them.
+    fn public_jwk(&self) -> String {
+        match &self.pair {
+            Pair::Es256(p) => {
+                let point = p.public_key().as_ref();
+                format!(
+                    r#"{{"crv":"P-256","kty":"EC","x":"{}","y":"{}"}}"#,
+                    b64(&point[1..33]),
+                    b64(&point[33..65])
+                )
+            }
+            Pair::EdDsa(p) => format!(
+                r#"{{"crv":"Ed25519","kty":"OKP","x":"{}"}}"#,
+                b64(p.public_key().as_ref())
+            ),
+        }
+    }
+
+    /// The RFC 7638 thumbprint, as a `DPoP`-bound token's `cnf.jkt`.
+    pub fn thumbprint(&self) -> String {
+        let digest =
+            aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, self.public_jwk().as_bytes());
+        b64(digest.as_ref())
+    }
+
+    /// A `DPoP` proof (RFC 9449) by this key for `method` and `url`, with
+    /// `token`'s hash, issued at `iat`, with `jti`.
+    pub fn proof(&self, method: &str, url: &str, token: &str, iat: u64, jti: &str) -> Res<String> {
+        self.forged_proof("dpop+jwt", self, (method, url, token), (iat, jti))
+    }
+
+    /// A proof signed by this key whose header says `typ` and carries
+    /// `shown`'s public key: a forgery when `shown` is another key.
+    pub fn forged_proof(
+        &self,
+        typ: &str,
+        shown: &Signer,
+        (method, url, token): (&str, &str, &str),
+        (iat, jti): (u64, &str),
+    ) -> Res<String> {
+        let header = format!(
+            r#"{{"typ":"{typ}","alg":"{}","jwk":{}}}"#,
+            self.alg(),
+            shown.public_jwk()
+        );
+        let ath =
+            b64(aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, token.as_bytes()).as_ref());
+        let claims = format!(
+            r#"{{"jti":"{jti}","htm":"{method}","htu":"{url}","iat":{iat},"ath":"{ath}"}}"#
+        );
+        self.sign(&header, &claims)
     }
 }
 

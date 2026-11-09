@@ -7,6 +7,98 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.12]
+
+### Added
+
+- State shared across gateways (ADR 0004): `Config::state` takes a
+  `SharedState`, the one interface for replay caches, idempotency keys
+  and rate counters. `InMemory` (the default) serves one gateway. Web
+  Bot Auth nonces are recorded there, so a signature replayed to another
+  gateway sharing the store is refused, and a store that cannot answer
+  refuses the signature (fail closed). With a shared store the ingress
+  rate limit is counted there, in windows of `burst / per_second`; if
+  the store fails each gateway falls back to its share of the limit,
+  `RateLimit::gateways` (fail open). Entries live for a time-to-live on
+  the store's clock, so gateways need not agree on the time.
+- `RedisState`, a shared store for any server that speaks RESP (Redis,
+  Valkey and compatible services), over `redis://` or `rediss://` (TLS
+  1.3), with a password kept out of the URL. Each operation is one
+  command or one atomic script; a command has 2 s, and a dropped
+  connection is reopened. The gateway file's `[state]` section sets it
+  up (`url`, `password_env`, `ca`, `gateways`). A new CI job runs its
+  tests against Valkey 9.1.
+- Token replay defences (FR-13). A token bound to a DPoP key (RFC 9449,
+  `cnf.jkt`) works only with the `DPoP` scheme and a proof signed by that
+  key for this method, URL and token, issued within `dpop_window` (60 s);
+  a copied token fails from another client. A token bound to a client
+  certificate (RFC 8705, `cnf.x5t#S256`) is refused unless the connection
+  presents it: `ClientAuth::AnyHolder` (`[ingress] client_certificates =
+  true`) asks agents for a certificate, accepts any or none, and checks
+  only that the client signed the TLS 1.3 handshake with its key, which is
+  what the binding needs; the metadata then says
+  `tls_client_certificate_bound_access_tokens`. `AgentAuth::token_rules` (`[[agents.paths]]`) can demand
+  bound tokens on a path, and single use of each token's `jti`. Proof and
+  token `jti`s are recorded in the shared state, so a replay to another
+  gateway is refused too; when the store cannot answer the request gets
+  503 `TW-I012`. The `DPoP` header is never passed to a connector, and
+  the metadata lists `dpop_signing_alg_values_supported`. Verified
+  against RFC 7638's example thumbprint.
+
+- Tool policy (FR-4) in the new `tunnelward-policy` crate: rules that
+  permit or forbid calls by agent (`client_id`), provider, path, JSON-RPC
+  method, tool and least evidence; forbid wins, then permit, then the
+  default (deny unless set). Before the rules, the D6 baseline: every
+  call needs a valid token or a provider-range match, and a tool marked
+  `high_impact` needs cryptographic evidence. Each request now carries
+  its evidence level (`RequestInfo::evidence`, FR-14): cryptographic for
+  a bound token or a verified Web Bot Auth signature, network for a
+  provider-range match, declared otherwise. A denied JSON-RPC call gets a
+  JSON-RPC error from the gateway (code -32001, `TW-P001`) and never
+  reaches the connector; a batch with one denied call is held back
+  whole; a JSON body the policy cannot read as JSON-RPC is refused, so a
+  body the server reads differently cannot carry a call past it. The
+  engine sits behind `PolicyEngine`, so Cedar can stand in once its
+  dependencies are audited (126 crates today). The gateway file names a
+  policy file in `[policy]`, read again when it changes
+  (`Gateway::set_policy`), and `tunnelward policy test` runs a file of
+  example calls against a policy.
+- Idempotency keys on high-impact tools (FR-13): such a call needs an
+  `Idempotency-Key`; the key is claimed in the shared state, a repeat
+  gets the first answer (`tw-idempotent-replay: true`) without the tool
+  running again, at this gateway or another, a repeat while it runs gets
+  409 (`TW-P003`), and the key on another request 422 (`TW-P004`). When
+  the first call's outcome is unknown, repeats get 502 (`TW-P005`) so the
+  tool never runs twice to find out.
+
+- Composite post-quantum signatures: `tunnelward_crypto::composite`
+  signs with ML-DSA-65 (FIPS 204) and Ed25519 over the same
+  domain-labelled message, and verifies only when both halves do, so a
+  flaw in either algorithm alone does not let a signature be forged.
+  Provider snapshots use it: `tunnelward providers keygen` makes a
+  composite key and writes its public half to `<key>.pub`, which
+  `[providers] key_files` names; a composite key accepts only a composite
+  signature, so its post-quantum half cannot be stripped. Ed25519 keys
+  made before 0.0.12 still sign and verify. ML-DSA-65 is checked against
+  NIST ACVP vectors, kept with NIST's notice. The format is Tunnelward's
+  own, not the IETF LAMPS composite draft's.
+
+### Changed
+
+- `BotAuth::verify` is async and takes the request parts as a tuple and
+  the `SharedState` to record nonces in. `ClientAuth` has an `AnyHolder`
+  variant; `AgentAuth` has `token_rules`, `dpop_window` and
+  `certificate_bound`; `Ingress::with_client_certificate` is new.
+- `tunnelward providers keygen` makes composite keys and prints the
+  paths of the key and its public half instead of a hex Ed25519 key. `RateLimit` has a `gateways`
+  field (default 1).
+
+### Fixed
+
+- The release workflow's crates.io job passed cargo a bare `--exclude`
+  when no crate of the version was published yet, and failed before
+  publishing anything; v0.0.11 was published by hand.
+
 ## [0.0.11]
 
 ### Added

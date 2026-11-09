@@ -40,6 +40,9 @@ pub struct RequestInfo {
     /// The provider whose published ranges hold the client address
     /// (FR-12, network-level evidence only).
     pub provider: Option<crate::ProviderTag>,
+    /// How well the sender is known (FR-14), once the token and any
+    /// signature have been checked.
+    pub evidence: tunnelward_policy::Evidence,
 }
 
 /// Called at each step of an ingress request. Every method has an empty

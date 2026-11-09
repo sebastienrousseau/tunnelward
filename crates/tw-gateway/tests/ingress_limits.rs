@@ -74,6 +74,7 @@ async fn a_client_over_its_rate_gets_429_with_retry_after() -> Res<()> {
             per_second: 1.0,
             burst: 2,
             max_clients: 10,
+            gateways: 1,
         }
     })?;
     let (_gateway, connectors, ingress) = start_ingress(config).await?;

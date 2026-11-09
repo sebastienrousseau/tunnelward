@@ -230,7 +230,7 @@ fn the_gateway_reloads_renewed_certificates_and_keeps_good_ones() -> Res<()> {
         dir.join("gateway.key"),
         pki::pem("PRIVATE KEY", pki::GATEWAY.1),
     )?;
-    expect(&out, "certificates reloaded")?;
+    expect(&out, "certificates and policy reloaded")?;
     drop(child);
     Ok(std::fs::remove_dir_all(dir)?)
 }
@@ -299,6 +299,14 @@ fn gateway_file(dir: &Path, connectors: &str, ingress: &str) -> Res<PathBuf> {
     Ok(path)
 }
 
+/// [`gateway_file`] on loopback ports with `extra` appended.
+fn gateway_file_with(dir: &Path, extra: &str) -> Res<PathBuf> {
+    let path = gateway_file(dir, "127.0.0.1:0", "127.0.0.1:0")?;
+    let text = std::fs::read_to_string(&path)? + extra;
+    std::fs::write(&path, text)?;
+    Ok(path)
+}
+
 /// `tunnelward connector` on `config`, with its stdout lines.
 fn spawn_connector(config: &Path) -> Res<(Running, Lines)> {
     let mut child = Running(
@@ -328,16 +336,43 @@ fn ask(ingress: &str, path: &str) -> Res<String> {
 /// local service; returns both processes and the ingress address once
 /// the connector has registered.
 fn start_pair(dir: &Path) -> Res<(Running, Running, String)> {
+    let (gateway, connector, ingress, _) = start_pair_with(dir, "")?;
+    Ok((gateway, connector, ingress))
+}
+
+/// [`start_pair`] with `extra` appended to the gateway file (after its
+/// `[tls]` table); also returns the gateway's stdout lines.
+fn start_pair_with(dir: &Path, extra: &str) -> Res<(Running, Running, String, Lines)> {
     let service = hello_service()?;
-    let (gateway, gateway_out, _) =
-        spawn_gateway(&gateway_file(dir, "127.0.0.1:0", "127.0.0.1:0")?)?;
+    let (gateway, gateway_out, _) = spawn_gateway(&gateway_file_with(dir, extra)?)?;
     let started = expect(&gateway_out, "connectors on")?;
     let (connectors, ingress) = (bound(&started, "connectors")?, bound(&started, "agents")?);
     let target = format!("http://{service}");
     let file = connector_file(dir, &connectors, &target, "\"mcp\"")?;
     let (connector, connector_out) = spawn_connector(&file)?;
     expect(&connector_out, "Registered")?;
-    Ok((gateway, connector, ingress))
+    Ok((gateway, connector, ingress, gateway_out))
+}
+
+#[test]
+fn a_changed_policy_file_applies_without_a_restart() -> Res<()> {
+    let dir = pki_dir("policy-reload")?;
+    let open = "default = \"allow\"\nbaseline = false\n";
+    std::fs::write(dir.join("policy.toml"), open)?;
+    let extra = "reload_secs = 1\n\n[policy]\nfile = \"policy.toml\"\n";
+    let (gateway, connector, ingress, out) = start_pair_with(&dir, extra)?;
+    let answer = ask(&ingress, "/mcp/x")?;
+    assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
+    let closed = format!("{open}[[rules]]\neffect = \"forbid\"\nmethods = [\"http:GET\"]\n");
+    std::fs::write(dir.join("policy.toml"), closed)?;
+    expect(&out, "certificates and policy reloaded")?;
+    let answer = ask(&ingress, "/mcp/x")?;
+    assert!(
+        answer.starts_with("HTTP/1.1 403") && answer.contains("TW-P001"),
+        "{answer}"
+    );
+    drop((connector, gateway));
+    Ok(std::fs::remove_dir_all(dir)?)
 }
 
 #[test]

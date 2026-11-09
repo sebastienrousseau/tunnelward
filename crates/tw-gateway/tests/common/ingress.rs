@@ -77,7 +77,18 @@ pub async fn tls_stream(
     ingress: &str,
     alpn: &[u8],
 ) -> Res<tokio_rustls::client::TlsStream<TcpStream>> {
-    let tls = client_config(pki::roots(pki::CA)?, None, KeyExchange::default(), &[alpn])?;
+    tls_stream_as(ingress, alpn, None).await
+}
+
+/// A TLS stream to `ingress`, presenting `client`'s certificate if the
+/// server asks.
+pub async fn tls_stream_as(
+    ingress: &str,
+    alpn: &[u8],
+    client: Option<pki::Pair>,
+) -> Res<tokio_rustls::client::TlsStream<TcpStream>> {
+    let id = client.map(pki::identity);
+    let tls = client_config(pki::roots(pki::CA)?, id, KeyExchange::default(), &[alpn])?;
     let tcp = TcpStream::connect(ingress).await?;
     let name = ServerName::try_from(pki::GATEWAY_NAME)?.to_owned();
     Ok(tokio_rustls::TlsConnector::from(Arc::new(tls))
@@ -100,7 +111,16 @@ pub async fn h1_over_tls(
     ingress: &str,
     request: Request<Full<Bytes>>,
 ) -> Res<(StatusCode, hyper::HeaderMap, String)> {
-    let stream = tls_stream(ingress, b"http/1.1").await?;
+    h1_over_tls_as(ingress, request, None).await
+}
+
+/// [`h1_over_tls`], presenting `client`'s certificate if asked.
+pub async fn h1_over_tls_as(
+    ingress: &str,
+    request: Request<Full<Bytes>>,
+    client: Option<pki::Pair>,
+) -> Res<(StatusCode, hyper::HeaderMap, String)> {
+    let stream = tls_stream_as(ingress, b"http/1.1", client).await?;
     let (mut sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
     tokio::spawn(conn);
     read(sender.send_request(request).await?).await

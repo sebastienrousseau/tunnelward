@@ -63,6 +63,29 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo test --workspace --locked
 
+  store:
+    name: Shared store (Valkey)
+    # The shared-store tests that need a real Redis-compatible server;
+    # every other run uses a fake one.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      valkey:
+        image: valkey/valkey:9.1@sha256:3add1a336a920ea54770a001ab6feb3da5fceea96a40373a3a2cd469b815f0b7
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo test --locked -p tunnelward-gateway --test shared_store -- --ignored
+        env:
+          TUNNELWARD_TEST_REDIS_URL: redis://127.0.0.1:6379
+
   msrv:
     name: MSRV (1.89)
     runs-on: ubuntu-latest

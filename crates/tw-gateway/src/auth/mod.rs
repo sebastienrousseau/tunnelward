@@ -9,6 +9,8 @@
 //! and never passes the token on to a connector.
 
 pub(crate) mod b64;
+mod bind;
+mod dpop;
 mod jwk;
 mod jwt;
 mod keys;
@@ -19,6 +21,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use http::HeaderMap;
 use http::header::AUTHORIZATION;
 
+pub(crate) use bind::Request;
+pub use bind::TokenRule;
 pub(crate) use jwk::Alg;
 pub use keys::{KeyError, KeySet};
 
@@ -42,6 +46,14 @@ pub struct AgentAuth {
     pub scopes: Vec<String>,
     /// Clock skew allowed on `exp` and `nbf`.
     pub leeway: Duration,
+    /// What paths demand of tokens: binding to the sender, single use
+    /// (FR-13). A path no rule covers takes any valid token.
+    pub token_rules: Vec<TokenRule>,
+    /// How far a `DPoP` proof's `iat` may be from now, either way.
+    pub dpop_window: Duration,
+    /// Whether the ingress asks for client certificates, so tokens bound
+    /// to one (RFC 8705) can work; the metadata says so.
+    pub certificate_bound: bool,
 }
 
 /// One authorisation server and its keys.
@@ -55,7 +67,7 @@ pub struct Issuer {
 
 impl AgentAuth {
     /// `resource` accepting tokens from `issuers`, no scopes required,
-    /// 60 s of leeway.
+    /// 60 s of leeway, no token rules, a 60 s `DPoP` window.
     #[must_use]
     pub fn new(resource: impl Into<String>, issuers: Vec<Issuer>) -> Self {
         Self {
@@ -63,6 +75,9 @@ impl AgentAuth {
             issuers,
             scopes: Vec::new(),
             leeway: Duration::from_secs(60),
+            token_rules: Vec::new(),
+            dpop_window: Duration::from_secs(60),
+            certificate_bound: false,
         }
     }
 }
@@ -72,6 +87,13 @@ impl AgentAuth {
 pub(crate) struct Principal {
     /// `client_id` (RFC 9068), else `azp`.
     pub(crate) client_id: Option<String>,
+    /// Keys to record once in the shared store: the `DPoP` proof's `jti`,
+    /// the token's own on single-use paths. A key already there is a
+    /// replay.
+    pub(crate) once: Vec<bind::Once>,
+    /// The token is bound to a `DPoP` key or a client certificate, and
+    /// the binding checked out: cryptographic evidence (FR-14).
+    pub(crate) bound: bool,
 }
 
 /// A request the ingress refuses: its error id, status, reason and
@@ -80,19 +102,55 @@ pub(crate) struct Refused {
     pub(crate) id: &'static str,
     pub(crate) status: http::StatusCode,
     pub(crate) reason: String,
-    pub(crate) challenge: String,
+    pub(crate) challenge: Option<String>,
 }
 
 /// [`check`], as the ingress answers it: TW-I008 (401) for a missing or
 /// invalid token, TW-I009 (403) for missing scopes.
-pub(crate) fn authorise(auth: &AgentAuth, headers: &HeaderMap) -> Result<Principal, Refused> {
-    check(auth, headers, SystemTime::now()).map_err(|denial| {
-        let (id, status, reason) = match &denial {
-            Denial::Missing | Denial::Invalid(_) => (
+pub(crate) fn authorise(auth: &AgentAuth, request: &Request<'_>) -> Result<Principal, Refused> {
+    check(auth, request, SystemTime::now()).map_err(|denial| refused(auth, &denial))
+}
+
+/// [`authorise`], then records each key the token and its proof must use
+/// once. A key already recorded is a replay (`TW-I008`); a store that
+/// cannot answer refuses the request (`TW-I012`, 503: fail closed).
+pub(crate) async fn authorise_once(
+    auth: &AgentAuth,
+    state: &dyn crate::SharedState,
+    request: &Request<'_>,
+) -> Result<Principal, Refused> {
+    let principal = authorise(auth, request)?;
+    for (key, ttl) in &principal.once {
+        match state.first_use(key, *ttl).await {
+            Ok(true) => {}
+            Ok(false) => {
+                return Err(refused(
+                    auth,
+                    &Denial::Invalid("the token or DPoP proof was used before"),
+                ));
+            }
+            Err(e) => {
+                return Err(Refused {
+                    id: crate::state::UNAVAILABLE,
+                    status: http::StatusCode::SERVICE_UNAVAILABLE,
+                    reason: format!("cannot check for replay: {e}"),
+                    challenge: None,
+                });
+            }
+        }
+    }
+    Ok(principal)
+}
+
+/// `denial` as the ingress answers it.
+pub(crate) fn refused(auth: &AgentAuth, denial: &Denial) -> Refused {
+    {
+        let (id, status, reason) = match denial {
+            Denial::Missing | Denial::Invalid(_) | Denial::Proof(_) => (
                 "TW-I008",
                 http::StatusCode::UNAUTHORIZED,
-                match &denial {
-                    Denial::Invalid(why) => why,
+                match denial {
+                    Denial::Invalid(why) | Denial::Proof(why) => why,
                     _ => "no bearer token",
                 },
             ),
@@ -106,9 +164,9 @@ pub(crate) fn authorise(auth: &AgentAuth, headers: &HeaderMap) -> Result<Princip
             id,
             status,
             reason: reason.to_owned(),
-            challenge: challenge(auth, &denial),
+            challenge: Some(challenge(auth, denial)),
         }
-    })
+    }
 }
 
 /// Whether `method` and `path` ask for the metadata document.
@@ -125,28 +183,41 @@ pub(crate) enum Denial {
     Invalid(&'static str),
     /// A valid token without the scopes: 403 `insufficient_scope`.
     Scope,
+    /// A `DPoP` proof that fails: 401 `invalid_dpop_proof`.
+    Proof(&'static str),
 }
 
-/// Checks the bearer token in `headers` against `auth` at `now`.
+/// Checks the token `request` carries against `auth` at `now`.
 pub(crate) fn check(
     auth: &AgentAuth,
-    headers: &HeaderMap,
+    request: &Request<'_>,
     now: SystemTime,
 ) -> Result<Principal, Denial> {
-    let token = jwt::parse(bearer(headers)?).map_err(Denial::Invalid)?;
+    let (scheme, raw) = presented(request.headers)?;
+    let token = jwt::parse(raw).map_err(Denial::Invalid)?;
     signed_by_an_issuer(auth, &token)?;
     let claims = &token.claims;
     in_date(claims, now, auth.leeway)?;
     if !claims.for_audience(&auth.resource) {
         return Err(Denial::Invalid("the token is not for this resource"));
     }
-    let granted = claims.scopes();
-    if !auth.scopes.iter().all(|s| granted.contains(&s.as_str())) {
-        return Err(Denial::Scope);
-    }
+    has_scopes(auth, claims)?;
+    let secs = now.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let once = bind::check(auth, (scheme, raw), claims, request, secs)?;
     Ok(Principal {
         client_id: claims.client_id.clone().or_else(|| claims.azp.clone()),
+        once,
+        bound: bind::is_bound(claims),
     })
+}
+
+fn has_scopes(auth: &AgentAuth, claims: &jwt::Claims) -> Result<(), Denial> {
+    let granted = claims.scopes();
+    auth.scopes
+        .iter()
+        .all(|s| granted.contains(&s.as_str()))
+        .then_some(())
+        .ok_or(Denial::Scope)
 }
 
 /// Fails unless `token`'s issuer is listed and one of its keys verifies
@@ -166,8 +237,9 @@ fn signed_by_an_issuer(auth: &AgentAuth, token: &jwt::Token) -> Result<(), Denia
         .ok_or(Denial::Invalid("the token's signature does not verify"))
 }
 
-/// The one `Authorization: Bearer` token; several headers are refused.
-fn bearer(headers: &HeaderMap) -> Result<&str, Denial> {
+/// The one `Authorization` token and its scheme, `Bearer` or `DPoP`;
+/// several headers are refused.
+fn presented(headers: &HeaderMap) -> Result<(bind::Scheme, &str), Denial> {
     let mut values = headers.get_all(AUTHORIZATION).iter();
     let (Some(value), None) = (values.next(), values.next()) else {
         return Err(if headers.contains_key(AUTHORIZATION) {
@@ -179,10 +251,12 @@ fn bearer(headers: &HeaderMap) -> Result<&str, Denial> {
     let text = value
         .to_str()
         .map_err(|_| Denial::Invalid("the Authorization header is not text"))?;
-    match text.split_once(' ') {
-        Some((scheme, token)) if scheme.eq_ignore_ascii_case("bearer") && !token.is_empty() => {
-            Ok(token.trim())
-        }
+    let (scheme, token) = text.split_once(' ').ok_or(Denial::Missing)?;
+    let token = token.trim();
+    match scheme.to_ascii_lowercase().as_str() {
+        _ if token.is_empty() => Err(Denial::Missing),
+        "bearer" => Ok((bind::Scheme::Bearer, token)),
+        "dpop" => Ok((bind::Scheme::Dpop, token)),
         _ => Err(Denial::Missing),
     }
 }
@@ -214,13 +288,19 @@ fn resource_path(resource: &str) -> &str {
     rest.find('/').map_or("", |i| &rest[i..])
 }
 
+/// The resource's scheme and authority: `https://mcp.example.org`.
+pub(crate) fn origin(resource: &str) -> &str {
+    let resource = resource.trim_end_matches('/');
+    &resource[..resource.len() - resource_path(resource).len()]
+}
+
 /// The metadata URL, absolute, for `WWW-Authenticate`.
 fn metadata_url(auth: &AgentAuth) -> String {
-    let resource = auth.resource.trim_end_matches('/');
-    let path = resource_path(resource);
-    let origin = &resource[..resource.len() - path.len()];
-    format!("{origin}{}", metadata_path(auth))
+    format!("{}{}", origin(&auth.resource), metadata_path(auth))
 }
+
+/// The JWS algorithms accepted on tokens and `DPoP` proofs.
+const ALGS: [&str; 4] = ["ES256", "RS256", "PS256", "EdDSA"];
 
 /// The protected-resource metadata document (RFC 9728 section 2).
 pub(crate) fn metadata(auth: &AgentAuth) -> Vec<u8> {
@@ -228,9 +308,13 @@ pub(crate) fn metadata(auth: &AgentAuth) -> Vec<u8> {
         "resource": auth.resource,
         "authorization_servers": auth.issuers.iter().map(|i| &i.issuer).collect::<Vec<_>>(),
         "bearer_methods_supported": ["header"],
+        "dpop_signing_alg_values_supported": ALGS,
     });
     if !auth.scopes.is_empty() {
         doc["scopes_supported"] = serde_json::json!(auth.scopes);
+    }
+    if auth.certificate_bound {
+        doc["tls_client_certificate_bound_access_tokens"] = serde_json::json!(true);
     }
     doc.to_string().into_bytes()
 }
@@ -247,6 +331,10 @@ pub(crate) fn challenge(auth: &AgentAuth, denial: &Denial) -> String {
         Denial::Scope => format!(
             "Bearer error=\"insufficient_scope\", scope=\"{}\", {meta}",
             auth.scopes.join(" ")
+        ),
+        Denial::Proof(why) => format!(
+            "DPoP error=\"invalid_dpop_proof\", error_description=\"{why}\", algs=\"{}\"",
+            ALGS.join(" ")
         ),
     }
 }
@@ -276,15 +364,17 @@ mod tests {
     }
 
     #[test]
-    fn bearer_tokens_are_found_once() {
+    fn tokens_are_found_once_with_their_scheme() {
         let mut headers = HeaderMap::new();
-        assert_eq!(bearer(&headers), Err(Denial::Missing));
+        assert_eq!(presented(&headers), Err(Denial::Missing));
         headers.insert(AUTHORIZATION, http::HeaderValue::from_static("bearer abc"));
-        assert_eq!(bearer(&headers), Ok("abc"));
+        assert_eq!(presented(&headers), Ok((bind::Scheme::Bearer, "abc")));
+        headers.insert(AUTHORIZATION, http::HeaderValue::from_static("DPoP abc"));
+        assert_eq!(presented(&headers), Ok((bind::Scheme::Dpop, "abc")));
         headers.insert(AUTHORIZATION, http::HeaderValue::from_static("Basic abc"));
-        assert_eq!(bearer(&headers), Err(Denial::Missing));
+        assert_eq!(presented(&headers), Err(Denial::Missing));
         headers.append(AUTHORIZATION, http::HeaderValue::from_static("Bearer x"));
-        assert!(matches!(bearer(&headers), Err(Denial::Invalid(_))));
+        assert!(matches!(presented(&headers), Err(Denial::Invalid(_))));
     }
 
     #[test]

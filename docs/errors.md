@@ -190,7 +190,13 @@ the origin to the path's rule if the page should reach the service.
 **Unauthorized.** Agent authorisation (`[agents]`) is on and the request
 has no bearer token, or its token fails a check: an issuer not listed, a
 signature no key of that issuer verifies, an `aud` that is not the
-gateway's `resource`, or an `exp` or `nbf` outside the 60 s leeway. 401
+gateway's `resource`, or an `exp` or `nbf` outside the 60 s leeway. Also
+for the replay defences (FR-13): a token bound to a DPoP key (`cnf.jkt`)
+without a valid proof by that key (the challenge is then `DPoP
+error="invalid_dpop_proof"`), a bound token sent as `Bearer`, a token
+bound to a client certificate the connection did not present, a path in
+`[[agents.paths]]` that needs a bound or single-use token, and a token or
+proof used before. 401
 with `WWW-Authenticate`, whose `error_description` names the check and
 whose `resource_metadata` points at the gateway's protected-resource
 metadata, where an MCP client finds the authorisation server. Get a token
@@ -225,6 +231,55 @@ verify with the SVID's key (an expired SVID cannot renew: enrol again
 with a new token). 400 for a body or signing request that does not parse,
 405 for a method other than POST, 413 for a body over 64 KiB, 500 when the token store cannot be
 read or written. The reason names which.
+
+### TW-I012
+
+**Shared state unavailable.** A check that must record a first use (a
+DPoP proof's or a single-use token's `jti`) could not reach the shared
+store (`[state]`), or the in-process store is full. 503: these checks
+fail closed, so a store outage refuses the request rather than risk a
+replay (ADR 0004). Check the store and its credentials.
+
+## Policy (`TW-P`)
+
+The tool policy (FR-4, `[policy]`) and the idempotency keys of
+high-impact tools (FR-13).
+
+### TW-P001
+
+**Denied by policy.** The policy denies a call in the request: a forbid
+rule matches, no permit rule matches under a deny default, or the call
+falls short of the D6 baseline (no valid token and no provider-range
+match; a high-impact tool without cryptographic evidence). A JSON-RPC
+request gets HTTP 200 with a JSON-RPC error for each request in it
+(code -32001, `data.tw_error` this id); a batch is held back whole when
+any call in it is denied. Anything else, and a JSON body the policy
+cannot read as JSON-RPC, gets 403. The call never reaches the connector.
+
+### TW-P002
+
+**Idempotency key required.** The call is to a tool the policy marks
+high impact, and it has no `Idempotency-Key` header of 1 to 255
+characters. 400. Send one, and the same one on a retry.
+
+### TW-P003
+
+**Still running.** Another call with this `Idempotency-Key` is running,
+at this gateway or another sharing the store. 409 with `Retry-After`.
+Retry with the same key; once it finishes you get its answer.
+
+### TW-P004
+
+**Key reused.** This `Idempotency-Key` was used for a different request
+(another method, path or body). 422. Use a new key for a new call.
+
+### TW-P005
+
+**Outcome unknown.** The first call with this key may have run, but its
+answer is not known: the connection failed after the request left the
+gateway, or the answer was over 1 MiB to keep. 502, now and on every
+retry with the key, so the tool never runs twice to find out. Check the
+service for what happened.
 
 ## Connector (`TW-C`)
 
