@@ -5,7 +5,8 @@
 //! idempotency keys and the rate counters every gateway must see alike.
 //!
 //! [`SharedState`] is the one interface; [`InMemory`] serves a single
-//! gateway, and an external store serves several. Each caller decides in
+//! gateway, and [`RedisState`] (any store that speaks RESP) serves
+//! several. Each caller decides in
 //! advance what it does when the store fails: the replay and idempotency
 //! checks refuse (fail closed), the rate limits fall back to a local
 //! bucket (fail open), as the ADR's table says.
@@ -17,6 +18,11 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
+
+mod redis;
+mod resp;
+
+pub use redis::RedisState;
 
 /// What a [`SharedState`] call returns.
 pub type StateFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StateError>> + Send + 'a>>;

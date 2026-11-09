@@ -66,7 +66,7 @@ pub use pool::ResponseBody;
 pub use providers::{ProviderError, ProviderTag, Providers};
 pub use ratelimit::RateLimit;
 pub use resolver::{LongestFirst, RouteResolver, Target};
-pub use state::{Claim, InMemory, SharedState, StateError, StateFuture};
+pub use state::{Claim, InMemory, RedisState, SharedState, StateError, StateFuture};
 
 use std::sync::Arc;
 use std::time::Duration;

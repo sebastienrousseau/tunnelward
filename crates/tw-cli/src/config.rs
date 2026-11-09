@@ -44,6 +44,9 @@
 //!
 //! [enrolment]                   # optional: connectors enrol with a token
 //!                               # (see enrol.rs)
+//!
+//! [state]                       # optional: a store several gateways
+//!                               # share (see state.rs)
 //! ```
 
 use std::net::SocketAddr;
@@ -73,6 +76,7 @@ pub(crate) struct File {
     agents: Option<crate::agents::Agents>,
     providers: Option<crate::providers::Section>,
     enrolment: Option<crate::enrol::Section>,
+    state: Option<crate::state::Section>,
 }
 
 impl File {
@@ -356,6 +360,14 @@ fn with_providers(
     (p.snapshot, p.signer_keys)
 }
 
+/// Shares state through the `[state]` store when one was given.
+fn with_state(gateway: &mut Config, shared: Option<crate::state::Checked>) {
+    if let Some(s) = shared {
+        gateway.state = s.state;
+        gateway.ingress.rate_limit.gateways = s.gateways;
+    }
+}
+
 /// The file and every certificate and key it names, to watch for
 /// renewal (G16).
 fn watched(path: &Path, base: &Path, file: &File) -> Vec<PathBuf> {
@@ -419,6 +431,7 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         .providers
         .as_ref()
         .and_then(|p| crate::providers::check(base, p, &mut problems));
+    let shared = (file.state.as_ref()).and_then(|s| crate::state::check(base, s, &mut problems));
     let (Some((tls, ingress_tls)), true) = (tls, problems.is_empty()) else {
         return Err(problems);
     };
@@ -428,6 +441,7 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
     let (key_sets, key_refresh) = with_agents(&mut gateway, agents);
     let (providers, signer_keys) = with_providers(&mut gateway, providers);
     gateway.ingress.enrolment = enrolment.map(|e| e.enrolment);
+    with_state(&mut gateway, shared);
     let key_sets = [key_sets, signer_keys].concat();
     gateway.ingress.tls = ingress_tls.map(Arc::new);
     gateway.ingress.trusted_proxies = trusted;

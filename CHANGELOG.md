@@ -21,6 +21,13 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   the store fails each gateway falls back to its share of the limit,
   `RateLimit::gateways` (fail open). Entries live for a time-to-live on
   the store's clock, so gateways need not agree on the time.
+- `RedisState`, a shared store for any server that speaks RESP (Redis,
+  Valkey and compatible services), over `redis://` or `rediss://` (TLS
+  1.3), with a password kept out of the URL. Each operation is one
+  command or one atomic script; a command has 2 s, and a dropped
+  connection is reopened. The gateway file's `[state]` section sets it
+  up (`url`, `password_env`, `ca`, `gateways`). A new CI job runs its
+  tests against Valkey 9.1.
 
 ### Changed
 

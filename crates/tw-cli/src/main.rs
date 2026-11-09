@@ -16,6 +16,7 @@ mod gateway;
 mod providers;
 mod serve;
 mod signers;
+mod state;
 mod svid;
 
 use std::env;
