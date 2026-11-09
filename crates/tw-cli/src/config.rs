@@ -41,6 +41,9 @@
 //!
 //! [providers]                   # optional: tag requests by provider
 //!                               # (see providers.rs)
+//!
+//! [enrolment]                   # optional: connectors enrol with a token
+//!                               # (see enrol.rs)
 //! ```
 
 use std::net::SocketAddr;
@@ -69,6 +72,14 @@ pub(crate) struct File {
     admin: Admin,
     agents: Option<crate::agents::Agents>,
     providers: Option<crate::providers::Section>,
+    enrolment: Option<crate::enrol::Section>,
+}
+
+impl File {
+    /// The `[enrolment]` token store, if the file has one.
+    pub(crate) fn enrolment(&self, base: &Path) -> Option<tunnelward_gateway::Tokens> {
+        self.enrolment.as_ref().map(|e| e.tokens(base))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -260,13 +271,21 @@ fn cidrs(field: &str, values: &[String], problems: &mut Problems) -> Vec<Cidr> {
         .collect()
 }
 
-/// The connector listener's TLS: mutual, `tw/1` only.
+/// The connector listener's TLS: mutual, `tw/1` only, trusting
+/// `client_ca` and the enrolment CA when there is one.
 fn connector_tls(
     base: &Path,
     tls: &Tls,
+    enrolment_ca: Option<CertificateDer<'static>>,
 ) -> Result<tunnelward_crypto::rustls::ServerConfig, String> {
     let id = identity(&resolve(base, &tls.cert), &resolve(base, &tls.key))?;
-    let auth = ClientAuth::Required(roots(&resolve(base, &tls.client_ca))?);
+    let mut trusted = Arc::unwrap_or_clone(roots(&resolve(base, &tls.client_ca))?);
+    if let Some(ca) = enrolment_ca {
+        trusted
+            .add(ca)
+            .map_err(|e| format!("[enrolment] ca_cert: {e}"))?;
+    }
+    let auth = ClientAuth::Required(Arc::new(trusted));
     server_config(id, auth, KeyExchange::default(), &[ALPN]).map_err(|e| format!("[tls]: {e}"))
 }
 
@@ -320,6 +339,23 @@ fn with_agents(
     }
 }
 
+/// Turns provider tagging on when `[providers]` was given; returns the
+/// snapshot to keep fresh and the signers' key sets to fetch.
+fn with_providers(
+    gateway: &mut Config,
+    providers: Option<crate::providers::Checked>,
+) -> (
+    Option<crate::providers::Loaded>,
+    Vec<Arc<tunnelward_gateway::KeySet>>,
+) {
+    let Some(p) = providers else {
+        return (None, Vec::new());
+    };
+    gateway.ingress.providers = p.snapshot.as_ref().map(|s| s.providers.clone());
+    gateway.ingress.bot_auth = p.bot_auth;
+    (p.snapshot, p.signer_keys)
+}
+
 /// The file and every certificate and key it names, to watch for
 /// renewal (G16).
 fn watched(path: &Path, base: &Path, file: &File) -> Vec<PathBuf> {
@@ -335,17 +371,37 @@ fn watched(path: &Path, base: &Path, file: &File) -> Vec<PathBuf> {
     watched
 }
 
+/// Both listeners' TLS, the connector listener trusting `enrolment_ca`
+/// too; each failure goes to `problems`.
+fn listener_tls(
+    base: &Path,
+    file: &File,
+    enrolment_ca: Option<CertificateDer<'static>>,
+    problems: &mut Problems,
+) -> Option<(
+    tunnelward_crypto::rustls::ServerConfig,
+    Option<tunnelward_crypto::rustls::ServerConfig>,
+)> {
+    let tls = connector_tls(base, &file.tls, enrolment_ca)
+        .map_err(|e| problems.push(e))
+        .ok();
+    let ingress = ingress_tls(base, &file.ingress)
+        .map_err(|e| problems.push(e))
+        .ok();
+    Some((tls?, ingress?))
+}
+
 /// Runs every check on `file` (read from `path`) and builds the gateway
 /// configuration, or lists every problem found.
 pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
     let base = path.parent().unwrap_or_else(|| Path::new("."));
     let mut problems = Problems::new();
-    let tls = connector_tls(base, &file.tls)
-        .map_err(|e| problems.push(e))
-        .ok();
-    let ingress_tls = ingress_tls(base, &file.ingress)
-        .map_err(|e| problems.push(e))
-        .ok();
+    let enrolment = file
+        .enrolment
+        .as_ref()
+        .and_then(|e| crate::enrol::check(base, e, &mut problems));
+    let enrolment_ca = enrolment.as_ref().map(|e| e.ca.clone());
+    let tls = listener_tls(base, &file, enrolment_ca, &mut problems);
     let trusted = cidrs(
         "[ingress] trusted_proxies",
         &file.ingress.trusted_proxies,
@@ -363,19 +419,15 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         .providers
         .as_ref()
         .and_then(|p| crate::providers::check(base, p, &mut problems));
-    let (Some(tls), Some(ingress_tls), true) = (tls, ingress_tls, problems.is_empty()) else {
+    let (Some((tls, ingress_tls)), true) = (tls, problems.is_empty()) else {
         return Err(problems);
     };
     let mut gateway = Config::new(Arc::new(tls));
     gateway.connector_allow = allow;
     gateway.route_owners = owners;
     let (key_sets, key_refresh) = with_agents(&mut gateway, agents);
-    let (providers, bot_auth, signer_keys) = match providers {
-        Some(p) => (p.snapshot, p.bot_auth, p.signer_keys),
-        None => (None, None, Vec::new()),
-    };
-    gateway.ingress.providers = providers.as_ref().map(|p| p.providers.clone());
-    gateway.ingress.bot_auth = bot_auth;
+    let (providers, signer_keys) = with_providers(&mut gateway, providers);
+    gateway.ingress.enrolment = enrolment.map(|e| e.enrolment);
     let key_sets = [key_sets, signer_keys].concat();
     gateway.ingress.tls = ingress_tls.map(Arc::new);
     gateway.ingress.trusted_proxies = trusted;

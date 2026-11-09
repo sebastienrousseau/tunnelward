@@ -20,16 +20,17 @@ use std::time::Instant;
 
 use bytes::Bytes;
 use http::header::{
-    ACCESS_CONTROL_ALLOW_ORIGIN, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HOST, RETRY_AFTER,
-    WWW_AUTHENTICATE,
+    AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HOST, RETRY_AFTER, WWW_AUTHENTICATE,
 };
 use http::{HeaderValue, Method, Request, Response, StatusCode, Version};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::{Body, Frame, Incoming, SizeHint};
 
+use crate::answers::{json, metadata, preflight, stamp_request_id};
 use crate::auth;
 use crate::cors::{self, Cors};
+use crate::enrol;
 use crate::forwarding::{Stamp, rewrite};
 use crate::provenance;
 use crate::refusal::{Refusal, refusal_for};
@@ -107,10 +108,13 @@ impl Ingress {
         for o in &ingress.observers {
             o.on_request(&info);
         }
-        if let Some(auth) = &ingress.agent_auth
-            && auth::is_metadata_request(auth, request.method(), request.uri().path())
+        if let Some(enrolment) = &ingress.enrolment
+            && enrol::is_enrolment_path(request.uri().path())
         {
-            return metadata(auth, &info);
+            return self.enrol(enrolment, request, info, started).await;
+        }
+        if let Some(response) = self.metadata(&request, &info) {
+            return response;
         }
         let cors = cors::decide(&ingress.cors, &request);
         let mut response = match cors {
@@ -125,6 +129,18 @@ impl Ingress {
             response.headers_mut().extend(headers);
         }
         response
+    }
+
+    /// The protected-resource metadata, when agent auth is on and
+    /// `request` asks for it.
+    fn metadata(
+        &self,
+        request: &Request<Incoming>,
+        info: &RequestInfo,
+    ) -> Option<Response<IngressBody>> {
+        let auth = self.gateway.inner.config.ingress.agent_auth.as_ref()?;
+        auth::is_metadata_request(auth, request.method(), request.uri().path())
+            .then(|| metadata(auth, info))
     }
 
     /// Authorises, then forwards: the path of every request that is not
@@ -144,6 +160,30 @@ impl Ingress {
         };
         match outcome {
             Ok(response) => self.observed(response, info, started),
+            Err(refusal) => self.refuse(&info, &refusal, started),
+        }
+    }
+
+    /// Answers an enrolment or renewal (connector bootstrap): rate
+    /// limited like any request, never forwarded.
+    async fn enrol(
+        &self,
+        enrolment: &crate::Enrolment,
+        request: Request<Incoming>,
+        info: RequestInfo,
+        started: Instant,
+    ) -> Response<IngressBody> {
+        let answered = match self.admit(&request, &info) {
+            Ok(()) => enrol::respond(enrolment, request).await,
+            Err(refusal) => Err(refusal),
+        };
+        match answered {
+            Ok(body) => {
+                for o in &self.gateway.inner.config.ingress.observers {
+                    o.on_response(&info, StatusCode::OK, started.elapsed());
+                }
+                json(body, &info)
+            }
             Err(refusal) => self.refuse(&info, &refusal, started),
         }
     }
@@ -393,36 +433,6 @@ impl Ingress {
                 .insert(RETRY_AFTER, HeaderValue::from(secs.max(1)));
         }
         response
-    }
-}
-
-/// The gateway's own answer to an allowed CORS preflight: 204, the CORS
-/// headers, and the request id. The connector never sees it.
-fn preflight(headers: &http::HeaderMap, info: &RequestInfo) -> Response<IngressBody> {
-    let mut response = Response::new(Full::new(Bytes::new()).map_err(|e| match e {}).boxed());
-    *response.status_mut() = StatusCode::NO_CONTENT;
-    response.headers_mut().extend(headers.clone());
-    stamp_request_id(response.headers_mut(), info);
-    response
-}
-
-/// The protected-resource metadata, answered by the gateway itself and
-/// readable from any origin.
-fn metadata(auth: &crate::AgentAuth, info: &RequestInfo) -> Response<IngressBody> {
-    let body = Full::new(Bytes::from(auth::metadata(auth)));
-    let mut response = Response::new(body.map_err(|e| match e {}).boxed());
-    let headers = response.headers_mut();
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
-    stamp_request_id(headers, info);
-    response
-}
-
-/// Names the request's id in its response (`tw-request-id`), replacing
-/// any the connector set.
-fn stamp_request_id(headers: &mut http::HeaderMap, info: &RequestInfo) {
-    if let Ok(id) = HeaderValue::from_str(&info.request_id) {
-        headers.insert(provenance::REQUEST_ID, id);
     }
 }
 

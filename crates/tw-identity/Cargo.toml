@@ -3,7 +3,7 @@
 
 [package]
 name = "tunnelward-identity"
-description = "Tunnelward workload identity: X.509-SVIDs, their SPIFFE IDs, and the SPIFFE Workload API"
+description = "Tunnelward workload identity: X.509-SVIDs, their SPIFFE IDs, the SPIFFE Workload API, and enrolment"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,6 +16,8 @@ keywords = ["spiffe", "svid", "x509", "identity", "mtls"]
 categories = ["authentication", "cryptography", "network-programming"]
 
 [dependencies]
+# Enrolment: P-256 keys, signing requests and the CA's signatures.
+aws-lc-rs.workspace = true
 tunnelward-proto.workspace = true
 
 # The Workload API client: gRPC over a Unix socket.

@@ -16,6 +16,11 @@
 //! key = "connector.key"                 # change (every reload_secs, 10)
 //! # workload_api = "unix:///run/spire/sockets/agent.sock"   # or the SPIFFE
 //! #                                     # Workload API, rotating as it sends
+//! # [identity.enrol]                    # or enrol with the gateway (a
+//! # url = "https://gateway.example.org:8443"  # one-time token, then
+//! # token_file = "enrol.token"          # renewal; TUNNELWARD_ENROL_TOKEN
+//! # state_dir = "state"                 # if no file); SVID and key kept here
+//! # ca = "ingress-ca.crt"               # optional: roots for the ingress
 //!
 //! [register]
 //! routes = ["mcp/payments"]
@@ -74,6 +79,16 @@ struct IdentityPart {
     key: Option<PathBuf>,
     workload_api: Option<String>,
     reload_secs: Option<u64>,
+    enrol: Option<EnrolPart>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EnrolPart {
+    url: String,
+    token_file: Option<PathBuf>,
+    state_dir: PathBuf,
+    ca: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -170,21 +185,42 @@ fn register(file: &File, problems: &mut Problems) -> Register {
 }
 
 /// Where the SVID comes from: the files (loaded once now, so a file
-/// for another identity fails the check) or the Workload API endpoint.
+/// for another identity fails the check), the Workload API endpoint, or
+/// enrolment with the gateway.
 fn source(base: &Path, id: &IdentityPart) -> Result<Source, String> {
-    match (&id.cert, &id.key, &id.workload_api) {
-        (Some(cert), Some(key), None) => {
+    match (&id.cert, &id.key, &id.workload_api, &id.enrol) {
+        (Some(cert), Some(key), None, None) => {
             let (cert, key) = (resolve(base, cert), resolve(base, key));
             claims_its_certificate(&identity(&cert, &key)?, &id.spiffe_id)?;
             let every = Duration::from_secs(id.reload_secs.unwrap_or(10).max(1));
             Ok(Source::Files { cert, key, every })
         }
         #[cfg(unix)]
-        (None, None, Some(endpoint)) => tunnelward_identity::workload::socket_path(endpoint)
+        (None, None, Some(endpoint), None) => tunnelward_identity::workload::socket_path(endpoint)
             .map(Source::Workload)
             .map_err(|e| format!("[identity] workload_api: {e}")),
-        _ => Err("[identity]: give cert and key, or workload_api (Unix only)".into()),
+        (None, None, None, Some(enrol)) => enrolment(base, enrol).map(Source::Enrol),
+        _ => Err(
+            "[identity]: give cert and key, workload_api (Unix only), or [identity.enrol]".into(),
+        ),
     }
+}
+
+fn enrolment(base: &Path, part: &EnrolPart) -> Result<crate::enrolled::Enrol, String> {
+    if !part.url.starts_with("https://") {
+        return Err(format!(
+            "[identity.enrol] url {:?}: give an https:// URL",
+            part.url
+        ));
+    }
+    let roots = crate::agents::system_roots(part.ca.as_ref().map(|ca| resolve(base, ca)))
+        .map_err(|e| format!("[identity.enrol] ca: {e}"))?;
+    Ok(crate::enrolled::Enrol {
+        url: part.url.clone(),
+        token_file: part.token_file.as_ref().map(|t| resolve(base, t)),
+        state_dir: resolve(base, &part.state_dir),
+        roots,
+    })
 }
 
 /// A file that passed every check: everything but the SVID itself.

@@ -7,12 +7,17 @@
 //! returns its one URI when it is a SPIFFE ID, as the X.509-SVID
 //! specification requires. It does not verify the certificate: call it
 //! on a certificate the TLS handshake already verified.
+//!
+//! [`enrol`] is the certificate authority a gateway runs to enrol
+//! connectors that have no SVID yet, and the request they send it.
 
 mod der;
+pub mod enrol;
 #[cfg(unix)]
 mod proto;
 #[cfg(unix)]
 pub mod workload;
+mod x509;
 
 use tunnelward_proto::is_spiffe_id;
 

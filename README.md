@@ -84,8 +84,9 @@ tunnelward-gateway = "0.0.11"     # embed a gateway in your server
 
 `tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
 the TLS configuration underneath; `tunnelward-identity` reads a
-connector's SPIFFE ID from its X.509-SVID and fetches SVIDs from the
-SPIFFE Workload API; `tunnelward-mcp` parses MCP
+connector's SPIFFE ID from its X.509-SVID, fetches SVIDs from the
+SPIFFE Workload API, and holds the CA a gateway enrols connectors with;
+`tunnelward-mcp` parses MCP
 envelopes. API documentation is on
 [docs.rs](https://docs.rs/tunnelward-connector).
 
@@ -129,7 +130,7 @@ its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
 | :--- | :--- | :--- |
 | `tunnelward-proto` | Register frames, limits, error codes | Parsing what a connector sends before its identity is known |
 | `tunnelward-crypto` | rustls configuration with hybrid post-quantum key exchange | X25519MLKEM768 on every TLS hop |
-| `tunnelward-identity` | The SPIFFE ID in an X.509-SVID; enrolment tokens later | Proving which workload a connector is |
+| `tunnelward-identity` | The SPIFFE ID in an X.509-SVID; the Workload API client; the enrolment CA and signing requests | Proving which workload a connector is |
 | `tunnelward-attest` | passmcp attestation verification | Admitting only MCP servers that passed passmcp |
 | `tunnelward-policy` | Cedar policy per MCP tool | Allowing or denying each `tools/call` |
 | `tunnelward-mcp` | MCP envelope parsing, Streamable HTTP, SSE | Reading the method and tool name without parsing the body |
@@ -160,6 +161,7 @@ its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
 | Connector identity | The registered SPIFFE ID must be the one in the connector's X.509-SVID; routes owned by identities; registrations per source, domains per gateway and routes per identity enforced | Shipped in 0.0.10 |
 | Agent authorisation | OAuth 2.1 resource server per the MCP authorisation spec: bearer JWTs (ES256, RS256, PS256, EdDSA) checked against each issuer's JWK Set, audience, expiry and scopes; protected-resource metadata (RFC 9728); tokens never passed to connectors | Shipped in 0.0.11 |
 | SVID rotation | Connector SVIDs from the SPIFFE Workload API or from files, rotated without a restart; an SVID for another identity is refused | Shipped in 0.0.11 |
+| Enrolment | A connector with no SVID redeems a one-time token bound to a SPIFFE ID for a short-lived SVID from the gateway's CA, then renews with a new key before it expires; `tunnelward enrol ca`, `token` and `revoke` | Shipped in 0.0.11 |
 | Provider identification | Requests from Anthropic's and OpenAI's published egress ranges tagged with the provider, from a signed, versioned snapshot (`tunnelward providers`); Web Bot Auth signatures (RFC 9421) from listed agents raise the tag to signature level, with a nonce replay check | Shipped in 0.0.11 |
 
 ---

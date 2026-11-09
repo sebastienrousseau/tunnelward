@@ -96,6 +96,9 @@ pub struct IngressConfig {
     pub providers: Option<std::sync::Arc<crate::Providers>>,
     /// Agents whose Web Bot Auth signatures are verified (FR-12).
     pub bot_auth: Option<std::sync::Arc<crate::BotAuth>>,
+    /// Connector enrolment and renewal on this ingress. `None` serves
+    /// neither endpoint.
+    pub enrolment: Option<std::sync::Arc<crate::Enrolment>>,
 }
 
 impl Default for IngressConfig {
@@ -119,6 +122,7 @@ impl Default for IngressConfig {
             agent_auth: None,
             providers: None,
             bot_auth: None,
+            enrolment: None,
         }
     }
 }

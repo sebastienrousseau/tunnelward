@@ -37,6 +37,21 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   `tunnelward_identity::workload` (gRPC over a Unix socket on hyper, an
   in-house protobuf reader; Unix only) and
   `tunnelward_crypto::{RotatingIdentity, client_config_rotating}`.
+- Enrolment tokens: a connector with no SVID gets one from the gateway.
+  `tunnelward enrol ca` makes an ECDSA P-256 CA; with `[enrolment]` the
+  gateway issues SVIDs from it and its connector listener trusts it.
+  `tunnelward enrol token --spiffe-id <id>` prints a one-time token
+  bound to that ID; only its SHA-256 is stored, in a directory the CLI
+  and gateways share, and redeeming it is an atomic rename, so it works
+  once. A connector with `[identity.enrol]` POSTs the token and a
+  signing request to `/.well-known/tunnelward/enrol` on the ingress and
+  gets an SVID (default lifetime 1 h), keeps it and its key in
+  `state_dir`, and two thirds into its life renews at
+  `/.well-known/tunnelward/renew` with a new key, proving it holds the
+  current SVID's key. `tunnelward enrol revoke` stops an identity's
+  renewals. Refusals are `TW-I011`. Certificates, signing requests and
+  key identifiers are written in-house on aws-lc-rs; OpenSSL verifies the
+  CA and an issued SVID in strict mode.
 - Provider identification at the network level (FR-12). A gateway with
   `[providers]` loads a snapshot of AI providers' published egress
   ranges, signed with Ed25519 by a key it trusts, and tags each request

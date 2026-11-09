@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 //! Where a connector's X.509-SVID comes from, and how it stays current:
-//! files read again when they change, or the SPIFFE Workload API's
-//! stream. Every SVID must be for the configured SPIFFE ID, proven by
+//! files read again when they change, the SPIFFE Workload API's stream,
+//! or enrolment with the gateway and renewal. Every SVID must be for the configured SPIFFE ID, proven by
 //! its certificate; one that is not is refused and the current one kept.
 
 use std::path::PathBuf;
@@ -25,6 +25,8 @@ pub(crate) enum Source {
     /// The Workload API on this Unix socket.
     #[cfg(unix)]
     Workload(PathBuf),
+    /// Enrolment with the gateway, then renewal.
+    Enrol(crate::enrolled::Enrol),
 }
 
 /// Fails unless `claimed` is the SPIFFE ID in `id`'s leaf certificate,
@@ -50,6 +52,7 @@ pub(crate) async fn start(
         Source::Files { cert, key, every } => start_files(cert, key, every, spiffe_id),
         #[cfg(unix)]
         Source::Workload(socket) => workload::start(socket, spiffe_id).await,
+        Source::Enrol(enrol) => crate::enrolled::start(enrol, spiffe_id).await,
     }
 }
 

@@ -8,7 +8,7 @@
 //! for. The gateway publishes its protected-resource metadata (RFC 9728)
 //! and never passes the token on to a connector.
 
-mod b64;
+pub(crate) mod b64;
 mod jwk;
 mod jwt;
 mod keys;

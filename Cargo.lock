@@ -787,6 +787,7 @@ dependencies = [
 name = "tunnelward-identity"
 version = "0.0.11"
 dependencies = [
+ "aws-lc-rs",
  "bytes",
  "http",
  "http-body-util",

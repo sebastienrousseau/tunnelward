@@ -18,6 +18,7 @@
 
 mod admin;
 mod admit;
+mod answers;
 mod auth;
 mod botauth;
 mod cidr;
@@ -26,6 +27,7 @@ mod client_addr;
 mod config;
 mod cors;
 mod drain;
+mod enrol;
 mod error;
 mod forwarding;
 mod https;
@@ -54,8 +56,9 @@ pub use client_addr::ClientAddr;
 pub use config::{Config, IngressConfig, RouteOwner};
 pub use cors::CorsRule;
 pub use drain::{DrainReport, DrainTarget};
+pub use enrol::{Enrolment, Tokens, request_enrolment, request_renewal};
 pub use error::{AdmitError, SendError};
-pub use https::https_get;
+pub use https::{https_get, https_post};
 pub use ingress::{Ingress, IngressBody};
 pub use observer::{ProxyObserver, RequestInfo};
 pub use pool::ResponseBody;

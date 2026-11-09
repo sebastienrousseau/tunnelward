@@ -214,6 +214,18 @@ before. 401, only with `[providers] on_invalid = "reject"`; with
 `"downgrade"` the request is served without a signature-level tag. The
 reason names the check.
 
+### TW-I011
+
+**Enrolment refused.** A POST to `/.well-known/tunnelward/enrol` or
+`/renew` did not get an SVID. 403 when the token is unknown, already used
+or expired (issue a new one with `tunnelward enrol token`), or, for a
+renewal, when the SVID is not a current one from this gateway's CA, its
+identity was revoked (`tunnelward enrol revoke`), or the proof does not
+verify with the SVID's key (an expired SVID cannot renew: enrol again
+with a new token). 400 for a body or signing request that does not parse,
+405 for a method other than POST, 413 for a body over 64 KiB, 500 when the token store cannot be
+read or written. The reason names which.
+
 ## Connector (`TW-C`)
 
 A rejected registration reports its `TW-R` id instead.
