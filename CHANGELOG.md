@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.12]
+
+### Fixed
+
+- The release workflow's crates.io job passed cargo a bare `--exclude`
+  when no crate of the version was published yet, and failed before
+  publishing anything; v0.0.11 was published by hand.
+
 ## [0.0.11]
 
 ### Added

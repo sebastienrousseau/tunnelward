@@ -78,8 +78,8 @@ A container image is at `ghcr.io/sebastienrousseau/tunnelward`.
 
 ```toml
 [dependencies]
-tunnelward-connector = "0.0.11"   # embed a connector in your service
-tunnelward-gateway = "0.0.11"     # embed a gateway in your server
+tunnelward-connector = "0.0.12"   # embed a connector in your service
+tunnelward-gateway = "0.0.12"     # embed a gateway in your server
 ```
 
 `tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
