@@ -100,9 +100,10 @@ async fn reload(path: PathBuf, gateway: Gateway, watch: Watch) {
             Ok(checked) => {
                 gateway.set_tls(checked.gateway.tls.clone());
                 gateway.set_ingress_tls(checked.gateway.ingress.tls.clone());
+                gateway.set_policy(checked.gateway.ingress.policy.clone());
                 seen = stamps(&checked.watched);
                 files = checked.watched;
-                println!("tunnelward gateway: certificates reloaded");
+                println!("tunnelward gateway: certificates and policy reloaded");
             }
             Err(e) => {
                 eprintln!(

@@ -102,6 +102,9 @@ pub struct IngressConfig {
     /// Connector enrolment and renewal on this ingress. `None` serves
     /// neither endpoint.
     pub enrolment: Option<std::sync::Arc<crate::Enrolment>>,
+    /// The tool policy (FR-4), replaceable at runtime with
+    /// [`crate::Gateway::set_policy`]. `None` decides nothing.
+    pub policy: Option<std::sync::Arc<dyn tunnelward_policy::PolicyEngine>>,
 }
 
 impl Default for IngressConfig {
@@ -126,6 +129,7 @@ impl Default for IngressConfig {
             providers: None,
             bot_auth: None,
             enrolment: None,
+            policy: None,
         }
     }
 }

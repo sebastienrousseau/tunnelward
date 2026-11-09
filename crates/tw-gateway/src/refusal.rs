@@ -19,6 +19,9 @@ pub(crate) struct Refusal {
     pub(crate) retry_after: Option<Duration>,
     /// `WWW-Authenticate`, for an authorisation refusal.
     pub(crate) challenge: Option<String>,
+    /// A JSON body to answer with instead of the text one: the JSON-RPC
+    /// errors of a call the policy denied.
+    pub(crate) json: Option<bytes::Bytes>,
 }
 
 impl Refusal {
@@ -29,6 +32,7 @@ impl Refusal {
             reason: reason.into(),
             retry_after: None,
             challenge: None,
+            json: None,
         }
     }
 }

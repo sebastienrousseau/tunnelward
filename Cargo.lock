@@ -725,6 +725,7 @@ dependencies = [
  "tunnelward-crypto",
  "tunnelward-gateway",
  "tunnelward-identity",
+ "tunnelward-policy",
  "tunnelward-proto",
  "tunnelward-testpki",
 ]
@@ -779,6 +780,7 @@ dependencies = [
  "tunnelward-crypto",
  "tunnelward-identity",
  "tunnelward-mcp",
+ "tunnelward-policy",
  "tunnelward-proto",
  "tunnelward-testpki",
 ]

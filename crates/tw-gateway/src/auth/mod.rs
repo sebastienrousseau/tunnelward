@@ -91,6 +91,9 @@ pub(crate) struct Principal {
     /// the token's own on single-use paths. A key already there is a
     /// replay.
     pub(crate) once: Vec<bind::Once>,
+    /// The token is bound to a `DPoP` key or a client certificate, and
+    /// the binding checked out: cryptographic evidence (FR-14).
+    pub(crate) bound: bool,
 }
 
 /// A request the ingress refuses: its error id, status, reason and
@@ -128,7 +131,7 @@ pub(crate) async fn authorise_once(
             }
             Err(e) => {
                 return Err(Refused {
-                    id: "TW-I012",
+                    id: crate::state::UNAVAILABLE,
                     status: http::StatusCode::SERVICE_UNAVAILABLE,
                     reason: format!("cannot check for replay: {e}"),
                     challenge: None,
@@ -198,16 +201,23 @@ pub(crate) fn check(
     if !claims.for_audience(&auth.resource) {
         return Err(Denial::Invalid("the token is not for this resource"));
     }
-    let granted = claims.scopes();
-    if !auth.scopes.iter().all(|s| granted.contains(&s.as_str())) {
-        return Err(Denial::Scope);
-    }
+    has_scopes(auth, claims)?;
     let secs = now.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     let once = bind::check(auth, (scheme, raw), claims, request, secs)?;
     Ok(Principal {
         client_id: claims.client_id.clone().or_else(|| claims.azp.clone()),
         once,
+        bound: bind::is_bound(claims),
     })
+}
+
+fn has_scopes(auth: &AgentAuth, claims: &jwt::Claims) -> Result<(), Denial> {
+    let granted = claims.scopes();
+    auth.scopes
+        .iter()
+        .all(|s| granted.contains(&s.as_str()))
+        .then_some(())
+        .ok_or(Denial::Scope)
 }
 
 /// Fails unless `token`'s issuer is listed and one of its keys verifies

@@ -39,6 +39,11 @@ impl TokenRule {
     }
 }
 
+/// Whether the token is bound to a `DPoP` key or a client certificate.
+pub(crate) fn is_bound(claims: &Claims) -> bool {
+    (claims.cnf.as_ref()).is_some_and(|c| c.jkt.is_some() || c.x5t_s256.is_some())
+}
+
 /// The rule for `path`: the longest that covers it.
 pub(crate) fn rule_for<'a>(rules: &'a [TokenRule], path: &str) -> Option<&'a TokenRule> {
     rules
@@ -98,11 +103,7 @@ fn path_rule(
     let Some(rule) = rule_for(&auth.token_rules, path) else {
         return Ok(None);
     };
-    let bound = claims
-        .cnf
-        .as_ref()
-        .is_some_and(|c| c.jkt.is_some() || c.x5t_s256.is_some());
-    if rule.sender_constrained && !bound {
+    if rule.sender_constrained && !is_bound(claims) {
         return Err(Denial::Invalid(
             "this path needs a token bound to a DPoP key or a client certificate",
         ));

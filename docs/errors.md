@@ -240,6 +240,47 @@ store (`[state]`), or the in-process store is full. 503: these checks
 fail closed, so a store outage refuses the request rather than risk a
 replay (ADR 0004). Check the store and its credentials.
 
+## Policy (`TW-P`)
+
+The tool policy (FR-4, `[policy]`) and the idempotency keys of
+high-impact tools (FR-13).
+
+### TW-P001
+
+**Denied by policy.** The policy denies a call in the request: a forbid
+rule matches, no permit rule matches under a deny default, or the call
+falls short of the D6 baseline (no valid token and no provider-range
+match; a high-impact tool without cryptographic evidence). A JSON-RPC
+request gets HTTP 200 with a JSON-RPC error for each request in it
+(code -32001, `data.tw_error` this id); a batch is held back whole when
+any call in it is denied. Anything else, and a JSON body the policy
+cannot read as JSON-RPC, gets 403. The call never reaches the connector.
+
+### TW-P002
+
+**Idempotency key required.** The call is to a tool the policy marks
+high impact, and it has no `Idempotency-Key` header of 1 to 255
+characters. 400. Send one, and the same one on a retry.
+
+### TW-P003
+
+**Still running.** Another call with this `Idempotency-Key` is running,
+at this gateway or another sharing the store. 409 with `Retry-After`.
+Retry with the same key; once it finishes you get its answer.
+
+### TW-P004
+
+**Key reused.** This `Idempotency-Key` was used for a different request
+(another method, path or body). 422. Use a new key for a new call.
+
+### TW-P005
+
+**Outcome unknown.** The first call with this key may have run, but its
+answer is not known: the connection failed after the request left the
+gateway, or the answer was over 1 MiB to keep. 502, now and on every
+retry with the key, so the tool never runs twice to find out. Check the
+service for what happened.
+
 ## Connector (`TW-C`)
 
 A rejected registration reports its `TW-R` id instead.

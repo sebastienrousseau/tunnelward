@@ -49,4 +49,22 @@ impl Gateway {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    /// Replaces the tool policy for the next request; `None` turns it
+    /// off. Requests already decided keep their decision.
+    pub fn set_policy(&self, policy: Option<Arc<dyn tunnelward_policy::PolicyEngine>>) {
+        *self
+            .inner
+            .policy
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = policy;
+    }
+
+    pub(crate) fn policy(&self) -> Option<Arc<dyn tunnelward_policy::PolicyEngine>> {
+        self.inner
+            .policy
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
 }

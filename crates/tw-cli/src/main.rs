@@ -13,6 +13,7 @@ mod doctor;
 mod enrol;
 mod enrolled;
 mod gateway;
+mod policy;
 mod providers;
 mod serve;
 mod signers;
@@ -57,6 +58,9 @@ Commands:
                  Print a one-time token that enrols <id> (default 3600 s)
   enrol revoke --config <gateway file> --spiffe-id <id>
                  Stop <id>'s renewals; its SVID lapses when it expires
+  policy test --policy <file> <cases>
+                 Run the calls in <cases> against a tool policy; fail on
+                 any decision that is not the one expected
 
 Options:
   -h, --help     Print this help
@@ -273,10 +277,27 @@ fn enrol_revoke(args: &Args) -> Result<(), Outcome> {
     }
 }
 
+fn policy(args: &[String]) -> Result<(), Outcome> {
+    let args = Args::parse(args, &["policy"])?;
+    let usage = || UsageError("usage: tunnelward policy test --policy <file> <cases>".into());
+    let ([command, cases], Some(file)) = (args.positional.as_slice(), args.get("policy")) else {
+        return Err(usage().into());
+    };
+    if command != "test" {
+        return Err(usage().into());
+    }
+    let (report, passed) =
+        policy::test(Path::new(file), Path::new(cases)).map_err(Outcome::Failed)?;
+    println!("{report}");
+    passed
+        .then_some(())
+        .ok_or_else(|| Outcome::Failed("a policy case failed".into()))
+}
+
 type Command = fn(&[String]) -> Result<(), Outcome>;
 
 /// Every command, by the names that call it.
-const COMMANDS: [(&[&str], Command); 9] = [
+const COMMANDS: [(&[&str], Command); 10] = [
     (&["-h", "--help"], |_| {
         print!("{USAGE}");
         Ok(())
@@ -292,6 +313,7 @@ const COMMANDS: [(&[&str], Command); 9] = [
     (&["doctor"], doctor),
     (&["providers"], providers),
     (&["enrol"], enrol),
+    (&["policy"], policy),
 ];
 
 fn dispatch(args: &[String]) -> Outcome {

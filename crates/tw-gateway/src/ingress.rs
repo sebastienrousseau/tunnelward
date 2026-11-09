@@ -26,11 +26,12 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::Incoming;
 
-use crate::answers::{json, metadata, preflight, stamp_request_id};
+use crate::answers::{json, metadata, preflight, ready, stamp_request_id};
 use crate::auth;
 use crate::cors::{self, Cors};
 use crate::enrol;
 use crate::forwarding::{Stamp, rewrite};
+use crate::idempotent;
 use crate::observed::Observed;
 use crate::provenance;
 use crate::refusal::{Refusal, refusal_for};
@@ -93,6 +94,13 @@ impl hyper::service::Service<Request<Incoming>> for Ingress {
     }
 }
 
+/// A forwarded request's answer: streamed from the connector, or held
+/// whole by the gateway.
+enum Forwarded {
+    Stream(Response<ResponseBody>),
+    Ready(Response<Full<Bytes>>),
+}
+
 /// The response header naming a refusal's error id.
 const TW_ERROR: http::HeaderName = http::HeaderName::from_static("tw-error");
 
@@ -118,6 +126,7 @@ impl Ingress {
             mcp_session: provenance::declared(headers, tunnelward_mcp::SESSION_HEADER),
             client_id: None,
             provider,
+            evidence: tunnelward_policy::Evidence::Declared,
         };
         for o in &ingress.observers {
             o.on_request(&info);
@@ -170,7 +179,11 @@ impl Ingress {
             Err(refusal) => Err(refusal),
         };
         match outcome {
-            Ok(response) => self.observed(response, info, started),
+            Ok(Forwarded::Stream(response)) => self.observed(response, info, started),
+            Ok(Forwarded::Ready(response)) => {
+                let observers = &self.gateway.inner.config.ingress.observers;
+                ready(observers, response, &info, started)
+            }
             Err(refusal) => self.refuse(&info, &refusal, started),
         }
     }
@@ -199,18 +212,31 @@ impl Ingress {
         }
     }
 
+    /// Admits, buffers and decides `request`, then sends it on: once
+    /// only, for a high-impact tool (FR-13).
     async fn forward(
         &self,
         request: Request<Incoming>,
         info: &RequestInfo,
-    ) -> Result<Response<ResponseBody>, Refusal> {
+    ) -> Result<Forwarded, Refusal> {
         let ingress = &self.gateway.inner.config.ingress;
         self.admit(&request, info).await?;
         let (request, body) = self.buffer(request).await?;
         self.envelope(&request, &body, info);
+        let high_impact = self.decide(&request, &body, info)?;
         let request = self.restate(request, info);
+        if high_impact {
+            let key = idempotent::key(&request, info)?;
+            let once = idempotent::send(
+                &self.gateway,
+                &key,
+                (request, &body),
+                ingress.request_timeout,
+            );
+            return once.await.map(Forwarded::Ready);
+        }
         match tokio::time::timeout(ingress.request_timeout, self.gateway.send(request)).await {
-            Ok(Ok(response)) => Ok(response),
+            Ok(Ok(response)) => Ok(Forwarded::Stream(response)),
             Ok(Err(error)) => Err(refusal_for(&error)),
             Err(_) => Err(Refusal::new(
                 "TW-I006",
@@ -220,6 +246,21 @@ impl Ingress {
         }
     }
 
+    /// The policy's decision on every call in the request, if there is a
+    /// policy: whether one is to a high-impact tool.
+    fn decide(
+        &self,
+        request: &Request<Full<Bytes>>,
+        body: &Bytes,
+        info: &RequestInfo,
+    ) -> Result<bool, Refusal> {
+        let Some(engine) = self.gateway.policy() else {
+            return Ok(false);
+        };
+        let verdict = crate::policy::decide(engine.as_ref(), request.method(), body, info)?;
+        Ok(verdict == crate::policy::Verdict::Forward { high_impact: true })
+    }
+
     /// With [`crate::AgentAuth`] on, admits only a request whose token
     /// passes, and whose token and `DPoP` proof are not replays; records
     /// its client id.
@@ -227,10 +268,10 @@ impl Ingress {
         &self,
         request: &Request<Incoming>,
         info: &mut RequestInfo,
-    ) -> Result<(), Refusal> {
+    ) -> Result<bool, Refusal> {
         let config = &self.gateway.inner.config;
         let Some(auth) = &config.ingress.agent_auth else {
-            return Ok(());
+            return Ok(false);
         };
         let parts = auth::Request {
             method: request.method(),
@@ -245,7 +286,7 @@ impl Ingress {
                 ..Refusal::new(r.id, r.status, r.reason)
             })?;
         info.client_id = principal.client_id;
-        Ok(())
+        Ok(principal.bound)
     }
 
     /// Every check on who sent `request`: the agent's token, then its
@@ -255,14 +296,13 @@ impl Ingress {
         request: &Request<Incoming>,
         info: &mut RequestInfo,
     ) -> Result<(), Refusal> {
-        self.authorise(request, info).await?;
+        let bound = self.authorise(request, info).await?;
         let config = &self.gateway.inner.config;
-        match &config.ingress.bot_auth {
-            Some(bot_auth) => {
-                crate::botauth::identify(bot_auth, config.state.as_ref(), request, info).await
-            }
-            None => Ok(()),
+        if let Some(bot_auth) = &config.ingress.bot_auth {
+            crate::botauth::identify(bot_auth, config.state.as_ref(), request, info).await?;
         }
+        info.evidence = crate::policy::evidence(info, bound);
+        Ok(())
     }
 
     /// Checks that cost nothing: URL length, declared body size, rate.
@@ -421,12 +461,18 @@ impl Ingress {
             o.on_response(info, refusal.status, started.elapsed());
         }
         let url = tunnelward_proto::error_url(refusal.id);
-        let text = format!(
-            "{}: {} [{}] {url}\n",
-            refusal.status, refusal.reason, refusal.id
-        );
-        let mut response =
-            Response::new(Full::new(Bytes::from(text)).map_err(|e| match e {}).boxed());
+        let body = refusal.json.clone().unwrap_or_else(|| {
+            let text = format!(
+                "{}: {} [{}] {url}\n",
+                refusal.status, refusal.reason, refusal.id
+            );
+            Bytes::from(text)
+        });
+        let mut response = Response::new(Full::new(body).map_err(|e| match e {}).boxed());
+        if refusal.json.is_some() {
+            let json = HeaderValue::from_static("application/json");
+            response.headers_mut().insert(CONTENT_TYPE, json);
+        }
         *response.status_mut() = refusal.status;
         response
             .headers_mut()

@@ -31,11 +31,13 @@ mod enrol;
 mod error;
 mod forwarding;
 mod https;
+mod idempotent;
 mod ingress;
 mod kill;
 mod listener;
 mod observed;
 mod observer;
+mod policy;
 mod pool;
 mod provenance;
 mod providers;
@@ -68,6 +70,7 @@ pub use providers::{ProviderError, ProviderTag, Providers};
 pub use ratelimit::RateLimit;
 pub use resolver::{LongestFirst, RouteResolver, Target};
 pub use state::{Claim, InMemory, RedisState, SharedState, StateError, StateFuture};
+pub use tunnelward_policy::{Evidence, PolicyEngine};
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -118,6 +121,8 @@ struct Inner {
     next_request: std::sync::atomic::AtomicU64,
     /// Whether connectors can register, for the admin API's `/readyz`.
     ready: std::sync::atomic::AtomicBool,
+    /// The tool policy, replaceable at runtime.
+    policy: std::sync::RwLock<Option<Arc<dyn tunnelward_policy::PolicyEngine>>>,
 }
 
 impl Gateway {
@@ -128,6 +133,7 @@ impl Gateway {
         let ingress_tls = std::sync::RwLock::new(config.ingress.tls.clone().map(TlsAcceptor::from));
         let limiter = ratelimit::IngressLimit::new(config.ingress.rate_limit);
         let registrations = ratelimit::Limiter::per_minute(config.limits.registrations_per_minute);
+        let policy = std::sync::RwLock::new(config.ingress.policy.clone());
         Self {
             inner: Arc::new(Inner {
                 config,
@@ -138,6 +144,7 @@ impl Gateway {
                 registrations,
                 next_request: std::sync::atomic::AtomicU64::new(0),
                 ready: std::sync::atomic::AtomicBool::new(false),
+                policy,
             }),
         }
     }

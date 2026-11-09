@@ -30,6 +30,7 @@ tokio-rustls.workspace = true
 tunnelward-crypto.workspace = true
 tunnelward-identity.workspace = true
 tunnelward-mcp.workspace = true
+tunnelward-policy.workspace = true
 tunnelward-proto = { workspace = true, features = ["io"] }
 
 [dev-dependencies]

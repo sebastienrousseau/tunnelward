@@ -45,6 +45,32 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   the metadata lists `dpop_signing_alg_values_supported`. Verified
   against RFC 7638's example thumbprint.
 
+- Tool policy (FR-4) in the new `tunnelward-policy` crate: rules that
+  permit or forbid calls by agent (`client_id`), provider, path, JSON-RPC
+  method, tool and least evidence; forbid wins, then permit, then the
+  default (deny unless set). Before the rules, the D6 baseline: every
+  call needs a valid token or a provider-range match, and a tool marked
+  `high_impact` needs cryptographic evidence. Each request now carries
+  its evidence level (`RequestInfo::evidence`, FR-14): cryptographic for
+  a bound token or a verified Web Bot Auth signature, network for a
+  provider-range match, declared otherwise. A denied JSON-RPC call gets a
+  JSON-RPC error from the gateway (code -32001, `TW-P001`) and never
+  reaches the connector; a batch with one denied call is held back
+  whole; a JSON body the policy cannot read as JSON-RPC is refused, so a
+  body the server reads differently cannot carry a call past it. The
+  engine sits behind `PolicyEngine`, so Cedar can stand in once its
+  dependencies are audited (126 crates today). The gateway file names a
+  policy file in `[policy]`, read again when it changes
+  (`Gateway::set_policy`), and `tunnelward policy test` runs a file of
+  example calls against a policy.
+- Idempotency keys on high-impact tools (FR-13): such a call needs an
+  `Idempotency-Key`; the key is claimed in the shared state, a repeat
+  gets the first answer (`tw-idempotent-replay: true`) without the tool
+  running again, at this gateway or another, a repeat while it runs gets
+  409 (`TW-P003`), and the key on another request 422 (`TW-P004`). When
+  the first call's outcome is unknown, repeats get 502 (`TW-P005`) so the
+  tool never runs twice to find out.
+
 ### Changed
 
 - `BotAuth::verify` is async and takes the request parts as a tuple and

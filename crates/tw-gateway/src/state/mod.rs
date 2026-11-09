@@ -24,6 +24,9 @@ mod resp;
 
 pub use redis::RedisState;
 
+/// The error id of a check refused because the store cannot answer.
+pub(crate) const UNAVAILABLE: &str = "TW-I012";
+
 /// What a [`SharedState`] call returns.
 pub type StateFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StateError>> + Send + 'a>>;
 

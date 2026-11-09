@@ -42,6 +42,7 @@ tunnelward-connector = { path = "crates/tw-connector", version = "=0.0.12" }
 tunnelward-gateway = { path = "crates/tw-gateway", version = "=0.0.12" }
 tunnelward-mcp = { path = "crates/tw-mcp", version = "=0.0.12" }
 tunnelward-identity = { path = "crates/tw-identity", version = "=0.0.12" }
+tunnelward-policy = { path = "crates/tw-policy", version = "=0.0.12" }
 tunnelward-testpki = { path = "crates/tw-testpki" }
 cbor4ii = { version = "1.2.4", default-features = false, features = ["serde1", "use_std"] }
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
