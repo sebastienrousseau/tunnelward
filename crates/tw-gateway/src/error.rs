@@ -72,8 +72,8 @@ impl AdmitError {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum SendError {
-    /// No live connector serves the request's host and path, and no
-    /// route is kept for it.
+    /// No live connector serves the request's host and path, no route is
+    /// kept for it, and no connector for it is being admitted.
     NoRoute,
     /// The route exists but no connector had a free slot within
     /// `max_wait`, or its wait queue was full. Answer 503 with this

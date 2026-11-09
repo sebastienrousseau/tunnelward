@@ -9,6 +9,16 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 
 ## [0.0.13]
 
+### Fixed
+
+- A request that arrived just after a connector registered could get
+  404 `TW-S001` ("no connector serves this route"): the connector reads
+  `Accept` before the gateway's side of the connection is ready and its
+  routes are in the registry. A route whose connector is being admitted
+  now makes the request wait, as for a busy or kept route, up to
+  `max_wait`; an admission that fails wakes those requests at once.
+  Seen once in CI on macOS (`a_gateway_and_a_connector_from_their_files_serve_a_request`).
+
 ### Documentation
 
 - ADR 0006 records why the tool policy is an in-house engine before

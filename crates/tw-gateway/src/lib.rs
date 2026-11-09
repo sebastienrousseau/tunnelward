@@ -205,7 +205,8 @@ impl Gateway {
     /// request without a scheme and authority gets `http` and its `Host`
     /// header. Among the connectors whose claim ranks highest, the less
     /// loaded of two picked at random takes it. When none has a free slot,
-    /// or the route is kept with no connector, the request waits up to
+    /// the route is kept with no connector, or a connector for it is
+    /// being admitted, the request waits up to
     /// `max_wait` in a queue bounded by `limits.max_waiting_per_route`.
     ///
     /// The returned body holds the request's slot until it ends or is
