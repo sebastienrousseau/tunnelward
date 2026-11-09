@@ -21,6 +21,14 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   true` in the policy file, `Rule::mismatch`), for example to forbid a
   script dressed as Claude. The plan's risk score is not built: no input
   for it exists yet.
+- Kani proofs for the frame parser (`cargo xtask kani`, and a CI job on
+  Kani 0.68.0): for every buffer up to 12 bytes and every limit, framing
+  never panics, a frame's body lies within the buffer and the limit, and
+  a request for more bytes never reaches past the limit, so reading a
+  frame never allocates more than the limit plus the prefix; the length
+  check refuses exactly the empty and the over-long frame. The framing
+  step is split out of `decode` for this; the CBOR decoding after it
+  stays covered by fuzzing and Miri.
 
 ### Fixed
 

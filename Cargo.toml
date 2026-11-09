@@ -63,6 +63,8 @@ proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+# Kani proofs sit behind cfg(kani) beside the code they prove.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
 missing_docs = "deny"
 unreachable_pub = "warn"
 

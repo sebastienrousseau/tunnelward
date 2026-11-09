@@ -10,7 +10,8 @@
 //! `cargo xtask miri` and `cargo xtask fuzz [seconds] [target]` need a
 //! nightly toolchain, so they are separate tasks with their own CI jobs.
 //! `cargo xtask fuzz-targets` prints the targets as a JSON array, for the
-//! weekly workflow's one job per target.
+//! weekly workflow's one job per target. `cargo xtask kani` runs the Kani
+//! proofs of the frame parser (needs `cargo kani`).
 
 use std::env;
 use std::fs;
@@ -116,6 +117,15 @@ const MIRI: &[Step] = &[Step {
     env: &[("MIRIFLAGS", "-Zmiri-strict-provenance")],
 }];
 
+/// The Kani proofs: frame parsing in tunnelward-proto never panics, never
+/// reads past its buffer, and checks a length before allocating.
+const KANI: &[Step] = &[Step {
+    name: "kani",
+    program: "cargo",
+    args: &["kani", "-p", "tunnelward-proto", "--features", "io"],
+    env: &[],
+}];
+
 /// Fuzz targets, each with a committed seed corpus in `fuzz/seeds/<name>`.
 const FUZZ_TARGETS: &[&str] = &["decode", "envelope", "proxy", "svid"];
 
@@ -214,22 +224,28 @@ fn fuzz_secs(arg: Option<&str>) -> Result<u32, String> {
     })
 }
 
-const USAGE: &str = "usage: cargo xtask <ci | miri | fuzz [seconds] [target] | fuzz-targets>";
+const USAGE: &str =
+    "usage: cargo xtask <ci | miri | kani | fuzz [seconds] [target] | fuzz-targets>";
 
-fn main() -> ExitCode {
-    let args: Vec<String> = env::args().skip(1).collect();
-    let result = match args.first().map(String::as_str) {
+/// Runs the task `args` names.
+fn task(args: &[String]) -> Result<(), String> {
+    let arg = |i: usize| args.get(i).map(String::as_str);
+    match arg(0) {
         Some("ci") => run_all(STEPS),
         Some("miri") => run_all(MIRI),
-        Some("fuzz") => fuzz_secs(args.get(1).map(String::as_str))
-            .and_then(|secs| fuzz(secs, &fuzz_targets(args.get(2).map(String::as_str))?)),
+        Some("kani") => run_all(KANI),
+        Some("fuzz") => fuzz(fuzz_secs(arg(1))?, &fuzz_targets(arg(2))?),
         Some("fuzz-targets") => {
             println!("{}", fuzz_targets_json());
             Ok(())
         }
         _ => Err(USAGE.to_owned()),
-    };
-    match result {
+    }
+}
+
+fn main() -> ExitCode {
+    let args: Vec<String> = env::args().skip(1).collect();
+    match task(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(msg) => {
             eprintln!("xtask: {msg}");
