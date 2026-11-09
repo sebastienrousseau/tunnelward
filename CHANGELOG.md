@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.13]
+
+### Documentation
+
+- ADR 0006 records why the tool policy is an in-house engine before
+  Cedar (126 unaudited crates) and when Cedar comes in; ADR 0007 records
+  the composite ML-DSA-65 + Ed25519 signature format, why it is not the
+  IETF LAMPS draft's encoding yet, and why leases and enrolment tokens
+  are not signed.
+
 ## [0.0.12]
 
 ### Added
