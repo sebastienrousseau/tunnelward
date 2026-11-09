@@ -12,9 +12,17 @@
 //!                                       # SSL_CERT_FILE, then the system bundle
 //! refresh_secs = 600                    # how often to fetch jwks_uri again
 //!
+//! dpop_window_secs = 60                 # how far a DPoP proof's iat may be off
+//!
 //! [[agents.issuers]]
 //! issuer = "https://auth.example.org"   # exactly as in the tokens' iss
 //! jwks_uri = "https://auth.example.org/.well-known/jwks.json"   # or jwks = "keys.json"
+//!
+//! [[agents.paths]]                      # optional (FR-13): what a path demands
+//! path = "/mcp/payments"                # this path and everything under it
+//! sender_constrained = true             # tokens bound to a DPoP key or a
+//!                                       # client certificate only
+//! single_use = true                     # each token's jti once
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -23,7 +31,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 use tunnelward_crypto::rustls::RootCertStore;
-use tunnelward_gateway::{AgentAuth, Issuer, KeySet};
+use tunnelward_gateway::{AgentAuth, Issuer, KeySet, TokenRule};
 
 use crate::config::{Problems, resolve, roots};
 
@@ -42,8 +50,48 @@ pub(crate) struct Agents {
     scopes: Vec<String>,
     ca: Option<PathBuf>,
     refresh_secs: Option<u64>,
+    dpop_window_secs: Option<u64>,
     #[serde(default)]
     issuers: Vec<IssuerPart>,
+    #[serde(default)]
+    paths: Vec<PathPart>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PathPart {
+    path: String,
+    #[serde(default)]
+    sender_constrained: bool,
+    #[serde(default)]
+    single_use: bool,
+}
+
+/// The `[[agents.paths]]` rules, each path given once and starting `/`.
+fn token_rules(parts: &[PathPart], problems: &mut Problems) -> Vec<TokenRule> {
+    let mut seen = std::collections::HashSet::new();
+    for part in parts {
+        let at = format!("[[agents.paths]] path {:?}", part.path);
+        if !part.path.starts_with('/') {
+            problems.push(format!("{at}: start it with /"));
+        }
+        if !seen.insert(part.path.trim_end_matches('/')) {
+            problems.push(format!("{at} is listed twice"));
+        }
+        if !part.sender_constrained && !part.single_use {
+            problems.push(format!(
+                "{at}: demands nothing; set sender_constrained or single_use"
+            ));
+        }
+    }
+    parts
+        .iter()
+        .map(|p| TokenRule {
+            path: p.path.clone(),
+            sender_constrained: p.sender_constrained,
+            single_use: p.single_use,
+        })
+        .collect()
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,6 +122,7 @@ pub(crate) fn check(base: &Path, agents: &Agents, problems: &mut Problems) -> Op
     if agents.issuers.is_empty() {
         problems.push("[agents]: name at least one [[agents.issuers]]".into());
     }
+    let rules = token_rules(&agents.paths, problems);
     let mut fetched = Vec::new();
     let issuers: Vec<Issuer> = agents
         .issuers
@@ -83,6 +132,10 @@ pub(crate) fn check(base: &Path, agents: &Agents, problems: &mut Problems) -> Op
     (problems.len() == before).then(|| {
         let mut auth = AgentAuth::new(agents.resource.clone(), issuers);
         auth.scopes.clone_from(&agents.scopes);
+        auth.token_rules = rules;
+        if let Some(secs) = agents.dpop_window_secs {
+            auth.dpop_window = Duration::from_secs(secs.clamp(5, 600));
+        }
         Checked {
             auth,
             fetched,

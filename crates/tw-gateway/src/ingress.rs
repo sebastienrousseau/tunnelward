@@ -206,20 +206,30 @@ impl Ingress {
         }
     }
 
-    /// With [`crate::AgentAuth`] on, admits only a request whose bearer
-    /// token passes, recording its client id.
-    fn authorise(
+    /// With [`crate::AgentAuth`] on, admits only a request whose token
+    /// passes, and whose token and `DPoP` proof are not replays; records
+    /// its client id.
+    async fn authorise(
         &self,
         request: &Request<Incoming>,
         info: &mut RequestInfo,
     ) -> Result<(), Refusal> {
-        let Some(auth) = &self.gateway.inner.config.ingress.agent_auth else {
+        let config = &self.gateway.inner.config;
+        let Some(auth) = &config.ingress.agent_auth else {
             return Ok(());
         };
-        let principal = auth::authorise(auth, request.headers()).map_err(|r| Refusal {
-            challenge: Some(r.challenge),
-            ..Refusal::new(r.id, r.status, r.reason)
-        })?;
+        let parts = auth::Request {
+            method: request.method(),
+            path: request.uri().path(),
+            headers: request.headers(),
+            client_cert: None,
+        };
+        let principal = auth::authorise_once(auth, config.state.as_ref(), &parts)
+            .await
+            .map_err(|r| Refusal {
+                challenge: r.challenge,
+                ..Refusal::new(r.id, r.status, r.reason)
+            })?;
         info.client_id = principal.client_id;
         Ok(())
     }
@@ -231,7 +241,7 @@ impl Ingress {
         request: &Request<Incoming>,
         info: &mut RequestInfo,
     ) -> Result<(), Refusal> {
-        self.authorise(request, info)?;
+        self.authorise(request, info).await?;
         let config = &self.gateway.inner.config;
         match &config.ingress.bot_auth {
             Some(bot_auth) => {
@@ -332,8 +342,10 @@ impl Ingress {
         rewrite(request.headers_mut(), &stamp);
         stamp_request_id(request.headers_mut(), info);
         if ingress.agent_auth.is_some() {
-            // The token is for the gateway; passing it on is forbidden.
+            // The token and its DPoP proof are for the gateway; passing
+            // them on is forbidden.
             request.headers_mut().remove(AUTHORIZATION);
+            request.headers_mut().remove("dpop");
         }
         request
     }

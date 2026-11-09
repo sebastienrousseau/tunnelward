@@ -28,6 +28,18 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   connection is reopened. The gateway file's `[state]` section sets it
   up (`url`, `password_env`, `ca`, `gateways`). A new CI job runs its
   tests against Valkey 9.1.
+- Token replay defences (FR-13). A token bound to a DPoP key (RFC 9449,
+  `cnf.jkt`) works only with the `DPoP` scheme and a proof signed by that
+  key for this method, URL and token, issued within `dpop_window` (60 s);
+  a copied token fails from another client. A token bound to a client
+  certificate (RFC 8705, `cnf.x5t#S256`) is refused unless the connection
+  presents it. `AgentAuth::token_rules` (`[[agents.paths]]`) can demand
+  bound tokens on a path, and single use of each token's `jti`. Proof and
+  token `jti`s are recorded in the shared state, so a replay to another
+  gateway is refused too; when the store cannot answer the request gets
+  503 `TW-I012`. The `DPoP` header is never passed to a connector, and
+  the metadata lists `dpop_signing_alg_values_supported`. Verified
+  against RFC 7638's example thumbprint.
 
 ### Changed
 

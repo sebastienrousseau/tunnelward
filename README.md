@@ -164,6 +164,7 @@ its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
 | Enrolment | A connector with no SVID redeems a one-time token bound to a SPIFFE ID for a short-lived SVID from the gateway's CA, then renews with a new key before it expires; `tunnelward enrol ca`, `token` and `revoke` | Shipped in 0.0.11 |
 | Provider identification | Requests from Anthropic's and OpenAI's published egress ranges tagged with the provider, from a signed, versioned snapshot (`tunnelward providers`); Web Bot Auth signatures (RFC 9421) from listed agents raise the tag to signature level, with a nonce replay check | Shipped in 0.0.11 |
 | Shared state | Replay caches and rate limits shared by several gateways through a Redis-compatible store (`[state]`), so a replay is caught whichever gateway it reaches; replay checks fail closed and rate limits fail open when the store is down | Shipped in 0.0.12 |
+| Token replay defences | DPoP-bound tokens (RFC 9449) work only with a proof by their key; certificate-bound tokens (RFC 8705) only from their certificate; paths can demand bound or single-use tokens (`[[agents.paths]]`); replays refused across gateways | Shipped in 0.0.12 |
 
 ---
 

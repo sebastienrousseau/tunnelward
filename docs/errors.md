@@ -190,7 +190,13 @@ the origin to the path's rule if the page should reach the service.
 **Unauthorized.** Agent authorisation (`[agents]`) is on and the request
 has no bearer token, or its token fails a check: an issuer not listed, a
 signature no key of that issuer verifies, an `aud` that is not the
-gateway's `resource`, or an `exp` or `nbf` outside the 60 s leeway. 401
+gateway's `resource`, or an `exp` or `nbf` outside the 60 s leeway. Also
+for the replay defences (FR-13): a token bound to a DPoP key (`cnf.jkt`)
+without a valid proof by that key (the challenge is then `DPoP
+error="invalid_dpop_proof"`), a bound token sent as `Bearer`, a token
+bound to a client certificate the connection did not present, a path in
+`[[agents.paths]]` that needs a bound or single-use token, and a token or
+proof used before. 401
 with `WWW-Authenticate`, whose `error_description` names the check and
 whose `resource_metadata` points at the gateway's protected-resource
 metadata, where an MCP client finds the authorisation server. Get a token
@@ -225,6 +231,14 @@ verify with the SVID's key (an expired SVID cannot renew: enrol again
 with a new token). 400 for a body or signing request that does not parse,
 405 for a method other than POST, 413 for a body over 64 KiB, 500 when the token store cannot be
 read or written. The reason names which.
+
+### TW-I012
+
+**Shared state unavailable.** A check that must record a first use (a
+DPoP proof's or a single-use token's `jti`) could not reach the shared
+store (`[state]`), or the in-process store is full. 503: these checks
+fail closed, so a store outage refuses the request rather than risk a
+replay (ADR 0004). Check the store and its credentials.
 
 ## Connector (`TW-C`)
 

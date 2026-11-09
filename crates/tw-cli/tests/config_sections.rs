@@ -114,3 +114,36 @@ fn write_snapshot(path: &Path, range: &str) -> Res<()> {
     );
     Ok(std::fs::write(path, json)?)
 }
+
+#[test]
+fn agent_path_rules_check_ok_or_list_their_problems() -> Res<()> {
+    let dir = pki_dir("agent-paths")?;
+    std::fs::write(dir.join("keys.json"), r#"{"keys":[]}"#)?;
+    let base = "[agents]\nresource = \"https://mcp.example.org\"\ndpop_window_secs = 30\n\
+                [[agents.issuers]]\nissuer = \"https://as.example.org\"\njwks = \"keys.json\"\n";
+    let good = format!(
+        "{base}[[agents.paths]]\npath = \"/mcp/pay\"\nsender_constrained = true\nsingle_use = true\n"
+    );
+    let path = write_config(&dir, &good)?;
+    let out = tunnelward(&["config", "check", &path.to_string_lossy()])?;
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let bad = format!(
+        "{base}[[agents.paths]]\npath = \"mcp\"\nsingle_use = true\n\
+         [[agents.paths]]\npath = \"/x\"\n\
+         [[agents.paths]]\npath = \"/x/\"\nsingle_use = true\n"
+    );
+    let path = write_config(&dir, &bad)?;
+    let out = tunnelward(&["config", "check", &path.to_string_lossy()])?;
+    let errors = text(&out.stderr);
+    for expected in [
+        "path \"mcp\": start it with /",
+        "path \"/x\": demands nothing",
+        "path \"/x/\" is listed twice",
+    ] {
+        assert!(
+            errors.contains(expected),
+            "{expected} missing from: {errors}"
+        );
+    }
+    Ok(std::fs::remove_dir_all(dir)?)
+}

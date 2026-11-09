@@ -50,7 +50,7 @@ mod state;
 mod tls;
 
 pub use admin::{AdminConfig, Connection, Inventory, Redaction};
-pub use auth::{AgentAuth, Issuer, KeyError, KeySet};
+pub use auth::{AgentAuth, Issuer, KeyError, KeySet, TokenRule};
 pub use botauth::{BotAuth, BotAuthError, OnInvalid, Signer};
 pub use cidr::{Cidr, CidrError};
 pub use client_addr::ClientAddr;
