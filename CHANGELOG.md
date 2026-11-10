@@ -9,7 +9,49 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 
 ## [0.0.14]
 
+### Added
+
+- The audit log (FR-15, FR-18, ADR 0008), in a new published crate,
+  `tunnelward-audit`. With `[audit]` in the gateway's file (or
+  `Config::audit`), every ingress request and every admin dark or drain
+  action is written to a JSON Lines file in which each line names the
+  SHA-256 of the line before. Every 1,000 lines or 60 seconds, and when
+  the gateway stops, a checkpoint line signs the chain's head with a
+  composite ML-DSA-65 + Ed25519 key. An entry records the request id,
+  method, host and path (never the query string), the caller as the
+  gateway knew it (OAuth client, provider, evidence level, mismatches),
+  the MCP calls with a SHA-256 of each call's arguments, the SHA-256 of
+  the request and response bodies, the decision, status, size and time.
+  When the writer cannot keep up, entries are dropped rather than
+  holding up requests, and a gap line records how many.
+- Pseudonyms by default (FR-18, D7): the client address and the SHA-256
+  of a client certificate are written as HMAC-SHA-256 pseudonyms under a
+  key the operator keeps, and admin targets naming an address are too.
+  `raw_days` (1 to 30) keeps the raw values in a file beside the log,
+  pruned to the window daily, so pruning never breaks the chain.
+- Signed call receipts (FR-15): with `receipts = true`, every answer
+  carries `tw-receipt`, a composite signature over the request id,
+  method, host, path, caller, calls, request digest, decision and
+  status. Signing one took 90 to 100 µs and checking one 66 to 71 µs
+  in a release build on the development laptop, and the header is about
+  5 KB, so receipts are off by default. `cargo xtask bench` now measures
+  them too.
+- `tunnelward audit keygen` (a signing key and a pseudonym key),
+  `audit verify` (chain, order and checkpoints, naming the first line
+  that fails and how many lines after the last checkpoint are
+  unsigned), `audit export` (each entry as an OCSF 1.3.0 HTTP Activity or
+  API Activity event) and `receipt verify`.
+- `tunnelward dev --audit <key>` logs to `audit.jsonl` beside the key,
+  with receipts and a checkpoint after every line.
+
 ### Changed
+
+- Unpadded base64url moved from the gateway into `tunnelward-audit`
+  (`tunnelward_audit::b64`), which receipts and the gateway share.
+- RFC 3161 anchoring of checkpoints, planned for 0.0.14, is left for a
+  later version: verifying a timestamp token needs a DER and CMS parser
+  that is either about ten new dependencies or new code of our own, a
+  choice made on its own (ADR 0008).
 
 - The MCP reference server for the stdio bridge's CI check is installed
   with `npm ci` from a committed lockfile
