@@ -44,6 +44,9 @@ pub(crate) struct Dev {
     pub(crate) route: String,
     /// Where the admin API listens, if anywhere.
     pub(crate) admin: Option<SocketAddr>,
+    /// An audit signing key from `tunnelward audit keygen`: the log goes
+    /// to `audit.jsonl` beside it, with receipts on.
+    pub(crate) audit: Option<std::path::PathBuf>,
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -116,11 +119,29 @@ fn connector(
 /// A gateway trusting only `connector_cert`, with its own fresh identity.
 fn gateway(
     connector_cert: CertificateDer<'static>,
+    audit: Option<Arc<tunnelward_audit::Sink>>,
 ) -> Result<(Gateway, CertificateDer<'static>), Error> {
     let (identity, cert) = self_signed(GATEWAY_NAME, None)?;
     let auth = ClientAuth::Required(trusting(connector_cert)?);
     let tls = server_config(identity, auth, KeyExchange::default(), &[ALPN])?;
-    Ok((Gateway::new(Config::new(Arc::new(tls))), cert))
+    let mut config = Config::new(Arc::new(tls));
+    config.audit = audit;
+    Ok((Gateway::new(config), cert))
+}
+
+/// The audit log for `key`: `audit.jsonl` beside it, receipts on, and a
+/// checkpoint after every line, so a dev log is signed to its end even
+/// when the process is killed.
+fn audit(key: &std::path::Path) -> Result<Arc<tunnelward_audit::Sink>, Error> {
+    let section = format!(
+        "path = \"audit.jsonl\"\nkey = {:?}\ncheckpoint_every = 1\nreceipts = true\n",
+        key.file_name().unwrap_or_default().to_string_lossy()
+    );
+    let section: crate::audit::Section = toml::from_str(&section)?;
+    let base = key.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let mut problems = Vec::new();
+    let settings = crate::audit::check(base, &section, &mut problems).ok_or(problems.join("\n"))?;
+    Ok(Arc::new(tunnelward_audit::Sink::open(settings)?))
 }
 
 /// Waits until the connector's route is registered.
@@ -186,7 +207,8 @@ pub(crate) async fn run(dev: Dev) -> Result<(), Error> {
     let to = target_addr(&dev.to)?;
     loopback_only(&dev)?;
     let (connector_identity, connector_cert) = self_signed(CONNECTOR_NAME, Some(CONNECTOR_ID))?;
-    let (gateway, gateway_cert) = gateway(connector_cert)?;
+    let sink = dev.audit.as_deref().map(audit).transpose()?;
+    let (gateway, gateway_cert) = gateway(connector_cert, sink)?;
     let (listeners, at, agents) = listeners(&dev).await?;
     let serving = gateway.clone();
     let servers = tokio::spawn(async move { until_one_stops(&serving, listeners).await });

@@ -14,7 +14,13 @@ use crate::serve::{Listeners, bind, until_one_stops};
 /// Binds every listener, then serves until one fails.
 pub(crate) async fn run(path: &Path) -> Result<(), String> {
     let file = config::load(path)?;
-    let checked = config::check(path, file).map_err(|problems| problems.join("\n"))?;
+    let mut checked = config::check(path, file).map_err(|problems| problems.join("\n"))?;
+    let audit = checked
+        .audit
+        .take()
+        .map(|settings| tunnelward_audit::Sink::open(settings).map(std::sync::Arc::new))
+        .transpose()?;
+    checked.gateway.audit.clone_from(&audit);
     // At once: a file renewed from here on is seen as a change.
     let watch = Watch {
         seen: stamps(&checked.watched),
@@ -43,6 +49,10 @@ pub(crate) async fn run(path: &Path) -> Result<(), String> {
     );
     let stopped = until_one_stops(&gateway, listeners).await;
     tasks.iter().for_each(tokio::task::JoinHandle::abort);
+    // A last checkpoint signs everything written.
+    if let Some(sink) = &audit {
+        sink.close();
+    }
     stopped
 }
 
