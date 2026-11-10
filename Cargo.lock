@@ -721,6 +721,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "toml",
+ "tunnelward-audit",
  "tunnelward-connector",
  "tunnelward-crypto",
  "tunnelward-gateway",
@@ -737,6 +738,12 @@ version = "0.0.14"
 [[package]]
 name = "tunnelward-audit"
 version = "0.0.14"
+dependencies = [
+ "aws-lc-rs",
+ "serde",
+ "serde_json",
+ "tunnelward-crypto",
+]
 
 [[package]]
 name = "tunnelward-bench"
@@ -748,6 +755,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "tokio",
+ "tunnelward-audit",
  "tunnelward-connector",
  "tunnelward-crypto",
  "tunnelward-gateway",
@@ -796,6 +804,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-rustls",
+ "tunnelward-audit",
  "tunnelward-connector",
  "tunnelward-crypto",
  "tunnelward-identity",

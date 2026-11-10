@@ -27,6 +27,7 @@ serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
 tokio-rustls.workspace = true
+tunnelward-audit.workspace = true
 tunnelward-crypto.workspace = true
 tunnelward-identity.workspace = true
 tunnelward-mcp.workspace = true
