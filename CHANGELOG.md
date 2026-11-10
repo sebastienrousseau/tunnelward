@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.14]
+
+### Changed
+
+- The MCP reference server for the stdio bridge's CI check is installed
+  with `npm ci` from a committed lockfile
+  (`scripts/stdio-reference/`), so it and every dependency are pinned
+  by hash. This landed on main after the v0.0.13 tag, closing
+  Scorecard's PinnedDependencies alert.
+
 ## [0.0.13]
 
 ### Added
@@ -28,8 +38,7 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   2.0.1, through the bridge: initialise, list and call tools, and
   receive its log messages on the event stream
   (`scripts/stdio-reference.sh`; the server runs in a container with no
-  network, installed with `npm ci` from a committed lockfile, so it and
-  every dependency are pinned by hash).
+  network).
 - The first benchmark numbers against NFR-1 to NFR-3, in
   `docs/BENCHMARKS.md`, from `cargo xtask bench` (a new, unpublished
   `tunnelward-bench` crate using only the workspace's own dependencies).
