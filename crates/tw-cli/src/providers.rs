@@ -25,7 +25,7 @@ use tunnelward_gateway::Cidr;
 
 mod keys;
 
-pub(crate) use keys::{keygen, sign};
+pub(crate) use keys::{keygen, sign, write_new};
 
 /// How a source lists its ranges.
 #[derive(Debug, Clone, Copy)]

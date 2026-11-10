@@ -225,7 +225,7 @@ impl Gateway {
         let path = request.uri().path();
         match *request.method() {
             Method::GET => self.get(path, query),
-            Method::POST => self.post(path, query).await,
+            Method::POST => self.post(path, query, peer.ip()).await,
             _ => elsewhere(path),
         }
     }
@@ -252,10 +252,10 @@ impl Gateway {
         }
     }
 
-    async fn post(&self, path: &str, query: &str) -> Answer {
+    async fn post(&self, path: &str, query: &str, peer: IpAddr) -> Answer {
         match path {
-            "/drain" => self.drain_request(query).await,
-            "/dark" => self.dark_request(query),
+            "/drain" => self.drain_request(query, peer).await,
+            "/dark" => self.dark_request(query, peer),
             _ => elsewhere(path),
         }
     }
@@ -272,7 +272,25 @@ impl Gateway {
         self.dark().iter().map(label).collect()
     }
 
-    fn dark_request(&self, query: &str) -> Answer {
+    /// Records an admin action in the audit log (G14), with addresses
+    /// as pseudonyms.
+    fn audit(&self, action: &str, target: &DrainTarget, changed: bool, peer: IpAddr) {
+        let Some(sink) = &self.inner.config.audit else {
+            return;
+        };
+        let pseudonyms = sink.pseudonyms();
+        let target = match target {
+            DrainTarget::Peer(ip) => {
+                format!("peer:{}", pseudonyms.of("ip", ip.to_string().as_bytes()))
+            }
+            other => label(other),
+        };
+        let peer = pseudonyms.of("ip", peer.to_string().as_bytes());
+        let entry = tunnelward_audit::AdminEntry::new(action, target, changed, peer);
+        sink.record(tunnelward_audit::Entry::Admin(entry), None);
+    }
+
+    fn dark_request(&self, query: &str, peer: IpAddr) -> Answer {
         let on = match param(query, "on") {
             Some("true") => true,
             Some("false") => false,
@@ -284,17 +302,19 @@ impl Gateway {
                 "name connector=<32 hex>, route=<route> or peer=<ip>\n",
             );
         };
-        let changed = self.set_dark(target, on);
+        let changed = self.set_dark(target.clone(), on);
+        self.audit(if on { "dark" } else { "light" }, &target, changed, peer);
         json(&serde_json::json!({ "changed": changed, "dark": self.dark_labels() }))
     }
 
-    async fn drain_request(&self, query: &str) -> Answer {
+    async fn drain_request(&self, query: &str, peer: IpAddr) -> Answer {
         let (Some(target), Some(deadline)) = (drain_target(query), drain_deadline(query)) else {
             return text(
                 StatusCode::BAD_REQUEST,
                 "name connector=<32 hex>, route=<route> or peer=<ip>, and deadline_ms up to 600000\n",
             );
         };
+        self.audit("drain", &target, true, peer);
         let report = self.drain(&target, deadline).await;
         json(&serde_json::json!({
             "sessions": report.sessions,

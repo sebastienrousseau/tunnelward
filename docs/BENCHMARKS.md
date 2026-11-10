@@ -101,3 +101,27 @@ the same cores, and throughput varied by about a third between runs, so
 the result says more about the machine than about the gateway. It needs
 at least 8 cores for the gateway and a second machine, or more cores,
 for the load.
+
+## Call receipts (FR-15)
+
+**What:** issuing and checking one signed `tw-receipt` (ADR 0008), for
+a `tools/call` with one argument digest. Issuing is on the request path
+when `receipts = true`, so it counts against NFR-1's budget; checking is
+what a client or auditor does offline. Measured at v0.0.14 with
+`tunnelward-bench receipts`: five runs of 1,000 each, on the machine
+above with Rust 1.99.0.
+
+| Run | Issue | Verify | Header |
+| ---: | ---: | ---: | ---: |
+| 1 | 100 µs | 69 µs | 5045 B |
+| 2 | 93 µs | 68 µs | 5045 B |
+| 3 | 90 µs | 71 µs | 5045 B |
+| 4 | 95 µs | 70 µs | 5045 B |
+| 5 | 90 µs | 66 µs | 5045 B |
+
+**Reading:** issuing a receipt takes 90 to 100 µs, about a fifth of
+NFR-1's 500 µs at p50, and adds a 5 KB header; that is why receipts are
+off by default. The latency figures above were measured without them.
+Writing the audit log itself happens off the request path, on the
+writer's own thread; its cost to a request (hashing the body, queueing
+an entry) is not measured separately yet.

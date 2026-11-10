@@ -3,7 +3,7 @@
 
 [package]
 name = "tunnelward-audit"
-description = "Tunnelward hash-chained audit log with an offline verifier"
+description = "Tunnelward hash-chained audit log with signed checkpoints, pseudonyms, signed call receipts and an offline verifier"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,8 +11,17 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-# Not published until the crate has an API worth depending on.
-publish = false
+readme.workspace = true
+keywords = ["audit", "hash-chain", "receipts", "mcp", "post-quantum"]
+categories = ["cryptography", "network-programming"]
+
+[dependencies]
+# Composite ML-DSA-65 + Ed25519 signatures (checkpoints and receipts).
+tunnelward-crypto.workspace = true
+# SHA-256, HMAC-SHA-256 and random keys.
+aws-lc-rs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

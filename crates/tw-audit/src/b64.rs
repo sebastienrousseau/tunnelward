@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-only
 
-//! Unpadded base64url (RFC 4648 section 5), as JOSE uses it.
+//! Unpadded base64url (RFC 4648 section 5), as JOSE and receipts use it,
+//! and the standard alphabet with padding that RFC 9651 uses.
 
 /// `text` decoded; `None` for a character outside the alphabet, padding,
 /// an impossible length, or stray bits in the last character.
-pub(crate) fn decode(text: &str) -> Option<Vec<u8>> {
+#[must_use]
+pub fn decode(text: &str) -> Option<Vec<u8>> {
     if text.len() % 4 == 1 {
         return None;
     }
@@ -25,7 +27,8 @@ pub(crate) fn decode(text: &str) -> Option<Vec<u8>> {
 
 /// `text` in standard base64 (`+`, `/`) with `=` padding to a multiple
 /// of four, decoded; as RFC 9651 byte sequences use it.
-pub(crate) fn decode_standard(text: &str) -> Option<Vec<u8>> {
+#[must_use]
+pub fn decode_standard(text: &str) -> Option<Vec<u8>> {
     if !text.len().is_multiple_of(4) {
         return None;
     }
@@ -37,7 +40,8 @@ pub(crate) fn decode_standard(text: &str) -> Option<Vec<u8>> {
 }
 
 /// `bytes` as unpadded base64url.
-pub(crate) fn encode(bytes: &[u8]) -> String {
+#[must_use]
+pub fn encode(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {

@@ -52,6 +52,8 @@
 //!
 //! [policy]                      # optional: tool policy (see policy.rs)
 //! file = "policy.toml"          # read again when it changes
+//!
+//! [audit]                       # optional: the audit log (see audit.rs)
 //! ```
 
 use std::net::SocketAddr;
@@ -87,6 +89,7 @@ pub(crate) struct File {
     enrolment: Option<crate::enrol::Section>,
     state: Option<crate::state::Section>,
     policy: Option<crate::policy::Section>,
+    audit: Option<crate::audit::Section>,
 }
 
 impl File {
@@ -231,6 +234,8 @@ pub(crate) struct Checked {
     pub(crate) key_refresh: std::time::Duration,
     /// The provider snapshot, to reload when it changes (FR-12).
     pub(crate) providers: Option<crate::providers::Loaded>,
+    /// The audit log to open when the gateway starts.
+    pub(crate) audit: Option<tunnelward_audit::Settings>,
 }
 
 /// Reads and parses `path`. A parse error names the line and column.
@@ -397,6 +402,7 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         .as_ref()
         .and_then(|p| crate::providers::check(base, p, &mut problems));
     let (shared, policy) = state_and_policy(base, &file, &mut problems);
+    let audit = (file.audit.as_ref()).and_then(|a| crate::audit::check(base, a, &mut problems));
     let (Some((tls, ingress_tls)), true) = (tls, problems.is_empty()) else {
         return Err(problems);
     };
@@ -424,5 +430,6 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         key_sets,
         key_refresh,
         providers,
+        audit,
     })
 }

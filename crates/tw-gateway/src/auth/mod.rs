@@ -8,7 +8,7 @@
 //! for. The gateway publishes its protected-resource metadata (RFC 9728)
 //! and never passes the token on to a connector.
 
-pub(crate) mod b64;
+pub(crate) use tunnelward_audit::b64;
 mod bind;
 mod dpop;
 mod jwk;

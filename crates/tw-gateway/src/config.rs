@@ -48,6 +48,10 @@ pub struct Config {
     /// State shared with other gateways (ADR 0004): replay caches,
     /// idempotency keys, rate counters. In this process by default.
     pub state: Arc<dyn crate::SharedState>,
+    /// The audit log (FR-15, FR-18): an entry for every ingress request
+    /// and admin action, and signed receipts when it has them on. None by
+    /// default.
+    pub audit: Option<Arc<tunnelward_audit::Sink>>,
 }
 
 /// The identities allowed to claim one route (FR-3). Any other identity
@@ -154,6 +158,7 @@ impl Config {
             route_owners: Vec::new(),
             ingress: IngressConfig::default(),
             state: Arc::new(crate::InMemory::default()),
+            audit: None,
         }
     }
 }

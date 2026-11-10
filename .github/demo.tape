@@ -15,13 +15,14 @@ Set TypingSpeed 35ms
 Hide
 Type "cd $(mktemp -d) && echo 'hello from a private service' > index.html" Enter
 Type "python3 -m http.server 8080 --bind 127.0.0.1 >/dev/null 2>&1 &" Enter
+Type "tunnelward audit keygen --out audit.key >/dev/null" Enter
 Type "export PS1='$ '" Enter
 Type "clear" Enter
 Show
 
 Type "tunnelward --version" Sleep 300ms Enter
 Sleep 1s
-Type "tunnelward dev --to http://127.0.0.1:8080 --admin 127.0.0.1:9000 &" Sleep 300ms Enter
+Type "tunnelward dev --to http://127.0.0.1:8080 --admin 127.0.0.1:9000 --audit audit.key &" Sleep 300ms Enter
 Sleep 2s
 Type "curl -s http://127.0.0.1:8000/" Sleep 300ms Enter
 Sleep 1500ms
@@ -43,6 +44,20 @@ Type "cat policy.toml" Sleep 300ms Enter
 Sleep 1500ms
 Type "tunnelward policy test --policy policy.toml cases.toml" Sleep 300ms Enter
 Sleep 4s
+
+Hide
+Type "clear" Enter
+Show
+
+Type "curl -s -o /dev/null -D headers.txt http://127.0.0.1:8000/ && grep -i '^tw-receipt' headers.txt | cut -c1-70" Sleep 300ms Enter
+Sleep 2s
+Hide
+Type "grep -i '^tw-receipt' headers.txt | cut -d' ' -f2 | tr -d '\r' > receipt.txt && clear" Enter
+Show
+Type "tunnelward receipt verify --key audit.key.pub receipt.txt" Sleep 300ms Enter
+Sleep 3s
+Type "tunnelward audit verify --key audit.key.pub audit.jsonl" Sleep 300ms Enter
+Sleep 5s
 
 Hide
 Type "kill %1 %2" Enter

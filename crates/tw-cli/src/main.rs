@@ -5,6 +5,7 @@
 
 mod agents;
 mod args;
+mod audit;
 mod backend;
 mod config;
 mod connector;
@@ -36,8 +37,10 @@ what it is, and serve AI agents with no inbound port.
 
 Commands:
   dev --to <http://host:port> [--listen <addr>] [--route <route>] [--admin <addr>]
+      [--audit <key>]
                  Run a gateway and a connector in front of a local service.
-                 Defaults: --listen 127.0.0.1:8000, --route * (every request)
+                 Defaults: --listen 127.0.0.1:8000, --route * (every request).
+                 --audit logs to audit.jsonl beside <key>, with receipts
   gateway --config <file>
                  Run a gateway from its TOML configuration file
   connector --config <file>
@@ -63,6 +66,16 @@ Commands:
   policy test --policy <file> <cases>
                  Run the calls in <cases> against a tool policy; fail on
                  any decision that is not the one expected
+  audit keygen --out <file>
+                 Make the audit log's signing key (public key to <file>.pub)
+                 and pseudonym key (<file>.pseudonym)
+  audit verify --key <file.pub>[,<file.pub>...] <log>
+                 Check an audit log offline: chain, order and checkpoints
+                 signed by any of the keys
+  audit export <log>
+                 Write the log's entries as OCSF 1.3.0 events (JSON Lines)
+  receipt verify --key <file.pub> <receipt | file | ->
+                 Check a tw-receipt offline and print what it says
 
 Options:
   -h, --help     Print this help
@@ -92,7 +105,7 @@ fn runtime() -> Result<tokio::runtime::Runtime, Outcome> {
 }
 
 fn dev(args: &[String]) -> Result<(), Outcome> {
-    let args = Args::parse(args, &["to", "listen", "route", "admin"])?;
+    let args = Args::parse(args, &["to", "listen", "route", "admin", "audit"])?;
     let to = args
         .get("to")
         .ok_or_else(|| UsageError("dev needs '--to <http://host:port>'".into()))?;
@@ -102,6 +115,7 @@ fn dev(args: &[String]) -> Result<(), Outcome> {
         listen: args.parsed("listen")?.unwrap_or(default_listen),
         route: args.get("route").unwrap_or("*").to_owned(),
         admin: args.parsed("admin")?,
+        audit: args.get("audit").map(std::path::PathBuf::from),
     };
     runtime()?
         .block_on(dev::run(request))
@@ -294,10 +308,55 @@ fn policy(args: &[String]) -> Result<(), Outcome> {
         .ok_or_else(|| Outcome::Failed("a policy case failed".into()))
 }
 
+fn audit_usage() -> UsageError {
+    UsageError("usage: tunnelward audit keygen|verify|export (see --help)".into())
+}
+
+fn audit_keygen(args: &Args) -> Result<(), Outcome> {
+    let out = args.get("out").ok_or_else(audit_usage)?;
+    let (public, pseudonym) = audit::keygen(Path::new(out)).map_err(Outcome::Failed)?;
+    println!("{out}\n{}\n{}", public.display(), pseudonym.display());
+    Ok(())
+}
+
+fn audit_verify(args: &Args, log: &str) -> Result<(), Outcome> {
+    let keys = args.get("key").ok_or_else(audit_usage)?;
+    let keys: Vec<_> = keys.split(',').map(std::path::PathBuf::from).collect();
+    let report = audit::verify_log(Path::new(log), &keys).map_err(Outcome::Failed)?;
+    println!("{report}");
+    Ok(())
+}
+
+fn audit(args: &[String]) -> Result<(), Outcome> {
+    let args = Args::parse(args, &["out", "key"])?;
+    match args.positional.as_slice() {
+        [command] if command == "keygen" => audit_keygen(&args),
+        [command, log] if command == "verify" => audit_verify(&args, log),
+        [command, log] if command == "export" => {
+            audit::export(Path::new(log)).map_err(Outcome::Failed)
+        }
+        _ => Err(audit_usage().into()),
+    }
+}
+
+fn receipt(args: &[String]) -> Result<(), Outcome> {
+    let args = Args::parse(args, &["key"])?;
+    let usage = || UsageError("usage: tunnelward receipt verify --key <file.pub> <receipt>".into());
+    let ([command, receipt], Some(key)) = (args.positional.as_slice(), args.get("key")) else {
+        return Err(usage().into());
+    };
+    if command != "verify" {
+        return Err(usage().into());
+    }
+    let fields = audit::verify_receipt(Path::new(key), receipt).map_err(Outcome::Failed)?;
+    println!("{fields}");
+    Ok(())
+}
+
 type Command = fn(&[String]) -> Result<(), Outcome>;
 
 /// Every command, by the names that call it.
-const COMMANDS: [(&[&str], Command); 10] = [
+const COMMANDS: [(&[&str], Command); 12] = [
     (&["-h", "--help"], |_| {
         print!("{USAGE}");
         Ok(())
@@ -314,6 +373,8 @@ const COMMANDS: [(&[&str], Command); 10] = [
     (&["providers"], providers),
     (&["enrol"], enrol),
     (&["policy"], policy),
+    (&["audit"], audit),
+    (&["receipt"], receipt),
 ];
 
 fn dispatch(args: &[String]) -> Outcome {

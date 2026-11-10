@@ -14,7 +14,7 @@ use super::{hex, signature_path};
 
 /// Writes `bytes` to a new file `path`, never over an existing one;
 /// owner-only when `private`.
-fn write_new(path: &Path, bytes: &[u8], private: bool) -> Result<(), String> {
+pub(crate) fn write_new(path: &Path, bytes: &[u8], private: bool) -> Result<(), String> {
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]

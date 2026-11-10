@@ -19,6 +19,7 @@
 mod admin;
 mod admit;
 mod answers;
+mod audit;
 mod auth;
 mod botauth;
 mod cidr;
