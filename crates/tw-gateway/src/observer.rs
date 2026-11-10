@@ -47,6 +47,8 @@ pub struct RequestInfo {
     /// back (FR-14): a `User-Agent` or `clientInfo` naming a provider the
     /// gateway did not see.
     pub mismatches: Vec<crate::Mismatch>,
+    /// What the audit log adds on the way through.
+    pub(crate) trail: crate::audit::Trail,
 }
 
 /// Called at each step of an ingress request. Every method has an empty

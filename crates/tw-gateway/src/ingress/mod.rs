@@ -18,24 +18,24 @@ use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use bytes::Bytes;
-use http::header::{
-    AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HOST, RETRY_AFTER, WWW_AUTHENTICATE,
-};
-use http::{HeaderValue, Method, Request, Response, StatusCode, Version};
+use http::header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HOST};
+use http::{Method, Request, Response, StatusCode, Version};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::Incoming;
 
 use crate::answers::{json, metadata, preflight, ready, stamp_request_id};
+use crate::audit::Decision;
 use crate::auth;
 use crate::cors::{self, Cors};
 use crate::enrol;
 use crate::forwarding::{Stamp, rewrite};
 use crate::idempotent;
-use crate::observed::Observed;
 use crate::provenance;
 use crate::refusal::{Refusal, refusal_for};
 use crate::{ClientAddr, Gateway, RequestInfo, ResponseBody};
+
+mod respond;
 
 /// The ingress response body: a connector's stream, or the gateway's own
 /// short answer.
@@ -105,8 +105,8 @@ enum Forwarded {
 const TW_ERROR: http::HeaderName = http::HeaderName::from_static("tw-error");
 
 impl Ingress {
-    async fn handle(self, request: Request<Incoming>) -> Response<IngressBody> {
-        let started = Instant::now();
+    /// What observers and the audit log know of `request` on arrival.
+    fn info(&self, request: &Request<Incoming>) -> RequestInfo {
         let inner = &self.gateway.inner;
         let ingress = &inner.config.ingress;
         let client = ClientAddr::resolve(self.peer, request.headers(), &ingress.trusted_proxies);
@@ -115,7 +115,7 @@ impl Ingress {
             .as_ref()
             .and_then(|p| p.lookup(client.client));
         let headers = request.headers();
-        let info = RequestInfo {
+        RequestInfo {
             id: inner.next_request.fetch_add(1, Ordering::Relaxed),
             method: request.method().clone(),
             uri: request.uri().clone(),
@@ -128,7 +128,19 @@ impl Ingress {
             provider,
             evidence: tunnelward_policy::Evidence::Declared,
             mismatches: Vec::new(),
-        };
+            trail: crate::audit::Trail {
+                host: (request.uri().host().map(str::to_owned))
+                    .or_else(|| provenance::declared(headers, "host")),
+                client_cert: self.client_cert,
+                ..crate::audit::Trail::default()
+            },
+        }
+    }
+
+    async fn handle(self, request: Request<Incoming>) -> Response<IngressBody> {
+        let started = Instant::now();
+        let ingress = &self.gateway.inner.config.ingress;
+        let info = self.info(&request);
         for o in &ingress.observers {
             o.on_request(&info);
         }
@@ -138,11 +150,25 @@ impl Ingress {
             return self.enrol(enrolment, request, info, started).await;
         }
         if let Some(response) = self.metadata(&request, &info) {
-            return response;
+            return self.audited(response, &info, Decision::Answered, None, started);
         }
-        let cors = cors::decide(&ingress.cors, &request);
+        self.by_origin(request, info, started).await
+    }
+
+    /// Answers a CORS preflight or a refused origin itself, and serves
+    /// the rest, with the CORS headers an allowed origin gets.
+    async fn by_origin(
+        &self,
+        request: Request<Incoming>,
+        info: RequestInfo,
+        started: Instant,
+    ) -> Response<IngressBody> {
+        let cors = cors::decide(&self.gateway.inner.config.ingress.cors, &request);
         let mut response = match cors {
-            Cors::Preflight(ref headers) => preflight(headers, &info),
+            Cors::Preflight(ref headers) => {
+                let response = preflight(headers, &info);
+                self.audited(response, &info, Decision::Answered, Some(&[]), started)
+            }
             Cors::Refused => {
                 let refusal = Refusal::new("TW-I007", StatusCode::FORBIDDEN, "origin not allowed");
                 self.refuse(&info, &refusal, started)
@@ -183,7 +209,15 @@ impl Ingress {
             Ok(Forwarded::Stream(response)) => self.observed(response, info, started),
             Ok(Forwarded::Ready(response)) => {
                 let observers = &self.gateway.inner.config.ingress.observers;
-                ready(observers, response, &info, started)
+                let (parts, body) = response.into_parts();
+                let body = body
+                    .collect()
+                    .await
+                    .map(http_body_util::Collected::to_bytes)
+                    .unwrap_or_default();
+                let held = Response::from_parts(parts, Full::new(body.clone()));
+                let response = ready(observers, held, &info, started);
+                self.audited(response, &info, Decision::Forwarded, Some(&body), started)
             }
             Err(refusal) => self.refuse(&info, &refusal, started),
         }
@@ -207,7 +241,15 @@ impl Ingress {
                 for o in &self.gateway.inner.config.ingress.observers {
                     o.on_response(&info, StatusCode::OK, started.elapsed());
                 }
-                json(body, &info)
+                let digest_of = body.clone();
+                let response = json(body, &info);
+                self.audited(
+                    response,
+                    &info,
+                    Decision::Answered,
+                    Some(&digest_of),
+                    started,
+                )
             }
             Err(refusal) => self.refuse(&info, &refusal, started),
         }
@@ -224,6 +266,9 @@ impl Ingress {
         self.admit(&request, info).await?;
         let (request, body) = self.buffer(request).await?;
         crate::mismatch::from_body(info, &body);
+        if self.gateway.inner.config.audit.is_some() {
+            crate::audit::body(info, &body);
+        }
         self.envelope(&request, &body, info);
         let high_impact = self.decide(&request, &body, info)?;
         let request = self.restate(request, info);
@@ -423,77 +468,5 @@ impl Ingress {
                 o.on_envelope(info, &envelope);
             }
         }
-    }
-
-    fn observed(
-        &self,
-        response: Response<ResponseBody>,
-        info: RequestInfo,
-        started: Instant,
-    ) -> Response<IngressBody> {
-        let observers = self.gateway.inner.config.ingress.observers.clone();
-        for o in &observers {
-            o.on_response(&info, response.status(), started.elapsed());
-        }
-        let mut response = response;
-        stamp_request_id(response.headers_mut(), &info);
-        response.map(|body| {
-            Observed {
-                inner: body,
-                observers,
-                info,
-                started,
-                bytes: 0,
-                done: false,
-            }
-            .boxed()
-        })
-    }
-
-    fn refuse(
-        &self,
-        info: &RequestInfo,
-        refusal: &Refusal,
-        started: Instant,
-    ) -> Response<IngressBody> {
-        let observers = &self.gateway.inner.config.ingress.observers;
-        for o in observers {
-            o.on_failure(info, refusal.status, &refusal.reason);
-        }
-        for o in observers {
-            o.on_response(info, refusal.status, started.elapsed());
-        }
-        let url = tunnelward_proto::error_url(refusal.id);
-        let body = refusal.json.clone().unwrap_or_else(|| {
-            let text = format!(
-                "{}: {} [{}] {url}\n",
-                refusal.status, refusal.reason, refusal.id
-            );
-            Bytes::from(text)
-        });
-        let mut response = Response::new(Full::new(body).map_err(|e| match e {}).boxed());
-        if refusal.json.is_some() {
-            let json = HeaderValue::from_static("application/json");
-            response.headers_mut().insert(CONTENT_TYPE, json);
-        }
-        *response.status_mut() = refusal.status;
-        response
-            .headers_mut()
-            .insert(TW_ERROR, HeaderValue::from_static(refusal.id));
-        stamp_request_id(response.headers_mut(), info);
-        if let Some(value) = refusal
-            .challenge
-            .as_deref()
-            .and_then(|c| HeaderValue::from_str(c).ok())
-        {
-            response.headers_mut().insert(WWW_AUTHENTICATE, value);
-        }
-        if let Some(wait) = refusal.retry_after {
-            let secs = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
-            response
-                .headers_mut()
-                .insert(RETRY_AFTER, HeaderValue::from(secs.max(1)));
-        }
-        response
     }
 }
