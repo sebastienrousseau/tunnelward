@@ -23,7 +23,7 @@ use tunnelward_policy::{Effect, Policy, Rule};
 use common::ingress::{h1, ingress_config, start_ingress};
 use common::{Res, registration, start_connector};
 
-const CALL: &str = r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"pay","arguments":{"amount":"12.50","iban":"secret-iban"}}}"#;
+const CALL: &str = r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"pay","arguments":{"amount":"12.50","iban":"GB00TEST0000"}}}"#;
 
 struct Logged {
     gateway: Gateway,
@@ -74,7 +74,7 @@ async fn logged(name: &str) -> Res<Logged> {
 }
 
 async fn post(ingress: &str, body: &str) -> Res<(StatusCode, hyper::HeaderMap, String)> {
-    let request = Request::post("/mcp?token=query-secret")
+    let request = Request::post("/mcp?ref=query-only")
         .header("host", "mcp.example.org")
         .header("content-type", "application/json")
         .body(Full::new(Bytes::from(body.to_owned())))?;
@@ -144,8 +144,11 @@ async fn a_forwarded_call_is_logged_with_digests_and_a_receipt_that_verifies() -
 
 /// The log `raw` holds no raw value and verifies, signed to its end.
 fn clean_and_signed(raw: &str, public: Vec<u8>) -> Res<()> {
-    for secret in ["secret-iban", "12.50", "query-secret", "127.0.0.1"] {
-        assert!(!raw.contains(secret), "{secret} is in the log");
+    // Fixtures that must never reach the log: an argument value, the
+    // query string and the client address.
+    let absent = ["GB00TEST0000", "12.50", "query-only", "127.0.0.1"];
+    for (i, value) in absent.iter().enumerate() {
+        assert!(!raw.contains(value), "fixture {i} is in the log");
     }
     let report = tunnelward_audit::verify::verify(raw.as_bytes(), &[public])?;
     assert!(report.ok(), "{report:?}");
