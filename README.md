@@ -24,7 +24,7 @@ Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/release
 </p>
 
 <p align="center">
-  <img src=".github/demo.gif" alt="A terminal prints the tunnelward version, then runs tunnelward dev in front of a local web server; curl through the tunnel prints hello from a private service, and the admin API shows one connector with two connections. Then a tool policy permits one agent to read and transfer, marks transfer high impact, and tunnelward policy test passes three cases: a read allowed, a transfer denied without cryptographic evidence, another agent denied" width="100%" />
+  <img src=".github/demo.gif" alt="A terminal prints the tunnelward version, then runs tunnelward dev in front of a local web server; curl through the tunnel prints hello from a private service, and the admin API shows one connector with two connections. Then a tool policy permits one agent to read and transfer, marks transfer high impact and forbids calls whose claimed provider the gateway did not see, and tunnelward policy test passes four cases: a read allowed, a transfer denied without cryptographic evidence, a claimed Claude the gateway did not see denied, another agent denied" width="100%" />
 </p>
 
 ---

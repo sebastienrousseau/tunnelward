@@ -31,9 +31,10 @@ Type "curl -s http://127.0.0.1:9000/metrics | grep -v '^#'" Sleep 300ms Enter
 Sleep 4s
 
 Hide
-Type `printf 'high_impact = ["transfer"]\n\n[[rules]]\neffect = "permit"\nagents = ["claude"]\ntools = ["read_*", "transfer"]\n' > policy.toml` Enter
+Type `printf 'high_impact = ["transfer"]\n\n[[rules]]\neffect = "permit"\nagents = ["claude"]\ntools = ["read_*", "transfer"]\n\n[[rules]]\neffect = "forbid"\nmismatch = true\n' > policy.toml` Enter
 Type `printf '[[case]]\nname = "claude reads a balance"\nagent = "claude"\npath = "/mcp"\nmethod = "tools/call"\ntool = "read_balance"\nevidence = "network"\nexpect = "allow"\n\n' >> cases.toml` Enter
 Type `printf '[[case]]\nname = "a transfer needs cryptographic evidence"\nagent = "claude"\npath = "/mcp"\nmethod = "tools/call"\ntool = "transfer"\nevidence = "network"\nexpect = "deny"\n\n' >> cases.toml` Enter
+Type `printf '[[case]]\nname = "a claimed Claude the gateway did not see is refused"\nagent = "claude"\npath = "/mcp"\nmethod = "tools/call"\ntool = "read_balance"\nevidence = "network"\nmismatch = true\nexpect = "deny"\n\n' >> cases.toml` Enter
 Type `printf '[[case]]\nname = "another agent is refused"\nagent = "scraper"\npath = "/mcp"\nmethod = "tools/call"\ntool = "read_balance"\nevidence = "network"\nexpect = "deny"\n\n' >> cases.toml` Enter
 Type "clear" Enter
 Show
