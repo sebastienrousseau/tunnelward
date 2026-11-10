@@ -7,6 +7,78 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.13]
+
+### Added
+
+- The stdio bridge (FR-6): a connector can serve a local MCP server that
+  speaks JSON-RPC over stdio, as MCP Streamable HTTP through the tunnel.
+  `[target] stdio = ["command", "args"]` (with optional `env`,
+  `max_sessions`, `idle_secs`), or `StdioBridge` in the library. Each
+  session gets its own process, started by `initialize` and named by
+  `Mcp-Session-Id`. A POST's requests are answered with their responses;
+  notifications get 202. A GET with `Accept: text/event-stream` streams
+  what the server sends on its own, as numbered events, and a client
+  that reconnects with `Last-Event-ID` gets what it missed. DELETE, the
+  process exiting, or 10 idle minutes end a session, whose id then gets
+  404. Sessions, message size and the replay buffer are bounded. The
+  `stdio-echo` example is a small stdio server to try it with, and the
+  tests run it end to end through a gateway. A CI job also runs the MCP
+  project's reference server, `@modelcontextprotocol/server-everything`
+  2.0.1, through the bridge: initialise, list and call tools, and
+  receive its log messages on the event stream
+  (`scripts/stdio-reference.sh`; the server runs in a container with no
+  network).
+- The first benchmark numbers against NFR-1 to NFR-3, in
+  `docs/BENCHMARKS.md`, from `cargo xtask bench` (a new, unpublished
+  `tunnelward-bench` crate using only the workspace's own dependencies).
+  The gateway and tunnel add 125 to 160 µs at p50 to a 1 KiB MCP call
+  (budget 500 µs). Counted on the heap, the gateway holds 58.9 KiB per
+  idle connector connection (budget 64 KiB) and 25.8 KiB per request in
+  flight (budget 16 KiB plus the 256 KiB stream window). The p99 latency
+  and scaling across cores are not measured yet: the laptop used is too
+  noisy for them.
+- `scripts/unsafe-boundary.sh`, in `cargo xtask ci`: unsafe code is
+  allowed only in the benchmark crate's counting allocator, which the
+  memory figures need. Published crates still forbid it.
+
+- Mismatches between claims and evidence (FR-14): a `User-Agent` or MCP
+  `clientInfo` that names an AI provider (Claude or Anthropic, ChatGPT or
+  OpenAI, by their published agent names) is checked against the
+  provider the gateway saw, from published ranges or a verified
+  signature. When it is another provider or none, the request carries a
+  `Mismatch` (`RequestInfo::mismatches`), its evidence stays at the level
+  the gateway established, and policy rules can match on it (`mismatch =
+  true` in the policy file, `Rule::mismatch`), for example to forbid a
+  script dressed as Claude. The plan's risk score is not built: no input
+  for it exists yet.
+- Kani proofs for the frame parser (`cargo xtask kani`, and a CI job on
+  Kani 0.68.0): for every buffer up to 12 bytes and every limit, framing
+  never panics, a frame's body lies within the buffer and the limit, and
+  a request for more bytes never reaches past the limit, so reading a
+  frame never allocates more than the limit plus the prefix; the length
+  check refuses exactly the empty and the over-long frame. The framing
+  step is split out of `decode` for this; the CBOR decoding after it
+  stays covered by fuzzing and Miri.
+
+### Fixed
+
+- A request that arrived just after a connector registered could get
+  404 `TW-S001` ("no connector serves this route"): the connector reads
+  `Accept` before the gateway's side of the connection is ready and its
+  routes are in the registry. A route whose connector is being admitted
+  now makes the request wait, as for a busy or kept route, up to
+  `max_wait`; an admission that fails wakes those requests at once.
+  Seen once in CI on macOS (`a_gateway_and_a_connector_from_their_files_serve_a_request`).
+
+### Documentation
+
+- ADR 0006 records why the tool policy is an in-house engine before
+  Cedar (126 unaudited crates) and when Cedar comes in; ADR 0007 records
+  the composite ML-DSA-65 + Ed25519 signature format, why it is not the
+  IETF LAMPS draft's encoding yet, and why leases and enrolment tokens
+  are not signed.
+
 ## [0.0.12]
 
 ### Added

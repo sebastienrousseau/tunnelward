@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Benchmarks for NFR-1 to NFR-3 (`cargo xtask bench`). Never published,
+# and only the workspace's own crates and what they already use.
+
+[package]
+name = "tunnelward-bench"
+description = "Benchmarks of the Tunnelward gateway: added latency, memory per connection, scaling"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+bytes.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+hyper = { workspace = true, features = ["client", "http1", "server"] }
+hyper-util.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
+tunnelward-connector.workspace = true
+tunnelward-crypto.workspace = true
+tunnelward-gateway.workspace = true
+tunnelward-proto.workspace = true
+tunnelward-testpki.workspace = true
+
+# The workspace's lints, except `unsafe_code`: denied rather than
+# forbidden, so `src/alloc.rs` alone can allow it. That file is the
+# counting allocator NFR-2 needs, in a crate that is never published.
+# `scripts/unsafe-boundary.sh` checks that these tables stay equal to the
+# workspace's and that no other file has unsafe code.
+[lints.rust]
+unsafe_code = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
+missing_docs = "deny"
+unreachable_pub = "warn"
+
+[lints.clippy]
+cognitive_complexity = "deny"
+too_many_lines = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+dbg_macro = "deny"
+todo = "deny"
+pedantic = { level = "warn", priority = -1 }

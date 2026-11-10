@@ -14,7 +14,8 @@
 //! [`register`] does the first part and returns a [`Registered`] session;
 //! [`Registered::serve`] runs the HTTP/2 server until the gateway closes
 //! the connection. [`Forward`] is a service that sends each request on to
-//! a local HTTP server. [`Connector`] keeps several connections to several
+//! a local HTTP server; [`StdioBridge`] serves a local stdio MCP server as
+//! Streamable HTTP, one process per session. [`Connector`] keeps several connections to several
 //! gateways up for good: it renews them before their leases end, reconnects
 //! with jittered backoff, follows DNS, reports [`ConnectorEvent`]s, and
 //! shuts down gracefully.
@@ -25,6 +26,7 @@ mod event;
 mod forward;
 mod session;
 mod slot;
+mod stdio;
 mod supervisor;
 
 pub use backoff::Backoff;
@@ -32,4 +34,5 @@ pub use error::Error;
 pub use event::ConnectorEvent;
 pub use forward::{Forward, ForwardBody, RequestHook, Target};
 pub use session::{Config, Registered, register};
+pub use stdio::{StdioBody, StdioBridge, StdioConfig};
 pub use supervisor::{Connector, ConnectorConfig, Gateways};

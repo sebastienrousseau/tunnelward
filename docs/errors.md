@@ -127,8 +127,10 @@ accepted.
 
 ### TW-S001
 
-**No route.** No connector serves the request's host and path, and no
-route is kept for it. The ingress answers 404. Check the connector's
+**No route.** No connector serves the request's host and path, no route
+is kept for it, and no connector for it is being admitted (a request for
+a route whose connector is registering waits for it, up to `max_wait`).
+The ingress answers 404. Check the connector's
 claimed routes and domains (`/inventory?redaction=internal` on the admin
 API).
 

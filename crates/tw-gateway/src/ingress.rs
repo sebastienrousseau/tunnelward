@@ -127,6 +127,7 @@ impl Ingress {
             client_id: None,
             provider,
             evidence: tunnelward_policy::Evidence::Declared,
+            mismatches: Vec::new(),
         };
         for o in &ingress.observers {
             o.on_request(&info);
@@ -175,7 +176,7 @@ impl Ingress {
         started: Instant,
     ) -> Response<IngressBody> {
         let outcome = match self.check(&request, &mut info).await {
-            Ok(()) => self.forward(request, &info).await,
+            Ok(()) => self.forward(request, &mut info).await,
             Err(refusal) => Err(refusal),
         };
         match outcome {
@@ -217,11 +218,12 @@ impl Ingress {
     async fn forward(
         &self,
         request: Request<Incoming>,
-        info: &RequestInfo,
+        info: &mut RequestInfo,
     ) -> Result<Forwarded, Refusal> {
         let ingress = &self.gateway.inner.config.ingress;
         self.admit(&request, info).await?;
         let (request, body) = self.buffer(request).await?;
+        crate::mismatch::from_body(info, &body);
         self.envelope(&request, &body, info);
         let high_impact = self.decide(&request, &body, info)?;
         let request = self.restate(request, info);
@@ -302,6 +304,7 @@ impl Ingress {
             crate::botauth::identify(bot_auth, config.state.as_ref(), request, info).await?;
         }
         info.evidence = crate::policy::evidence(info, bound);
+        crate::mismatch::from_user_agent(info);
         Ok(())
     }
 

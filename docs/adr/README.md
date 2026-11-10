@@ -13,3 +13,5 @@ never rewritten once accepted; a new record supersedes it.
 | [0003](0003-cbor4ii-for-register-frames.md) | cbor4ii for the register frames | Accepted |
 | [0004](0004-state-shared-across-gateways.md) | State shared across gateways | Accepted, implemented in 0.0.12 |
 | [0005](0005-leases-renew-by-reconnecting.md) | Leases renew by reconnecting | Accepted |
+| [0006](0006-in-house-policy-before-cedar.md) | An in-house policy engine before Cedar | Accepted, implemented in 0.0.12 |
+| [0007](0007-composite-signatures.md) | Composite ML-DSA-65 and Ed25519 signatures | Accepted, implemented in 0.0.12 |

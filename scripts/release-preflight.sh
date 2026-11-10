@@ -74,7 +74,9 @@ check "demo re-rendered after the $version bump (make demo)" \
   bash -c "[ -n '$bump' ] && [ -n '$demo' ] && git merge-base --is-ancestor '$bump' '$demo'"
 # Each badge must render a value, not an error.
 while IFS= read -r url; do
-  title="$(curl -s -A 'tunnelward-release' "$url" | grep -o '<title>[^<]*</title>' | head -1)"
+  # A failed fetch (shields.io answers a timeout with HTTP 408 and an
+  # encoding curl rejects) is a failed check, not the end of the preflight.
+  title="$(curl -s -A 'tunnelward-release' "$url" | grep -o '<title>[^<]*</title>' | head -1 || true)"
   label="$(sed -E 's/.*(img.shields.io\/[a-z-]+\/[a-z-]*).*/\1/' <<< "$url")"
   check "badge $label renders (${title:-no title})" \
     bash -c "[ -n '$title' ] && ! grep -qiE 'inaccessible|invalid|not found|unknown|no releases|error' <<< '$title'"

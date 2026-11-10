@@ -10,6 +10,7 @@ resolver = "3"
 members = [
   "crates/tw-attest",
   "crates/tw-audit",
+  "crates/tw-bench",
   "crates/tw-cli",
   "crates/tw-connector",
   "crates/tw-crypto",
@@ -23,7 +24,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.12"
+version = "0.0.13"
 edition = "2024"
 # The MSRV floor. See docs/POLICIES.md before changing it.
 rust-version = "1.89"
@@ -36,13 +37,13 @@ readme = "README.md"
 [workspace.dependencies]
 # Workspace crates. The version pins what a published crate depends on;
 # it moves with workspace.package.version on every release.
-tunnelward-proto = { path = "crates/tw-proto", version = "=0.0.12" }
-tunnelward-crypto = { path = "crates/tw-crypto", version = "=0.0.12" }
-tunnelward-connector = { path = "crates/tw-connector", version = "=0.0.12" }
-tunnelward-gateway = { path = "crates/tw-gateway", version = "=0.0.12" }
-tunnelward-mcp = { path = "crates/tw-mcp", version = "=0.0.12" }
-tunnelward-identity = { path = "crates/tw-identity", version = "=0.0.12" }
-tunnelward-policy = { path = "crates/tw-policy", version = "=0.0.12" }
+tunnelward-proto = { path = "crates/tw-proto", version = "=0.0.13" }
+tunnelward-crypto = { path = "crates/tw-crypto", version = "=0.0.13" }
+tunnelward-connector = { path = "crates/tw-connector", version = "=0.0.13" }
+tunnelward-gateway = { path = "crates/tw-gateway", version = "=0.0.13" }
+tunnelward-mcp = { path = "crates/tw-mcp", version = "=0.0.13" }
+tunnelward-identity = { path = "crates/tw-identity", version = "=0.0.13" }
+tunnelward-policy = { path = "crates/tw-policy", version = "=0.0.13" }
 tunnelward-testpki = { path = "crates/tw-testpki" }
 cbor4ii = { version = "1.2.4", default-features = false, features = ["serde1", "use_std"] }
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
@@ -63,6 +64,8 @@ proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+# Kani proofs sit behind cfg(kani) beside the code they prove.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
 missing_docs = "deny"
 unreachable_pub = "warn"
 

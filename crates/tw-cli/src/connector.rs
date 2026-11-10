@@ -27,7 +27,7 @@
 //! domains = []                          # optional
 //! capacity = 64                         # optional
 //!
-//! [target]
+//! [target]                              # see backend.rs: or a stdio command
 //! url = "http://127.0.0.1:8080"         # or unix:/path/to/socket
 //! ```
 
@@ -39,7 +39,7 @@ use std::time::Duration;
 use aws_lc_rs::rand::{SecureRandom, SystemRandom};
 use serde::Deserialize;
 use tunnelward_connector::{
-    Config as Session, Connector, ConnectorConfig, Forward, Gateways, Target,
+    Config as Session, Connector, ConnectorConfig, Forward, Gateways, StdioBridge,
 };
 use tunnelward_crypto::rustls::RootCertStore;
 use tunnelward_crypto::rustls::pki_types::ServerName;
@@ -60,7 +60,7 @@ pub(crate) struct File {
     gateway: GatewayPart,
     identity: IdentityPart,
     register: RegisterPart,
-    target: TargetPart,
+    target: crate::backend::TargetPart,
 }
 
 #[derive(Debug, Deserialize)]
@@ -100,12 +100,6 @@ struct RegisterPart {
     capacity: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TargetPart {
-    url: String,
-}
-
 /// Whether a TOML text is a connector's file: it has a `[target]`.
 pub(crate) fn is_connector_file(text: &str) -> bool {
     text.parse::<toml::Table>()
@@ -133,27 +127,6 @@ fn gateways(address: &str) -> Result<Gateways, String> {
         port,
         refresh: DNS_REFRESH,
     })
-}
-
-/// `http://host:port` or `unix:/path`.
-fn target(url: &str) -> Result<Target, String> {
-    if let Some(addr) = url.strip_prefix("http://") {
-        let addr = addr.trim_end_matches('/');
-        if addr.contains(':') && !addr.contains('/') {
-            return Ok(Target::Http {
-                addr: addr.to_owned(),
-            });
-        }
-    }
-    #[cfg(unix)]
-    if let Some(path) = url.strip_prefix("unix:") {
-        return Ok(Target::Unix {
-            path: PathBuf::from(path),
-        });
-    }
-    Err(format!(
-        "[target] url {url:?}: give http://host:port or unix:/path"
-    ))
 }
 
 /// The routes, domains, identity and capacity, each checked.
@@ -226,7 +199,7 @@ fn enrolment(base: &Path, part: &EnrolPart) -> Result<crate::enrolled::Enrol, St
 /// A file that passed every check: everything but the SVID itself.
 pub(crate) struct Checked {
     gateways: Gateways,
-    target: Target,
+    target: crate::backend::Backend,
     register: Register,
     roots: Arc<RootCertStore>,
     server_name: ServerName<'static>,
@@ -244,7 +217,7 @@ pub(crate) fn check(path: &Path, file: &File) -> Result<Checked, Problems> {
     let base = path.parent().unwrap_or_else(|| Path::new("."));
     let mut problems = Problems::new();
     let gateways = note(&mut problems, gateways(&file.gateway.address));
-    let target = note(&mut problems, target(&file.target.url));
+    let target = note(&mut problems, crate::backend::backend(&file.target));
     let source = note(&mut problems, source(base, &file.identity));
     let roots = note(&mut problems, roots(&resolve(base, &file.gateway.ca)));
     let name = &file.gateway.server_name;
@@ -295,9 +268,15 @@ pub(crate) async fn run(path: &Path) -> Result<(), String> {
     checked.register.connector_id = fresh_id()?;
     let (identity, keeper) =
         svid::start(checked.source.clone(), checked.register.spiffe_id.clone()).await?;
-    let forward = Forward::new(checked.target.clone(), Duration::from_secs(30));
-    let connector = Connector::start(config(checked, identity)?, forward);
-    println!("tunnelward connector: forwarding to {}", file.target.url);
+    let backend = checked.target.clone();
+    let config = config(checked, identity)?;
+    println!("tunnelward connector: {}", backend.describe());
+    let connector = match backend {
+        crate::backend::Backend::Http(target) => {
+            Connector::start(config, Forward::new(target, Duration::from_secs(30)))
+        }
+        crate::backend::Backend::Stdio(stdio) => Connector::start(config, StdioBridge::new(stdio)),
+    };
     report(&connector).await;
     keeper.abort();
     Ok(())

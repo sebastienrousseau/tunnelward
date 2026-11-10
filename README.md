@@ -24,7 +24,7 @@ Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/release
 </p>
 
 <p align="center">
-  <img src=".github/demo.gif" alt="A terminal prints the tunnelward version, then runs tunnelward dev in front of a local web server; curl through the tunnel prints hello from a private service, and the admin API shows one connector with two connections. Then a tool policy permits one agent to read and transfer, marks transfer high impact, and tunnelward policy test passes three cases: a read allowed, a transfer denied without cryptographic evidence, another agent denied" width="100%" />
+  <img src=".github/demo.gif" alt="A terminal prints the tunnelward version, then runs tunnelward dev in front of a local web server; curl through the tunnel prints hello from a private service, and the admin API shows one connector with two connections. Then a tool policy permits one agent to read and transfer, marks transfer high impact and forbids calls whose claimed provider the gateway did not see, and tunnelward policy test passes four cases: a read allowed, a transfer denied without cryptographic evidence, a claimed Claude the gateway did not see denied, another agent denied" width="100%" />
 </p>
 
 ---
@@ -78,8 +78,8 @@ A container image is at `ghcr.io/sebastienrousseau/tunnelward`.
 
 ```toml
 [dependencies]
-tunnelward-connector = "0.0.12"   # embed a connector in your service
-tunnelward-gateway = "0.0.12"     # embed a gateway in your server
+tunnelward-connector = "0.0.13"   # embed a connector in your service
+tunnelward-gateway = "0.0.13"     # embed a gateway in your server
 ```
 
 `tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
@@ -167,6 +167,9 @@ its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
 | Token replay defences | DPoP-bound tokens (RFC 9449) work only with a proof by their key; certificate-bound tokens (RFC 8705) only from their certificate; paths can demand bound or single-use tokens (`[[agents.paths]]`); replays refused across gateways | Shipped in 0.0.12 |
 | Tool policy | Permit or forbid each MCP call by agent, provider, path, method, tool and evidence level, with the D6 baseline; a denied call gets a JSON-RPC error and never reaches the connector; hot reload and `tunnelward policy test`; idempotency keys on high-impact tools | Shipped in 0.0.12 |
 | Post-quantum signatures | Provider snapshots signed with a composite ML-DSA-65 + Ed25519 key; both halves must verify; ML-DSA-65 checked against NIST ACVP vectors | Shipped in 0.0.12 |
+| Claim mismatches | A `User-Agent` or MCP `clientInfo` naming a provider the gateway did not see is recorded as a mismatch, and policy can forbid such calls | Shipped in 0.0.13 |
+| stdio bridge | A connector serves a local stdio MCP server as Streamable HTTP through the tunnel: one process per session, an event stream with `Last-Event-ID` resumption (`[target] stdio`); checked in CI against the MCP reference server, server-everything 2.0.1 | Shipped in 0.0.13 |
+| Benchmarks | Added latency, memory per connection and scaling measured against NFR-1 to NFR-3, with method and caveats (`docs/BENCHMARKS.md`, `cargo xtask bench`) | Shipped in 0.0.13 |
 
 ---
 
@@ -186,11 +189,13 @@ See [`docs/COMPARISON.md`](docs/COMPARISON.md) for the evidence and complete mat
 
 ## Benchmarks
 
-No benchmarks yet. A number appears here only after a benchmark anyone can rerun has measured it.
+Measured with `cargo xtask bench`. A number appears here only after a benchmark anyone can rerun has measured it; the p99 latency (NFR-1) and scaling across cores (NFR-3) are not measured yet, because the laptop used is too noisy for them.
 
 | Scenario | Result | Environment |
 | :--- | ---: | :--- |
-| None yet | n/a | n/a |
+| Latency added to a 1 KiB MCP call, p50 (NFR-1, budget 500 µs) | 125 to 160 µs over 5 runs | Apple A18 Pro, macOS 27.2, loopback |
+| Gateway heap per idle connector connection (NFR-2, budget 64 KiB) | 58.9 KiB | Apple A18 Pro, macOS 27.2, 500 connectors |
+| Gateway heap per request in flight (NFR-2, budget 16 KiB + 256 KiB window) | 25.8 KiB | Apple A18 Pro, macOS 27.2, 500 requests |
 
 See [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) for methodology and full results.
 
@@ -258,7 +263,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for the toolchain and what the gate runs.
 ## Security
 
 - TLS 1.3 only, with `X25519MLKEM768` offered first on every hop; a test asserts the negotiated group (`crates/tw-crypto/tests/handshake.rs`).
-- No `unsafe` code in any Tunnelward crate (`unsafe_code = "forbid"`).
+- No `unsafe` code in any published Tunnelward crate (`unsafe_code = "forbid"`). The one exception is the counting allocator in the unpublished benchmark crate, and CI fails if unsafe code appears anywhere else (`scripts/unsafe-boundary.sh`).
 - No `unwrap`, `expect` or `panic!` outside tests (clippy, denied).
 - Dependencies checked by `cargo deny` and `cargo vet` on every pull request; Actions pinned by commit SHA.
 - A connector registers as the SPIFFE ID in its X.509-SVID and no other, and a route belongs to one identity: another identity's claim is refused (`docs/errors.md`, TW-R003 and TW-R004).

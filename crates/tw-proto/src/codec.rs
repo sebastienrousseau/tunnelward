@@ -141,19 +141,42 @@ pub fn encode(frame: &Frame, limits: &Limits) -> Result<Vec<u8>, EncodeError> {
 /// A [`DecodeError`]; [`DecodeError::reject_code`] gives the code to
 /// answer with.
 pub fn decode(buf: &[u8], limits: &Limits) -> Result<Decoded, DecodeError> {
+    match split(buf, limits.max_frame_len)? {
+        Split::NeedMore(n) => Ok(Decoded::NeedMore(n)),
+        Split::Body(body) => {
+            let frame = parse_body(body)?;
+            validate(&frame, limits).map_err(DecodeError::Invalid)?;
+            Ok(Decoded::Frame {
+                frame,
+                consumed: LENGTH_PREFIX_LEN + body.len(),
+            })
+        }
+    }
+}
+
+/// The framing step of [`decode`], before any CBOR: what the length
+/// prefix says.
+#[derive(Debug, PartialEq, Eq)]
+enum Split<'a> {
+    /// `buf` ends before the frame: this many more bytes are needed.
+    NeedMore(usize),
+    /// The frame's body, from just after the prefix.
+    Body(&'a [u8]),
+}
+
+/// Reads the length prefix of `buf` and finds the body, refusing an
+/// empty or over-long frame before asking for any of its bytes, so a
+/// caller that allocates what [`Split::NeedMore`] asks for never
+/// allocates more than `max` plus the prefix. Proved by Kani.
+fn split(buf: &[u8], max: u32) -> Result<Split<'_>, DecodeError> {
     let Some(prefix) = buf.first_chunk::<LENGTH_PREFIX_LEN>() else {
-        return Ok(Decoded::NeedMore(LENGTH_PREFIX_LEN - buf.len()));
+        return Ok(Split::NeedMore(LENGTH_PREFIX_LEN - buf.len()));
     };
-    let len = body_len(u32::from_be_bytes(*prefix), limits.max_frame_len)?;
-    let Some(body) = buf.get(LENGTH_PREFIX_LEN..LENGTH_PREFIX_LEN + len) else {
-        return Ok(Decoded::NeedMore(LENGTH_PREFIX_LEN + len - buf.len()));
-    };
-    let frame = parse_body(body)?;
-    validate(&frame, limits).map_err(DecodeError::Invalid)?;
-    Ok(Decoded::Frame {
-        frame,
-        consumed: LENGTH_PREFIX_LEN + len,
-    })
+    let len = body_len(u32::from_be_bytes(*prefix), max)?;
+    match buf.get(LENGTH_PREFIX_LEN..LENGTH_PREFIX_LEN + len) {
+        Some(body) => Ok(Split::Body(body)),
+        None => Ok(Split::NeedMore(LENGTH_PREFIX_LEN + len - buf.len())),
+    }
 }
 
 fn body_len(len: u32, max: u32) -> Result<usize, DecodeError> {
@@ -177,5 +200,55 @@ fn parse_body(body: &[u8]) -> Result<Frame, DecodeError> {
         Ok(frame)
     } else {
         Err(DecodeError::TrailingBytes(rest.len()))
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// The largest buffer the proofs explore.
+    const BUF: usize = 12;
+
+    /// For every buffer of up to 12 bytes and every limit: framing never
+    /// panics, a body lies within the buffer and the limit, and a request
+    /// for more bytes never reaches past the limit, so `read_frame`
+    /// never allocates more than `max` plus the prefix.
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn framing_is_bounded_and_never_panics() {
+        let bytes: [u8; BUF] = kani::any();
+        let len: usize = kani::any();
+        kani::assume(len <= BUF);
+        let buf = &bytes[..len];
+        let max: u32 = kani::any();
+        match split(buf, max) {
+            Ok(Split::Body(body)) => {
+                assert!(!body.is_empty());
+                assert!(body.len() <= max as usize);
+                assert!(LENGTH_PREFIX_LEN + body.len() <= buf.len());
+            }
+            Ok(Split::NeedMore(n)) => {
+                assert!(n > 0);
+                assert!(buf.len() + n <= LENGTH_PREFIX_LEN + max as usize);
+            }
+            Err(e) => assert!(matches!(
+                e,
+                DecodeError::Empty | DecodeError::TooLarge { .. }
+            )),
+        }
+    }
+
+    /// The length check refuses exactly the empty and the over-long.
+    #[kani::proof]
+    fn the_length_check_refuses_empty_and_over_long_frames() {
+        let len: u32 = kani::any();
+        let max: u32 = kani::any();
+        match body_len(len, max) {
+            Ok(n) => assert!(len > 0 && len <= max && n == len as usize),
+            Err(DecodeError::Empty) => assert!(len == 0),
+            Err(DecodeError::TooLarge { .. }) => assert!(len > max),
+            Err(_) => unreachable!(),
+        }
     }
 }

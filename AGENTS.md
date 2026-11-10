@@ -22,6 +22,9 @@ is specific here and wins where it is stricter.
 2. **Every limit is enforced before allocation**, and every limit is
    configurable with a documented default.
 3. **No `unsafe`, no panics outside tests.** Enforced by workspace lints.
+   The one exception is `crates/tw-bench/src/alloc.rs`, the unpublished
+   benchmark crate's counting allocator; `scripts/unsafe-boundary.sh`
+   fails CI on unsafe code anywhere else. Do not add a second one.
 4. **Security is never paywalled.** PQ TLS, mTLS, route ownership, policy
    and the audit log stay in the open crates.
 5. **No performance number without a benchmark anyone can rerun.**
