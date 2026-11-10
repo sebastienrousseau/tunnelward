@@ -238,3 +238,64 @@ async fn an_idle_session_ends() -> Res<()> {
     assert_eq!(bridge.sessions(), 0);
     Ok(())
 }
+
+/// A reference MCP server, not ours: `TW_STDIO_REFERENCE` is its command
+/// line, split on whitespace. CI runs `@modelcontextprotocol/server-everything`
+/// in a container with no network (`scripts/stdio-reference.sh`).
+fn reference_server() -> Res<StdioConfig> {
+    let line = std::env::var("TW_STDIO_REFERENCE")
+        .map_err(|_| "set TW_STDIO_REFERENCE to a stdio MCP server's command")?;
+    let mut words = line.split_whitespace().map(str::to_owned);
+    let program = words.next().ok_or("TW_STDIO_REFERENCE is empty")?;
+    Ok(StdioConfig::new(program, words.collect()))
+}
+
+/// Lists the reference server's tools and calls its `echo`.
+async fn reference_tools(addr: &str, session: &str) -> Res<()> {
+    let list = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"});
+    let (_, _, body) = post(addr, Some(session), &list).await?;
+    assert!(body.contains("\"echo\""), "{body}");
+    let call = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                      "params": {"name": "echo", "arguments": {"message": "through the bridge"}}});
+    let (_, _, body) = post(addr, Some(session), &call).await?;
+    assert!(body.contains("through the bridge"), "{body}");
+    Ok(())
+}
+
+/// Log messages the reference server sends on its own arrive on the
+/// event stream.
+async fn reference_events(addr: &str, session: &str) -> Res<()> {
+    let level = json!({"jsonrpc": "2.0", "id": 4, "method": "logging/setLevel",
+                       "params": {"level": "debug"}});
+    post(addr, Some(session), &level).await?;
+    let trigger = json!({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                         "params": {"name": "trigger-log-messages", "arguments": {}}});
+    post(addr, Some(session), &trigger).await?;
+    let event = first_event(addr, session, None).await?;
+    assert!(event.contains("notifications/message"), "{event}");
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "needs TW_STDIO_REFERENCE, a reference stdio MCP server (scripts/stdio-reference.sh)"]
+async fn a_reference_server_works_end_to_end() -> Res<()> {
+    let (addr, bridge) = serve(reference_server()?).await?;
+    let (status, session, body) = post(&addr, None, &initialize()).await?;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let session = session.ok_or("no Mcp-Session-Id")?;
+    let started: Value = serde_json::from_str(&body)?;
+    println!("reference server: {}", started["result"]["serverInfo"]);
+    let note = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
+    assert_eq!(
+        post(&addr, Some(&session), &note).await?.0,
+        StatusCode::ACCEPTED
+    );
+    reference_tools(&addr, &session).await?;
+    reference_events(&addr, &session).await?;
+    let delete = Request::delete("/mcp")
+        .header("mcp-session-id", &session)
+        .body(Full::new(Bytes::new()))?;
+    assert_eq!(send(&addr, delete).await?.status(), StatusCode::NO_CONTENT);
+    assert_eq!(bridge.sessions(), 0);
+    Ok(())
+}
