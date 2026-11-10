@@ -28,7 +28,8 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   2.0.1, through the bridge: initialise, list and call tools, and
   receive its log messages on the event stream
   (`scripts/stdio-reference.sh`; the server runs in a container with no
-  network).
+  network, installed with `npm ci` from a committed lockfile, so it and
+  every dependency are pinned by hash).
 - The first benchmark numbers against NFR-1 to NFR-3, in
   `docs/BENCHMARKS.md`, from `cargo xtask bench` (a new, unpublished
   `tunnelward-bench` crate using only the workspace's own dependencies).

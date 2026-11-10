@@ -89,7 +89,7 @@ jobs:
   stdio-reference:
     name: stdio bridge (MCP reference server)
     # FR-6 against a server that is not ours: the MCP project's
-    # server-everything, pinned in scripts/stdio-reference.Dockerfile and
+    # server-everything, pinned in scripts/stdio-reference/ and
     # run with no network, through the connector's stdio bridge.
     runs-on: ubuntu-latest
     timeout-minutes: 30

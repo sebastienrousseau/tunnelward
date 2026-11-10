@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "The MCP reference stdio server for tunnelward's stdio bridge check, pinned with its lockfile",
+  "dependencies": {
+    "@modelcontextprotocol/server-everything": "2.0.1"
+  }
+}
