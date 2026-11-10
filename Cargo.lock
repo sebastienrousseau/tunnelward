@@ -710,7 +710,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tunnelward"
-version = "0.0.13"
+version = "0.0.14"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -732,15 +732,15 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-attest"
-version = "0.0.13"
+version = "0.0.14"
 
 [[package]]
 name = "tunnelward-audit"
-version = "0.0.13"
+version = "0.0.14"
 
 [[package]]
 name = "tunnelward-bench"
-version = "0.0.13"
+version = "0.0.14"
 dependencies = [
  "bytes",
  "http",
@@ -757,7 +757,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-connector"
-version = "0.0.13"
+version = "0.0.14"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -774,7 +774,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-crypto"
-version = "0.0.13"
+version = "0.0.14"
 dependencies = [
  "aws-lc-rs",
  "rustls",
@@ -783,7 +783,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-gateway"
-version = "0.0.13"
+version = "0.0.14"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -807,7 +807,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-identity"
-version = "0.0.13"
+version = "0.0.14"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -822,7 +822,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-mcp"
-version = "0.0.13"
+version = "0.0.14"
 dependencies = [
  "proptest",
  "serde",
@@ -831,11 +831,11 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-policy"
-version = "0.0.13"
+version = "0.0.14"
 
 [[package]]
 name = "tunnelward-proto"
-version = "0.0.13"
+version = "0.0.14"
 dependencies = [
  "cbor4ii",
  "proptest",
@@ -846,7 +846,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-testpki"
-version = "0.0.13"
+version = "0.0.14"
 dependencies = [
  "bytes",
  "http",
@@ -985,7 +985,7 @@ checksum = "8c3b93199df0ab874cdf0c6a94f0a0dc3423fe41f1cafb62b8bd7b1deb277aef"
 
 [[package]]
 name = "xtask"
-version = "0.0.13"
+version = "0.0.14"
 
 [[package]]
 name = "zeroize"
