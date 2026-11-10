@@ -30,7 +30,11 @@ Each item names what enforces it. Nothing is listed that is not checked
 mechanically.
 
 - **No `unsafe` code in Tunnelward crates.** `unsafe_code = "forbid"`
-  in `[workspace.lints.rust]` (`Cargo.toml`), applied to every crate.
+  in `[workspace.lints.rust]` (`Cargo.toml`), applied to every published
+  crate. The unpublished benchmark crate has one file of unsafe code, a
+  counting allocator for the memory benchmarks; `scripts/unsafe-boundary.sh`
+  fails CI if unsafe code appears anywhere else or a crate stops taking
+  the workspace's lints.
 - **TLS 1.3 only, hybrid post-quantum key exchange first.** `tunnelward-crypto`
   builds every TLS configuration; TLS 1.2 is not compiled in. The
   handshake tests assert `X25519MLKEM768` is negotiated, that

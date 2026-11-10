@@ -26,5 +26,23 @@ tunnelward-gateway.workspace = true
 tunnelward-proto.workspace = true
 tunnelward-testpki.workspace = true
 
-[lints]
-workspace = true
+# The workspace's lints, except `unsafe_code`: denied rather than
+# forbidden, so `src/alloc.rs` alone can allow it. That file is the
+# counting allocator NFR-2 needs, in a crate that is never published.
+# `scripts/unsafe-boundary.sh` checks that these tables stay equal to the
+# workspace's and that no other file has unsafe code.
+[lints.rust]
+unsafe_code = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
+missing_docs = "deny"
+unreachable_pub = "warn"
+
+[lints.clippy]
+cognitive_complexity = "deny"
+too_many_lines = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+dbg_macro = "deny"
+todo = "deny"
+pedantic = { level = "warn", priority = -1 }

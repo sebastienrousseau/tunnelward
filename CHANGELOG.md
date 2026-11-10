@@ -23,15 +23,24 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   process exiting, or 10 idle minutes end a session, whose id then gets
   404. Sessions, message size and the replay buffer are bounded. The
   `stdio-echo` example is a small stdio server to try it with, and the
-  tests run it end to end through a gateway.
+  tests run it end to end through a gateway. A CI job also runs the MCP
+  project's reference server, `@modelcontextprotocol/server-everything`
+  2.0.1, through the bridge: initialise, list and call tools, and
+  receive its log messages on the event stream
+  (`scripts/stdio-reference.sh`; the server runs in a container with no
+  network).
 - The first benchmark numbers against NFR-1 to NFR-3, in
-  `docs/benchmarks.md`, from `cargo xtask bench` (a new, unpublished
+  `docs/BENCHMARKS.md`, from `cargo xtask bench` (a new, unpublished
   `tunnelward-bench` crate using only the workspace's own dependencies).
   The gateway and tunnel add 125 to 160 µs at p50 to a 1 KiB MCP call
-  (budget 500 µs). The p99, memory per in-flight request and core
-  scaling could not be measured on the laptop used, and an idle connector
-  connection costs about 120 KiB of resident memory against a 64 KiB
-  target; the document says why for each.
+  (budget 500 µs). Counted on the heap, the gateway holds 58.9 KiB per
+  idle connector connection (budget 64 KiB) and 25.8 KiB per request in
+  flight (budget 16 KiB plus the 256 KiB stream window). The p99 latency
+  and scaling across cores are not measured yet: the laptop used is too
+  noisy for them.
+- `scripts/unsafe-boundary.sh`, in `cargo xtask ci`: unsafe code is
+  allowed only in the benchmark crate's counting allocator, which the
+  memory figures need. Published crates still forbid it.
 
 - Mismatches between claims and evidence (FR-14): a `User-Agent` or MCP
   `clientInfo` that names an AI provider (Claude or Anthropic, ChatGPT or

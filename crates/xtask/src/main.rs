@@ -12,7 +12,7 @@
 //! `cargo xtask fuzz-targets` prints the targets as a JSON array, for the
 //! weekly workflow's one job per target. `cargo xtask kani` runs the Kani
 //! proofs of the frame parser (needs `cargo kani`); `cargo xtask bench`
-//! runs the benchmarks (`docs/benchmarks.md`).
+//! runs the benchmarks (`docs/BENCHMARKS.md`).
 
 use std::env;
 use std::fs;
@@ -73,6 +73,12 @@ const STEPS: &[Step] = &[
         env: &[],
     },
     Step {
+        name: "unsafe-boundary",
+        program: "bash",
+        args: &["scripts/unsafe-boundary.sh"],
+        env: &[],
+    },
+    Step {
         name: "cargo-vet",
         program: "bash",
         args: &["scripts/vet.sh"],
@@ -128,7 +134,7 @@ const KANI: &[Step] = &[Step {
 }];
 
 /// The benchmarks against NFR-1 to NFR-3, from a release build
-/// (`docs/benchmarks.md`).
+/// (`docs/BENCHMARKS.md`).
 const BENCH: &[Step] = &[Step {
     name: "bench",
     program: "cargo",

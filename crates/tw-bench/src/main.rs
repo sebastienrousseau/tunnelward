@@ -8,12 +8,17 @@
 //! tunnelward-bench latency | memory | scaling | all
 //! ```
 
+mod alloc;
 mod latency;
 mod memory;
 mod scaling;
 mod setup;
 
 use setup::Res;
+
+/// Counts live heap bytes, for the memory benchmark (NFR-2).
+#[global_allocator]
+static ALLOCATOR: alloc::Counting = alloc::Counting;
 
 fn latency_report(rows: &[[f64; 6]]) {
     println!("## NFR-1: added latency, 1 KiB MCP call, warm connection\n");
@@ -58,17 +63,22 @@ async fn run(what: &str) -> Res<()> {
         latency_report(&latency::run().await?);
     }
     if matches!(what, "memory" | "all") {
-        let (idle, held) = memory::run().await?;
-        println!("## NFR-2: gateway memory\n");
+        let usage = memory::run().await?;
+        println!("## NFR-2: gateway memory, live heap bytes\n");
         println!(
             "- Per idle connector connection ({} open): {} KiB",
             memory::IDLE,
-            kib(idle)
+            kib(usage.connector)
         );
         println!(
-            "- Per request in flight ({} held, each with its HTTP/1.1 client connection): {} KiB\n",
+            "- Per idle HTTP/1.1 client connection ({} open): {} KiB",
             memory::HELD,
-            kib(held)
+            kib(usage.client)
+        );
+        println!(
+            "- Per request in flight ({} held, one per client connection): {} KiB\n",
+            memory::HELD,
+            kib(usage.request)
         );
     }
     if matches!(what, "scaling" | "all") {
