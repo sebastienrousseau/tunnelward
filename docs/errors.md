@@ -324,3 +324,10 @@ Accept or Reject.
 ### TW-C007
 
 **HTTP/2 failed.** The HTTP/2 connection failed after registration.
+
+### TW-C008
+
+**Attestation file unreadable.** The connector could not read its
+`attestation` file, or the file is larger than a register frame. It is
+read again at every registration, so a fixed file is picked up on the
+next retry.

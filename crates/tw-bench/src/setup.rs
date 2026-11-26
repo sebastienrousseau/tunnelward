@@ -121,6 +121,7 @@ pub(crate) async fn connector(addr: &str, n: u16, hold: Duration) -> Res<()> {
         },
         limits: Limits::default(),
         handshake_timeout: Duration::from_secs(10),
+        attestation_file: None,
     };
     let session = register(&config).await?;
     tokio::spawn(async move {

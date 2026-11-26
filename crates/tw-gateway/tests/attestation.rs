@@ -108,3 +108,27 @@ async fn turning_admission_off_admits_without_a_statement() -> Res<()> {
     assert_eq!(get(&gateway, "/pay/x").await?.1, "pay GET /pay/x");
     Ok(())
 }
+
+#[tokio::test]
+async fn a_connector_reads_its_statement_at_every_registration() -> Res<()> {
+    let (_gateway, addr) = gateway().await?;
+    let dir = std::env::temp_dir().join(format!("tw-attest-{}", std::process::id()));
+    std::fs::create_dir_all(&dir)?;
+    let file = dir.join("bundle.json");
+    let _ = std::fs::remove_file(&file);
+    let mut config = connector_config(&addr, claim(1, &["pay"], None))?;
+    config.attestation_file = Some(file.clone());
+    let missing = register(&config).await;
+    assert!(
+        matches!(&missing, Err(e) if e.id() == "TW-C008"),
+        "{missing:?}"
+    );
+    let max = usize::try_from(config.limits.max_frame_len)?;
+    std::fs::write(&file, vec![b' '; max + 1])?;
+    let large = register(&config).await;
+    assert!(matches!(&large, Err(e) if e.id() == "TW-C008"), "{large:?}");
+    std::fs::write(&file, BUNDLE)?;
+    assert!(register(&config).await.is_ok());
+    std::fs::remove_dir_all(&dir)?;
+    Ok(())
+}

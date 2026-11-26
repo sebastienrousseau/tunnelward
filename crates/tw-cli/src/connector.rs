@@ -257,6 +257,7 @@ fn config(checked: Checked, identity: Arc<RotatingIdentity>) -> Result<Connector
         register: checked.register,
         limits: Limits::default(),
         handshake_timeout: Duration::from_secs(10),
+        attestation_file: None,
     };
     Ok(ConnectorConfig::new(checked.gateways, session))
 }

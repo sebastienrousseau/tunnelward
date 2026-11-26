@@ -3,6 +3,7 @@
 
 //! One registration and the HTTP/2 server that follows it.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -33,6 +34,11 @@ pub struct Config {
     pub tls: Arc<ClientConfig>,
     /// What to register.
     pub register: Register,
+    /// A file holding the passmcp attestation to present (a Sigstore
+    /// bundle or a DSSE envelope), read at every registration so a
+    /// renewed statement is sent without a restart. It replaces
+    /// `register.attestation`.
+    pub attestation_file: Option<PathBuf>,
     /// Frame limits; the gateway's answer must fit them.
     pub limits: Limits,
     /// Longest the TCP, TLS and registration exchange may take together.
@@ -75,7 +81,12 @@ async fn register_inner(config: &Config) -> Result<Registered, Error> {
     if stream.get_ref().1.alpn_protocol() != Some(ALPN) {
         return Err(Error::Alpn);
     }
-    let frame = Frame::Register(config.register.clone());
+    let mut claim = config.register.clone();
+    if let Some(path) = &config.attestation_file {
+        claim.attestation =
+            Some(read_attestation(path.clone(), config.limits.max_frame_len).await?);
+    }
+    let frame = Frame::Register(claim);
     write_frame(&mut stream, &frame, &config.limits)
         .await
         .map_err(Error::Write)?;
@@ -91,6 +102,30 @@ async fn register_inner(config: &Config) -> Result<Registered, Error> {
         Frame::Reject(reject) => Err(Error::Rejected(reject)),
         Frame::Register(_) => Err(Error::UnexpectedFrame),
     }
+}
+
+/// The file at `path`, refused unread when it is larger than `max`: a
+/// statement must fit in the register frame anyway.
+async fn read_attestation(path: PathBuf, max: u32) -> Result<Vec<u8>, Error> {
+    let read = move || {
+        use std::io::Read;
+        let file = std::fs::File::open(&path)?;
+        let len = file.metadata()?.len();
+        if len > u64::from(max) {
+            let why = format!(
+                "{} is {len} bytes, over the {max}-byte frame",
+                path.display()
+            );
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, why));
+        }
+        let mut bytes = Vec::new();
+        file.take(u64::from(max)).read_to_end(&mut bytes)?;
+        Ok(bytes)
+    };
+    tokio::task::spawn_blocking(read)
+        .await
+        .map_err(|e| Error::Attestation(std::io::Error::other(e)))?
+        .map_err(Error::Attestation)
 }
 
 impl Registered {
