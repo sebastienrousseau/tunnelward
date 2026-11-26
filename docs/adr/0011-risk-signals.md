@@ -45,7 +45,7 @@ chosen.
 - **Policy reads it**: a rule with `risk = N` matches calls whose score
   is N or more, so `forbid` with `risk = 70` refuses them.
 - **A canary ends the session.** Its subject and MCP session are refused
-  (`TW-I008`) for `block_secs` (one hour by default) on this gateway,
+  (`TW-I013`) for `block_secs` (one hour by default) on this gateway,
   and the alert goes to every observer, the audit entry and the span.
 - **The score and its signals are in the audit entry and on the span.**
 

@@ -55,6 +55,7 @@ fn call<'a>(info: &'a RequestInfo, method: &'a str, tool: Option<&'a str>) -> Ca
         tool,
         evidence: info.evidence,
         mismatch: !info.mismatches.is_empty(),
+        risk: info.risk.as_ref().map_or(0, |a| a.score),
     }
 }
 

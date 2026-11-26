@@ -821,6 +821,7 @@ dependencies = [
  "tunnelward-mcp",
  "tunnelward-policy",
  "tunnelward-proto",
+ "tunnelward-risk",
  "tunnelward-testpki",
 ]
 

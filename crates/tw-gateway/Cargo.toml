@@ -34,6 +34,7 @@ tunnelward-identity.workspace = true
 tunnelward-mcp.workspace = true
 tunnelward-policy.workspace = true
 tunnelward-proto = { workspace = true, features = ["io"] }
+tunnelward-risk.workspace = true
 
 [dev-dependencies]
 hyper = { workspace = true, features = ["client", "http1", "http2", "server"] }

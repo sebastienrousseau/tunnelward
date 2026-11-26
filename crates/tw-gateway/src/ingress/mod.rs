@@ -35,6 +35,7 @@ use crate::provenance;
 use crate::refusal::{Refusal, refusal_for};
 use crate::{ClientAddr, Gateway, RequestInfo, ResponseBody};
 
+mod judge;
 mod respond;
 
 /// The ingress response body: a connector's stream, or the gateway's own
@@ -49,6 +50,8 @@ pub struct Ingress {
     secure: bool,
     /// SHA-256 of the client's TLS certificate, when it sent one.
     client_cert: Option<[u8; 32]>,
+    /// The TLS key exchange group the client negotiated.
+    tls_group: Option<&'static str>,
 }
 
 impl core::fmt::Debug for Gateway {
@@ -68,6 +71,7 @@ impl Gateway {
             peer,
             secure,
             client_cert: None,
+            tls_group: None,
         }
     }
 }
@@ -79,6 +83,19 @@ impl Ingress {
     pub fn with_client_certificate(mut self, der: &[u8]) -> Self {
         let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, der);
         self.client_cert = digest.as_ref().try_into().ok();
+        self
+    }
+
+    /// The gateway this service sends to.
+    pub(crate) fn gateway(&self) -> &Gateway {
+        &self.gateway
+    }
+
+    /// The same service for a client that negotiated the TLS key
+    /// exchange `group`, which telemetry reports.
+    #[must_use]
+    pub fn with_tls_group(mut self, group: Option<&'static str>) -> Self {
+        self.tls_group = group;
         self
     }
 }
@@ -128,6 +145,9 @@ impl Ingress {
             provider,
             evidence: tunnelward_policy::Evidence::Declared,
             mismatches: Vec::new(),
+            risk: None,
+            route: None,
+            tls_group: self.tls_group,
             trail: crate::audit::Trail {
                 host: (request.uri().host().map(str::to_owned))
                     .or_else(|| provenance::declared(headers, "host")),
@@ -270,7 +290,7 @@ impl Ingress {
             crate::audit::body(info, &body);
         }
         self.envelope(&request, &body, info);
-        let high_impact = self.decide(&request, &body, info)?;
+        let high_impact = self.judge(&request, &body, info).await?;
         let request = self.restate(request, info);
         if high_impact {
             let key = idempotent::key(&request, info)?;
@@ -291,21 +311,6 @@ impl Ingress {
                 "no response within the request timeout",
             )),
         }
-    }
-
-    /// The policy's decision on every call in the request, if there is a
-    /// policy: whether one is to a high-impact tool.
-    fn decide(
-        &self,
-        request: &Request<Full<Bytes>>,
-        body: &Bytes,
-        info: &RequestInfo,
-    ) -> Result<bool, Refusal> {
-        let Some(engine) = self.gateway.policy() else {
-            return Ok(false);
-        };
-        let verdict = crate::policy::decide(engine.as_ref(), request.method(), body, info)?;
-        Ok(verdict == crate::policy::Verdict::Forward { high_impact: true })
     }
 
     /// With [`crate::AgentAuth`] on, admits only a request whose token

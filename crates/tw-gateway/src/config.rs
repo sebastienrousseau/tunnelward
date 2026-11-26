@@ -113,6 +113,10 @@ pub struct IngressConfig {
     /// The tool policy (FR-4), replaceable at runtime with
     /// [`crate::Gateway::set_policy`]. `None` decides nothing.
     pub policy: Option<std::sync::Arc<dyn tunnelward_policy::PolicyEngine>>,
+    /// The risk score (FR-16, ADR 0011): every request scored before the
+    /// policy decides, the score in policy, audit and telemetry. `None`
+    /// scores nothing.
+    pub risk: Option<std::sync::Arc<tunnelward_risk::Risk>>,
 }
 
 impl Default for IngressConfig {
@@ -138,6 +142,7 @@ impl Default for IngressConfig {
             bot_auth: None,
             enrolment: None,
             policy: None,
+            risk: None,
         }
     }
 }

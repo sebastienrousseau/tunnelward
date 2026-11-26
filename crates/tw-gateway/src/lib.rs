@@ -50,6 +50,7 @@ mod refusal;
 mod registry;
 mod resolver;
 mod retry;
+mod risk;
 mod route;
 mod sfv;
 mod state;
