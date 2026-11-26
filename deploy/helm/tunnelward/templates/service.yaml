@@ -1,0 +1,43 @@
+{{/*
+SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+SPDX-License-Identifier: GPL-3.0-only
+*/}}
+{{- range $name, $svc := dict "connectors" .Values.service.connectors "agents" .Values.service.agents }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tunnelward.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "tunnelward.labels" $ | nindent 4 }}
+  {{- with $svc.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $svc.type }}
+  selector:
+    {{- include "tunnelward.selector" $ | nindent 4 }}
+  ports:
+    - name: {{ $name }}
+      port: {{ $svc.port }}
+      targetPort: {{ $name }}
+{{- end }}
+{{- if .Values.admin.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tunnelward.fullname" . }}-admin
+  labels:
+    {{- include "tunnelward.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "tunnelward.selector" . | nindent 4 }}
+  ports:
+    - name: admin
+      port: {{ .Values.admin.port }}
+      targetPort: admin
+{{- end }}

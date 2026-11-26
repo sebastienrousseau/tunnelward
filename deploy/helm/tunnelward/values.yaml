@@ -1,0 +1,98 @@
+# SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-only
+
+image:
+  repository: ghcr.io/sebastienrousseau/tunnelward
+  # Empty: the chart's appVersion.
+  tag: ""
+  # sha256:... pins the image; it wins over the tag.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+# More than one replica needs a shared store ([state] in `config`), so
+# every gateway sees every connector's routes.
+replicaCount: 1
+
+tls:
+  # A Secret holding tls.crt, tls.key and ca.crt (the roots connector
+  # certificates chain to), such as cert-manager writes. Required.
+  # Renewed files are picked up every reloadSecs without a restart.
+  connectorsSecret: ""
+  reloadSecs: 10
+  # A Secret holding tls.crt and tls.key for agents; empty serves agents
+  # plain HTTP (behind a TLS-terminating load balancer, for example).
+  ingressSecret: ""
+
+admin:
+  enabled: true
+  port: 9090
+  # The admin API answers off loopback only with a bearer token, read
+  # from this Secret's key. Required when enabled.
+  tokenSecret:
+    name: ""
+    key: token
+
+# The ports the gateway listens on inside the pod.
+containerPorts:
+  connectors: 7443
+  agents: 8443
+
+# Where the pod mounts the gateway file and certificates.
+mountRoot: /etc/tunnelward
+
+# TOML appended to the gateway file after [listen], [tls], [ingress] and
+# [admin], which the chart writes: [connectors], [agents], [policy],
+# [audit], [state], [risk], [telemetry] and the rest. See
+# https://github.com/sebastienrousseau/tunnelward#configuration.
+config: ""
+
+service:
+  connectors:
+    # Connectors dial out to this; it must be reachable from them.
+    type: ClusterIP
+    port: 7443
+    annotations: {}
+  agents:
+    type: ClusterIP
+    port: 8443
+    annotations: {}
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+# A Prometheus Operator ServiceMonitor scraping /metrics with the admin
+# token.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels: {}
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+podAnnotations: {}
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}

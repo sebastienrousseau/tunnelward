@@ -51,6 +51,7 @@ check "main matches origin/main" test "$(git rev-parse HEAD)" = "$(git rev-parse
 echo "== version $version at ${target:0:7}"
 check "release commit is on main" git merge-base --is-ancestor "$target" HEAD
 check "workspace version is $version" bash -c "git show $target:Cargo.toml | grep -qx 'version = \"$version\"'"
+check "Helm chart version and appVersion are $version" bash -c "git show $target:deploy/helm/tunnelward/Chart.yaml | grep -qx -e 'version: $version' && git show $target:deploy/helm/tunnelward/Chart.yaml | grep -qx -e 'appVersion: \"$version\"'"
 check "CHANGELOG has a $version section" bash -c "git show $target:CHANGELOG.md | grep -q '^## \[$version\]'"
 check "docs/releases/$tag.md has Highlights" grep -q '^## Highlights' "docs/releases/$tag.md"
 check "Highlights have no em dash" bash -c "! grep -q '—' docs/releases/$tag.md"

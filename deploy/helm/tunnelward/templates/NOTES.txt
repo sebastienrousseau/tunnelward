@@ -1,0 +1,14 @@
+{{- /*
+SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+SPDX-License-Identifier: GPL-3.0-only
+*/ -}}
+Tunnelward {{ .Chart.AppVersion }} is running as {{ include "tunnelward.fullname" . }}.
+
+Connectors dial {{ include "tunnelward.fullname" . }}-connectors:{{ .Values.service.connectors.port }}
+(mutual TLS, ALPN tw/1). Agents connect to
+{{ include "tunnelward.fullname" . }}-agents:{{ .Values.service.agents.port }}.
+
+Check the gateway speaks the protocol, as a connector the CA trusts:
+
+  tunnelward conformance --gateway <address>:{{ .Values.service.connectors.port }} \
+    --server-name <name in tls.crt> --ca ca.crt --cert connector.crt --key connector.key

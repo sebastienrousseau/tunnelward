@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+# SPDX-License-Identifier: GPL-3.0-only
+apiVersion: v2
+name: tunnelward
+description: Tunnelward gateway, which connectors dial out to and AI agents connect through
+type: application
+version: 0.0.17
+appVersion: "0.0.17"
+home: https://github.com/sebastienrousseau/tunnelward
+sources:
+  - https://github.com/sebastienrousseau/tunnelward
+keywords: [mcp, tunnel, gateway, mtls, post-quantum]
