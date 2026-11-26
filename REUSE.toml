@@ -64,3 +64,10 @@ path = ["crates/tw-attest/tests/vectors/statement.json"]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>"
 SPDX-License-Identifier = "Apache-2.0"
+
+# The Grafana dashboard: JSON has no comment syntax.
+[[annotations]]
+path = ["deploy/grafana/tunnelward.json"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>"
+SPDX-License-Identifier = "GPL-3.0-only"
