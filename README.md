@@ -39,7 +39,7 @@ Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/release
 
 **The Tunnelward ecosystem**
 
-- [The Tunnelward ecosystem](#the-tunnelward-ecosystem) — tunnelward-proto, tunnelward-crypto, tunnelward-identity, tunnelward-attest, tunnelward-policy, tunnelward-mcp, tunnelward-audit, tunnelward-risk, tunnelward-gateway, tunnelward-connector, tunnelward
+- [The Tunnelward ecosystem](#the-tunnelward-ecosystem) — tunnelward-proto, tunnelward-crypto, tunnelward-identity, tunnelward-attest, tunnelward-policy, tunnelward-mcp, tunnelward-audit, tunnelward-risk, tunnelward-gateway, tunnelward-connector, tunnelward-conformance, tunnelward
 
 **Library reference**
 
@@ -135,6 +135,7 @@ its own.
 | `tunnelward-risk` | A 0 to 100 risk score from velocity, tool-sequence drift, canary tools and canary records | Refusing a scripted bulk export, ending a session that touched a canary |
 | `tunnelward-gateway` | Ingress, routing, admission, admin API | The public side agents connect to |
 | `tunnelward-connector` | Outbound registration, stdio bridge | The private side next to the MCP server |
+| `tunnelward-conformance` | Protocol checks run against a gateway as a connector (alpha) | Showing a gateway, ours or another, speaks `tw/1` and refuses what it must |
 | `tunnelward` | The `tunnelward` binary | Operating all of the above |
 
 ---
@@ -173,6 +174,9 @@ its own.
 | Admission by attestation | A route can admit only connectors that present a passmcp statement about one of its targets, signed (cosign or DSSE) by a key the gateway trusts, recent enough and with the checks the route requires; revoking a statement drains its connections (`[attestation]`, `tunnelward attest verify`) | Shipped in 0.0.15 |
 | Risk scoring | Every request scored 0 to 100 from velocity per client, tool and IP prefix (counted across gateways), tool-sequence drift, canary tools and canary records; policy can forbid by score (`risk = 70`); a canary refuses the call and ends the session (`TW-I013`); the score is in the audit entry and the span (`[risk]`) | Shipped in 0.0.16 |
 | Telemetry | RED metrics per route on `/metrics` (exemplars in OpenMetrics) and a Grafana dashboard; a span per request as OTLP/HTTP JSON, continuing the client's trace, with route, tools, identities, TLS group and risk (`[telemetry]`); no OpenTelemetry SDK | Shipped in 0.0.16 |
+| Conformance kit | `tunnelward conformance` runs six protocol checks against a gateway as a connector (ALPN, malformed and over-long frames, version, identity, registration and HTTP/2), as text or JSON (alpha) | Shipped in 0.0.17 |
+| Kubernetes | Helm chart for the gateway (non-root, read-only root, Secrets for TLS and the admin token, optional ServiceMonitor), published as a signed OCI chart | Shipped in 0.0.17 |
+| Testcontainers | Java module starting a gateway and a connector with a throwaway PKI, for integration tests through Tunnelward | Shipped in 0.0.17 |
 
 ---
 
@@ -236,6 +240,16 @@ Check a file before deploying it:
 ```bash
 tunnelward config check tunnelward.toml   # every problem, or "ok"
 tunnelward doctor --config tunnelward.toml
+```
+
+On Kubernetes, the chart in [`deploy/helm/tunnelward`](deploy/helm/tunnelward)
+writes `[listen]`, `[tls]`, `[ingress]` and `[admin]` from its values and
+appends the rest of the file from `config`; its
+[`values.yaml`](deploy/helm/tunnelward/values.yaml) documents each value.
+
+```bash
+helm install tunnelward oci://ghcr.io/sebastienrousseau/charts/tunnelward \
+  --set tls.connectorsSecret=gateway-tls --set admin.tokenSecret.name=gateway-admin
 ```
 
 Errors carry stable ids (`TW-S001` and so on), explained in
@@ -307,7 +321,7 @@ Two licences, split by what you embed (decision D8):
 
 | Crates | Licence | Why |
 | :--- | :--- | :--- |
-| `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`, `tunnelward-mcp`, `tunnelward-connector`, `tunnelward-testpki` | [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE), at your option | They ship inside your services, as the connector library and the SDKs' base |
+| `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`, `tunnelward-mcp`, `tunnelward-connector`, `tunnelward-conformance`, `tunnelward-testpki`, and the Java Testcontainers module (`sdk/java/testcontainers`) | [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE), at your option | They ship inside your services, as the connector library and the SDKs' base |
 | `tunnelward-gateway`, `tunnelward-policy`, `tunnelward-audit`, `tunnelward-attest`, `tunnelward-risk`, `tunnelward` (the `tunnelward` binary), `xtask` | [GPL-3.0-only](LICENSE-GPL) | The gateway and tools you run, not embed |
 
 The gate fails if a permissive crate depends on a GPL one
