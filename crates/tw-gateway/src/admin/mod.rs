@@ -19,6 +19,9 @@
 //! are served. Anything else gets 401.
 
 mod inventory;
+mod metrics;
+
+use metrics::openmetrics;
 
 pub use inventory::{Connection, Inventory, Redaction};
 
@@ -224,13 +227,13 @@ impl Gateway {
         let query = request.uri().query().unwrap_or("");
         let path = request.uri().path();
         match *request.method() {
-            Method::GET => self.get(path, query),
+            Method::GET => self.get(path, query, openmetrics(request.headers())),
             Method::POST => self.post(path, query, peer.ip()).await,
             _ => elsewhere(path),
         }
     }
 
-    fn get(&self, path: &str, query: &str) -> Answer {
+    fn get(&self, path: &str, query: &str, openmetrics: bool) -> Answer {
         match path {
             "/healthz" => text(StatusCode::OK, "ok\n"),
             "/readyz" => self.readiness(),
@@ -243,10 +246,7 @@ impl Gateway {
                 };
                 json(&self.inventory(redaction))
             }
-            "/metrics" => {
-                let body = inventory::metrics(&self.inventory(Redaction::Public));
-                Response::new(Full::new(Bytes::from(body)))
-            }
+            "/metrics" => self.metrics(openmetrics),
             "/dark" => json(&serde_json::json!({ "dark": self.dark_labels() })),
             _ => elsewhere(path),
         }

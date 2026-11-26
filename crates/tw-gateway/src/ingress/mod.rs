@@ -35,6 +35,7 @@ use crate::provenance;
 use crate::refusal::{Refusal, refusal_for};
 use crate::{ClientAddr, Gateway, RequestInfo, ResponseBody};
 
+mod judge;
 mod respond;
 
 /// The ingress response body: a connector's stream, or the gateway's own
@@ -49,6 +50,8 @@ pub struct Ingress {
     secure: bool,
     /// SHA-256 of the client's TLS certificate, when it sent one.
     client_cert: Option<[u8; 32]>,
+    /// The TLS key exchange group the client negotiated.
+    tls_group: Option<&'static str>,
 }
 
 impl core::fmt::Debug for Gateway {
@@ -68,6 +71,7 @@ impl Gateway {
             peer,
             secure,
             client_cert: None,
+            tls_group: None,
         }
     }
 }
@@ -79,6 +83,19 @@ impl Ingress {
     pub fn with_client_certificate(mut self, der: &[u8]) -> Self {
         let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, der);
         self.client_cert = digest.as_ref().try_into().ok();
+        self
+    }
+
+    /// The gateway this service sends to.
+    pub(crate) fn gateway(&self) -> &Gateway {
+        &self.gateway
+    }
+
+    /// The same service for a client that negotiated the TLS key
+    /// exchange `group`, which telemetry reports.
+    #[must_use]
+    pub fn with_tls_group(mut self, group: Option<&'static str>) -> Self {
+        self.tls_group = group;
         self
     }
 }
@@ -123,11 +140,15 @@ impl Ingress {
             request_id: provenance::request_id(),
             user_agent: provenance::declared(headers, "user-agent"),
             traceparent: provenance::traceparent(headers),
+            trace: provenance::Trace::of(provenance::traceparent(headers).as_deref()),
             mcp_session: provenance::declared(headers, tunnelward_mcp::SESSION_HEADER),
             client_id: None,
             provider,
             evidence: tunnelward_policy::Evidence::Declared,
             mismatches: Vec::new(),
+            risk: None,
+            route: None,
+            tls_group: self.tls_group,
             trail: crate::audit::Trail {
                 host: (request.uri().host().map(str::to_owned))
                     .or_else(|| provenance::declared(headers, "host")),
@@ -140,7 +161,10 @@ impl Ingress {
     async fn handle(self, request: Request<Incoming>) -> Response<IngressBody> {
         let started = Instant::now();
         let ingress = &self.gateway.inner.config.ingress;
-        let info = self.info(&request);
+        let mut info = self.info(&request);
+        // The route the request is aimed at, for metrics and spans; the
+        // request is routed again when it is sent.
+        info.route = (self.gateway).route_of(info.trail.host.as_deref(), request.uri().path());
         for o in &ingress.observers {
             o.on_request(&info);
         }
@@ -270,7 +294,7 @@ impl Ingress {
             crate::audit::body(info, &body);
         }
         self.envelope(&request, &body, info);
-        let high_impact = self.decide(&request, &body, info)?;
+        let high_impact = self.judge(&request, &body, info).await?;
         let request = self.restate(request, info);
         if high_impact {
             let key = idempotent::key(&request, info)?;
@@ -291,21 +315,6 @@ impl Ingress {
                 "no response within the request timeout",
             )),
         }
-    }
-
-    /// The policy's decision on every call in the request, if there is a
-    /// policy: whether one is to a high-impact tool.
-    fn decide(
-        &self,
-        request: &Request<Full<Bytes>>,
-        body: &Bytes,
-        info: &RequestInfo,
-    ) -> Result<bool, Refusal> {
-        let Some(engine) = self.gateway.policy() else {
-            return Ok(false);
-        };
-        let verdict = crate::policy::decide(engine.as_ref(), request.method(), body, info)?;
-        Ok(verdict == crate::policy::Verdict::Forward { high_impact: true })
     }
 
     /// With [`crate::AgentAuth`] on, admits only a request whose token
@@ -443,6 +452,13 @@ impl Ingress {
         };
         rewrite(request.headers_mut(), &stamp);
         stamp_request_id(request.headers_mut(), info);
+        if ingress.otlp.is_some() {
+            // The gateway's span is exported: the connector's work is its
+            // child, not the client's.
+            if let Ok(parent) = http::HeaderValue::from_str(&info.trace.traceparent()) {
+                request.headers_mut().insert("traceparent", parent);
+            }
+        }
         if ingress.agent_auth.is_some() {
             // The token and its DPoP proof are for the gateway; passing
             // them on is forbidden.

@@ -246,6 +246,15 @@ store (`[state]`), or the in-process store is full. 503: these checks
 fail closed, so a store outage refuses the request rather than risk a
 replay (ADR 0004). Check the store and its credentials.
 
+### TW-I013
+
+**Session ended by a canary.** The request called a canary tool or
+carried a canary record (`[risk]`, FR-16, ADR 0011), or came from a
+subject (OAuth client, else address) or MCP session a canary ended
+within `block_secs`. 403; the connector never sees it, and observers
+were alerted. A legitimate agent never touches a canary: treat it as an
+incident.
+
 ## Policy (`TW-P`)
 
 The tool policy (FR-4, `[policy]`) and the idempotency keys of

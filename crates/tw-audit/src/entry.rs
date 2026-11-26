@@ -81,6 +81,13 @@ pub struct RequestEntry {
     /// SHA-256 of the `tw-receipt` sent, when one was.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub receipt: Option<String>,
+    /// The risk score, 0 to 100, when the gateway scores requests
+    /// (FR-16).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risk: Option<u8>,
+    /// What raised it, such as `velocity:tool:61>60` or `canary-record`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub risk_signals: Vec<String>,
 }
 
 /// An operator's action through the admin API.

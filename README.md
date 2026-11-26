@@ -39,7 +39,7 @@ Releases adhere strictly to https://github.com/sebastienrousseau/passmcp/release
 
 **The Tunnelward ecosystem**
 
-- [The Tunnelward ecosystem](#the-tunnelward-ecosystem) — tunnelward-proto, tunnelward-crypto, tunnelward-identity, tunnelward-attest, tunnelward-policy, tunnelward-mcp, tunnelward-audit, tunnelward-gateway, tunnelward-connector, tunnelward
+- [The Tunnelward ecosystem](#the-tunnelward-ecosystem) — tunnelward-proto, tunnelward-crypto, tunnelward-identity, tunnelward-attest, tunnelward-policy, tunnelward-mcp, tunnelward-audit, tunnelward-risk, tunnelward-gateway, tunnelward-connector, tunnelward
 
 **Library reference**
 
@@ -78,8 +78,8 @@ A container image is at `ghcr.io/sebastienrousseau/tunnelward`.
 
 ```toml
 [dependencies]
-tunnelward-connector = "0.0.15"   # embed a connector in your service
-tunnelward-gateway = "0.0.15"     # embed a gateway in your server
+tunnelward-connector = "0.0.16"   # embed a connector in your service
+tunnelward-gateway = "0.0.16"     # embed a gateway in your server
 ```
 
 `tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
@@ -132,6 +132,7 @@ its own.
 | `tunnelward-policy` | Per-tool policy and evidence levels (Cedar later, behind the same trait) | Allowing or denying each `tools/call` |
 | `tunnelward-mcp` | MCP envelope parsing, Streamable HTTP, SSE | Reading the method and tool name without parsing the body |
 | `tunnelward-audit` | Hash-chained log with signed checkpoints, pseudonyms, signed call receipts, offline verifier, OCSF export | Proving what was allowed, after the fact |
+| `tunnelward-risk` | A 0 to 100 risk score from velocity, tool-sequence drift, canary tools and canary records | Refusing a scripted bulk export, ending a session that touched a canary |
 | `tunnelward-gateway` | Ingress, routing, admission, admin API | The public side agents connect to |
 | `tunnelward-connector` | Outbound registration, stdio bridge | The private side next to the MCP server |
 | `tunnelward` | The `tunnelward` binary | Operating all of the above |
@@ -170,6 +171,8 @@ its own.
 | Audit log | Every request and admin action in a hash-chained JSON Lines log with composite ML-DSA-65 + Ed25519 signed checkpoints; client addresses and certificates as keyed-hash pseudonyms, arguments and results as digests; raw addresses only on opt-in, beside the chain, for at most 30 days (`[audit]`, `tunnelward audit verify`, `audit export` to OCSF 1.3.0) | Shipped in 0.0.14 |
 | Call receipts | An opt-in signed `tw-receipt` on every answer, naming the request, caller, calls, decision and status, checked offline with `tunnelward receipt verify` | Shipped in 0.0.14 |
 | Admission by attestation | A route can admit only connectors that present a passmcp statement about one of its targets, signed (cosign or DSSE) by a key the gateway trusts, recent enough and with the checks the route requires; revoking a statement drains its connections (`[attestation]`, `tunnelward attest verify`) | Shipped in 0.0.15 |
+| Risk scoring | Every request scored 0 to 100 from velocity per client, tool and IP prefix (counted across gateways), tool-sequence drift, canary tools and canary records; policy can forbid by score (`risk = 70`); a canary refuses the call and ends the session (`TW-I013`); the score is in the audit entry and the span (`[risk]`) | Shipped in 0.0.16 |
+| Telemetry | RED metrics per route on `/metrics` (exemplars in OpenMetrics) and a Grafana dashboard; a span per request as OTLP/HTTP JSON, continuing the client's trace, with route, tools, identities, TLS group and risk (`[telemetry]`); no OpenTelemetry SDK | Shipped in 0.0.16 |
 
 ---
 
@@ -220,7 +223,11 @@ the signed provider snapshot requests are tagged with (`[providers]`,
 documented in [`providers.rs`](crates/tw-cli/src/providers.rs)), and the
 audit log (`[audit]`, documented in [`audit.rs`](crates/tw-cli/src/audit.rs)), and the routes
 that admit only attested connectors (`[attestation]`, documented in
-[`attest.rs`](crates/tw-cli/src/attest.rs)). `tunnelward connector --config connector.toml` runs a connector
+[`attest.rs`](crates/tw-cli/src/attest.rs)), the risk score and span
+export (`[risk]` and `[telemetry]`, documented in
+[`observe.rs`](crates/tw-cli/src/observe.rs)). RED metrics are on the
+admin API's `/metrics`; [`deploy/grafana/tunnelward.json`](deploy/grafana/tunnelward.json)
+is a dashboard for them. `tunnelward connector --config connector.toml` runs a connector
 in front of a local service. Each format, with every key, is documented
 at the top of [`config.rs`](crates/tw-cli/src/config.rs) and
 [`connector.rs`](crates/tw-cli/src/connector.rs).
@@ -301,7 +308,7 @@ Two licences, split by what you embed (decision D8):
 | Crates | Licence | Why |
 | :--- | :--- | :--- |
 | `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`, `tunnelward-mcp`, `tunnelward-connector`, `tunnelward-testpki` | [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE), at your option | They ship inside your services, as the connector library and the SDKs' base |
-| `tunnelward-gateway`, `tunnelward-policy`, `tunnelward-audit`, `tunnelward-attest`, `tunnelward` (the `tunnelward` binary), `xtask` | [GPL-3.0-only](LICENSE-GPL) | The gateway and tools you run, not embed |
+| `tunnelward-gateway`, `tunnelward-policy`, `tunnelward-audit`, `tunnelward-attest`, `tunnelward-risk`, `tunnelward` (the `tunnelward` binary), `xtask` | [GPL-3.0-only](LICENSE-GPL) | The gateway and tools you run, not embed |
 
 The gate fails if a permissive crate depends on a GPL one
 (`scripts/licence-boundary.sh`). Every file names its licence in an SPDX

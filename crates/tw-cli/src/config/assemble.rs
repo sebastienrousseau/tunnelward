@@ -61,39 +61,48 @@ pub(super) fn with_providers(
     (p.snapshot, p.signer_keys)
 }
 
-/// The `[state]` store, the `[policy]` and the `[attestation]`, each
-/// checked.
-pub(super) fn state_and_policy(
-    base: &Path,
-    file: &File,
-    problems: &mut Problems,
-) -> (
-    Option<crate::state::Checked>,
-    Option<tunnelward_policy::Policy>,
-    Option<Arc<tunnelward_attest::Admission>>,
-) {
-    let shared = (file.state.as_ref()).and_then(|s| crate::state::check(base, s, problems));
-    let policy = (file.policy.as_ref()).and_then(|p| crate::policy::check(base, p, problems));
-    let attestation =
-        (file.attestation.as_ref()).and_then(|a| crate::attest::check(base, a, problems));
-    (shared, policy, attestation)
-}
-
-/// Shares state through the `[state]` store when one was given, turns
-/// the tool policy on, and admission by attestation (FR-5).
-pub(super) fn with_state(
-    gateway: &mut Config,
+/// The optional sections that switch features on, each checked.
+pub(super) struct Sections {
     shared: Option<crate::state::Checked>,
     policy: Option<tunnelward_policy::Policy>,
     attestation: Option<Arc<tunnelward_attest::Admission>>,
-) {
+    risk: Option<Arc<tunnelward_risk::Risk>>,
+    otlp: Option<crate::observe::Otlp>,
+}
+
+/// The `[state]` store, the `[policy]`, the `[attestation]`, the
+/// `[risk]` and the `[telemetry]`, each checked.
+pub(super) fn state_and_policy(base: &Path, file: &File, problems: &mut Problems) -> Sections {
+    Sections {
+        shared: (file.state.as_ref()).and_then(|s| crate::state::check(base, s, problems)),
+        policy: (file.policy.as_ref()).and_then(|p| crate::policy::check(base, p, problems)),
+        attestation: (file.attestation.as_ref())
+            .and_then(|a| crate::attest::check(base, a, problems)),
+        risk: (file.risk.as_ref()).and_then(|r| crate::observe::risk(r, problems)),
+        otlp: (file.telemetry.as_ref()).and_then(|t| crate::observe::telemetry(base, t, problems)),
+    }
+}
+
+/// Shares state through the `[state]` store when one was given, turns
+/// the tool policy, admission by attestation (FR-5) and the risk score
+/// (FR-16) on; returns the span exporter to start with the gateway.
+pub(super) fn with_state(gateway: &mut Config, sections: Sections) -> Option<crate::observe::Otlp> {
+    let Sections {
+        shared,
+        policy,
+        attestation,
+        risk,
+        otlp,
+    } = sections;
     gateway.attestation = attestation;
+    gateway.ingress.risk = risk;
     if let Some(s) = shared {
         gateway.state = s.state;
         gateway.ingress.rate_limit.gateways = s.gateways;
     }
     gateway.ingress.policy =
         policy.map(|p| Arc::new(p) as Arc<dyn tunnelward_gateway::PolicyEngine>);
+    otlp
 }
 
 /// The file and every certificate and key it names, to watch for

@@ -104,6 +104,10 @@ fn entry(sink: &Sink, info: &RequestInfo, status: u16, decision: Decision) -> Re
     entry.error = decision.error();
     entry.status = status;
     entry.receipt.clone_from(&info.trail.receipt);
+    if let Some(risk) = &info.risk {
+        entry.risk = Some(risk.score);
+        entry.risk_signals = risk.signals.iter().map(ToString::to_string).collect();
+    }
     entry
 }
 

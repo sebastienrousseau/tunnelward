@@ -16,12 +16,7 @@ use crate::serve::{Listeners, bind, until_one_stops};
 pub(crate) async fn run(path: &Path) -> Result<(), String> {
     let file = config::load(path)?;
     let mut checked = config::check(path, file).map_err(|problems| problems.join("\n"))?;
-    let audit = checked
-        .audit
-        .take()
-        .map(|settings| tunnelward_audit::Sink::open(settings).map(std::sync::Arc::new))
-        .transpose()?;
-    checked.gateway.audit.clone_from(&audit);
+    let audit = open_sinks(&mut checked)?;
     // At once: a file renewed from here on is seen as a change.
     let watch = Watch {
         seen: stamps(&checked.watched),
@@ -55,6 +50,20 @@ pub(crate) async fn run(path: &Path) -> Result<(), String> {
         sink.close();
     }
     stopped
+}
+
+/// Opens the audit log and starts the span exporter the file asks for,
+/// in `checked`'s gateway configuration; returns the log, to close.
+fn open_sinks(
+    checked: &mut config::Checked,
+) -> Result<Option<Arc<tunnelward_audit::Sink>>, String> {
+    let audit = (checked.audit.take())
+        .map(|settings| tunnelward_audit::Sink::open(settings).map(Arc::new))
+        .transpose()?;
+    checked.gateway.audit.clone_from(&audit);
+    let otlp = checked.otlp.take().map(crate::observe::Otlp::start);
+    checked.gateway.ingress.otlp = otlp.transpose()?;
+    Ok(audit)
 }
 
 /// Binds every listener `listen` names.

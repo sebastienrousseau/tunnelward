@@ -57,6 +57,10 @@
 //!
 //! [attestation]                 # optional: routes that admit only
 //!                               # attested connectors (see attest.rs)
+//!
+//! [risk]                        # optional: the risk score (see observe.rs)
+//!
+//! [telemetry]                   # optional: OTLP spans (see observe.rs)
 //! ```
 
 use std::net::SocketAddr;
@@ -94,6 +98,8 @@ pub(crate) struct File {
     policy: Option<crate::policy::Section>,
     audit: Option<crate::audit::Section>,
     attestation: Option<crate::attest::Section>,
+    risk: Option<crate::observe::RiskSection>,
+    telemetry: Option<crate::observe::TelemetrySection>,
 }
 
 impl File {
@@ -245,6 +251,8 @@ pub(crate) struct Checked {
     pub(crate) providers: Option<crate::providers::Loaded>,
     /// The audit log to open when the gateway starts.
     pub(crate) audit: Option<tunnelward_audit::Settings>,
+    /// The span exporter to start with the gateway (`[telemetry]`).
+    pub(crate) otlp: Option<crate::observe::Otlp>,
 }
 
 /// Reads and parses `path`. A parse error names the line and column.
@@ -410,7 +418,7 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         .providers
         .as_ref()
         .and_then(|p| crate::providers::check(base, p, &mut problems));
-    let (shared, policy, attestation) = state_and_policy(base, &file, &mut problems);
+    let sections = state_and_policy(base, &file, &mut problems);
     let audit = (file.audit.as_ref()).and_then(|a| crate::audit::check(base, a, &mut problems));
     let (Some((tls, ingress_tls)), true) = (tls, problems.is_empty()) else {
         return Err(problems);
@@ -422,7 +430,7 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         with_agents(&mut gateway, agents, file.ingress.client_certificates);
     let (providers, signer_keys) = with_providers(&mut gateway, providers);
     gateway.ingress.enrolment = enrolment.map(|e| e.enrolment);
-    with_state(&mut gateway, shared, policy, attestation);
+    let otlp = with_state(&mut gateway, sections);
     let key_sets = [key_sets, signer_keys].concat();
     with_ingress(&mut gateway.ingress, ingress_tls, trusted, cors, &file);
     if let Some(secs) = file.connectors.lease_secs {
@@ -440,5 +448,6 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         key_refresh,
         providers,
         audit,
+        otlp,
     })
 }

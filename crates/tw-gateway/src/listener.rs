@@ -54,7 +54,10 @@ impl Gateway {
                 };
                 let session = tls.get_ref().1;
                 let h2 = session.alpn_protocol() == Some(b"h2");
-                let mut service = self.ingress(peer, true);
+                let group = session
+                    .negotiated_key_exchange_group()
+                    .and_then(|g| g.name().as_str());
+                let mut service = self.ingress(peer, true).with_tls_group(group);
                 if let Some(cert) = session.peer_certificates().and_then(<[_]>::first) {
                     service = service.with_client_certificate(cert.as_ref());
                 }

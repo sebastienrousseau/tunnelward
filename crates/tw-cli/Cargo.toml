@@ -31,6 +31,7 @@ tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "tim
 toml.workspace = true
 tunnelward-connector.workspace = true
 tunnelward-attest.workspace = true
+tunnelward-risk.workspace = true
 tunnelward-audit.workspace = true
 tunnelward-crypto.workspace = true
 tunnelward-gateway.workspace = true

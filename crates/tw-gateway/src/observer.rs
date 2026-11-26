@@ -32,6 +32,8 @@ pub struct RequestInfo {
     pub user_agent: Option<String>,
     /// A well-formed W3C `traceparent` header, when the client sent one.
     pub traceparent: Option<String>,
+    /// The trace the request's span belongs to: the client's, else new.
+    pub trace: crate::Trace,
     /// The MCP session (`Mcp-Session-Id`), when the client sent one.
     pub mcp_session: Option<String>,
     /// The OAuth client the agent's token names (`client_id`, else
@@ -47,6 +49,13 @@ pub struct RequestInfo {
     /// back (FR-14): a `User-Agent` or `clientInfo` naming a provider the
     /// gateway did not see.
     pub mismatches: Vec<crate::Mismatch>,
+    /// The request's risk score and its signals (FR-16), once scored.
+    pub risk: Option<tunnelward_risk::Assessment>,
+    /// The route claim that serves the request, once it is known.
+    pub route: Option<String>,
+    /// The TLS key exchange group the client negotiated, such as
+    /// `X25519MLKEM768`; `None` over plain HTTP.
+    pub tls_group: Option<&'static str>,
     /// What the audit log adds on the way through.
     pub(crate) trail: crate::audit::Trail,
 }
@@ -72,4 +81,8 @@ pub trait ProxyObserver: fmt::Debug + Send + Sync {
     /// The gateway answered with an error instead of a connector's
     /// response, and why.
     fn on_failure(&self, _info: &RequestInfo, _status: StatusCode, _reason: &str) {}
+
+    /// The request's risk score reached the alert threshold, or a canary
+    /// fired (FR-16). `info.risk` holds the assessment.
+    fn on_alert(&self, _info: &RequestInfo) {}
 }

@@ -7,6 +7,45 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.16]
+
+### Added
+
+- A risk score for every request (FR-16, ADR 0011), in a new published
+  crate, `tunnelward-risk`. With `[risk]` in the gateway's file (or
+  `IngressConfig::risk`) each request is scored 0 to 100 before the
+  policy decides: velocity per client (else address), per tool and per
+  IP prefix (/24, /48), counted in the shared store so it holds across
+  gateways; drift, a step between tools the client has never taken,
+  which stays on it for the window; canary tools and canary records.
+  Impossible travel and first-seen ASN need IP data and are not built.
+  A policy rule matches by score (`risk = 70`). A canary refuses the
+  call and ends the client's and the MCP session's access for an hour
+  (`TW-I013`). Observers get `on_alert` at the threshold (70); the audit
+  entry carries `risk` and `risk_signals`. Store keys are SHA-256
+  digests, never addresses.
+- Telemetry without the OpenTelemetry SDK (ADR 0010): `/metrics` adds
+  requests by route and status class and a duration histogram per
+  route, with exemplars when scraped as OpenMetrics; with `[telemetry]`
+  (or `IngressConfig::otlp`) a span per request goes to a collector as
+  OTLP/HTTP JSON, `https://` or `http://` on loopback, continuing the
+  client's `traceparent` and naming the gateway's span as the parent the
+  connector sees. Export never holds up a request: a full queue drops
+  and counts.
+- `deploy/grafana/tunnelward.json`, a dashboard for those metrics.
+- `RequestInfo` gains the request's `trace`, `route`, `tls_group` and
+  `risk`.
+
+### Fixed
+
+- The attestation limits from 0.0.15 were fixed constants, against the
+  rule that every limit is configurable. They are now `Limits` in
+  `tunnelward-attest` and keys in `[attestation]`: `max_signatures` (8),
+  `future_skew_secs` (300) and `max_revoked` (100,000), defaults
+  unchanged. An envelope's signatures are counted before any is decoded,
+  and the envelope is read in one pass instead of being buffered first.
+  This landed on main after the v0.0.15 tag.
+
 ## [0.0.15]
 
 ### Added
@@ -32,9 +71,6 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   `Config::attestation_file`) names the bundle to present. It is read at
   every registration, so a statement renewed by CI is sent at the next
   lease without a restart; a file that cannot be read is `TW-C008`.
-- Its limits are configurable in `[attestation]` (`Limits`):
-  `max_signatures` (8), `future_skew_secs` (300) and `max_revoked`
-  (100,000); signatures are counted before any is decoded.
 - `tunnelward attest verify` checks a bundle offline with `--key`, or
   with `--config` and `--route` to print the gateway's decision, and
   prints the statement digest a revocation file names.
