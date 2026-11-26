@@ -29,6 +29,8 @@ pub enum Error {
     UnexpectedFrame,
     /// The HTTP/2 connection failed after registration.
     Http(hyper::Error),
+    /// The attestation file could not be read.
+    Attestation(io::Error),
 }
 
 impl Error {
@@ -45,6 +47,7 @@ impl Error {
             Self::Rejected(reject) => reject.code.id(),
             Self::UnexpectedFrame => "TW-C006",
             Self::Http(_) => "TW-C007",
+            Self::Attestation(_) => "TW-C008",
         }
     }
 
@@ -66,6 +69,7 @@ impl fmt::Display for Error {
             Self::Rejected(r) => write!(f, "registration rejected ({:?}): {}", r.code, r.reason),
             Self::UnexpectedFrame => f.write_str("the gateway sent an unexpected frame"),
             Self::Http(e) => write!(f, "HTTP/2 connection failed: {e}"),
+            Self::Attestation(e) => write!(f, "cannot read the attestation file: {e}"),
         }
     }
 }
@@ -73,7 +77,7 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Connect(e) => Some(e),
+            Self::Connect(e) | Self::Attestation(e) => Some(e),
             Self::Write(e) => Some(e),
             Self::Read(e) => Some(e),
             Self::Http(e) => Some(e),

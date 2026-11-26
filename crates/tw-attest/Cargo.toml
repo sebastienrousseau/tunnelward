@@ -3,7 +3,7 @@
 
 [package]
 name = "tunnelward-attest"
-description = "Tunnelward admission by passmcp attestation"
+description = "Tunnelward admission by passmcp attestation: DSSE and Sigstore bundles, in-toto statements, per-route rules and revocation"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,8 +11,21 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-# Not published until the crate has an API worth depending on.
-publish = false
+readme.workspace = true
+keywords = ["attestation", "in-toto", "dsse", "mcp", "admission"]
+categories = ["cryptography", "network-programming"]
+
+[dependencies]
+# SHA-256, SHA-512, ECDSA P-256 and Ed25519 verification.
+aws-lc-rs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# base64 and hex.
+tunnelward-audit.workspace = true
+# PEM public keys, through rustls's pki-types.
+tunnelward-crypto.workspace = true
+# The reject codes a refusal carries.
+tunnelward-proto.workspace = true
 
 [lints]
 workspace = true

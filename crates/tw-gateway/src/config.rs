@@ -52,6 +52,10 @@ pub struct Config {
     /// and admin action, and signed receipts when it has them on. None by
     /// default.
     pub audit: Option<Arc<tunnelward_audit::Sink>>,
+    /// Routes that admit only connectors with a passmcp attestation
+    /// (FR-5, ADR 0009), replaceable at runtime with
+    /// [`crate::Gateway::set_admission`]. None by default.
+    pub attestation: Option<Arc<tunnelward_attest::Admission>>,
 }
 
 /// The identities allowed to claim one route (FR-3). Any other identity
@@ -159,6 +163,7 @@ impl Config {
             ingress: IngressConfig::default(),
             state: Arc::new(crate::InMemory::default()),
             audit: None,
+            attestation: None,
         }
     }
 }

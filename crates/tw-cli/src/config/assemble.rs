@@ -61,7 +61,8 @@ pub(super) fn with_providers(
     (p.snapshot, p.signer_keys)
 }
 
-/// The `[state]` store and the `[policy]`, each checked.
+/// The `[state]` store, the `[policy]` and the `[attestation]`, each
+/// checked.
 pub(super) fn state_and_policy(
     base: &Path,
     file: &File,
@@ -69,19 +70,24 @@ pub(super) fn state_and_policy(
 ) -> (
     Option<crate::state::Checked>,
     Option<tunnelward_policy::Policy>,
+    Option<Arc<tunnelward_attest::Admission>>,
 ) {
     let shared = (file.state.as_ref()).and_then(|s| crate::state::check(base, s, problems));
     let policy = (file.policy.as_ref()).and_then(|p| crate::policy::check(base, p, problems));
-    (shared, policy)
+    let attestation =
+        (file.attestation.as_ref()).and_then(|a| crate::attest::check(base, a, problems));
+    (shared, policy, attestation)
 }
 
-/// Shares state through the `[state]` store when one was given, and
-/// turns the tool policy on.
+/// Shares state through the `[state]` store when one was given, turns
+/// the tool policy on, and admission by attestation (FR-5).
 pub(super) fn with_state(
     gateway: &mut Config,
     shared: Option<crate::state::Checked>,
     policy: Option<tunnelward_policy::Policy>,
+    attestation: Option<Arc<tunnelward_attest::Admission>>,
 ) {
+    gateway.attestation = attestation;
     if let Some(s) = shared {
         gateway.state = s.state;
         gateway.ingress.rate_limit.gateways = s.gateways;
@@ -103,5 +109,6 @@ pub(super) fn watched(path: &Path, base: &Path, file: &File) -> Vec<PathBuf> {
             .map(|p| resolve(base, p)),
     );
     watched.extend(file.policy.as_ref().map(|p| p.path(base)));
+    watched.extend(file.attestation.iter().flat_map(|a| a.paths(base)));
     watched
 }

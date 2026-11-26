@@ -26,6 +26,9 @@
 //! routes = ["mcp/payments"]
 //! domains = []                          # optional
 //! capacity = 64                         # optional
+//! attestation = "passmcp.bundle.json"   # optional: a signed passmcp
+//!                                       # statement, read at every
+//!                                       # registration (ADR 0009)
 //!
 //! [target]                              # see backend.rs: or a stdio command
 //! url = "http://127.0.0.1:8080"         # or unix:/path/to/socket
@@ -98,6 +101,7 @@ struct RegisterPart {
     #[serde(default)]
     domains: Vec<String>,
     capacity: Option<u32>,
+    attestation: Option<PathBuf>,
 }
 
 /// Whether a TOML text is a connector's file: it has a `[target]`.
@@ -205,6 +209,7 @@ pub(crate) struct Checked {
     server_name: ServerName<'static>,
     address: String,
     source: Source,
+    attestation: Option<PathBuf>,
 }
 
 /// `result`'s value, or its error added to `problems`.
@@ -227,6 +232,13 @@ pub(crate) fn check(path: &Path, file: &File) -> Result<Checked, Problems> {
             .map_err(|e| format!("[gateway] server_name {name:?}: {e}")),
     );
     let register = register(file, &mut problems);
+    let attestation = file.register.attestation.as_ref().map(|p| resolve(base, p));
+    if let Some(path) = attestation.as_ref().filter(|p| !p.is_file()) {
+        problems.push(format!(
+            "[register] attestation: {} is not a file",
+            path.display()
+        ));
+    }
     match (gateways, target, source, roots, server_name) {
         (Some(gateways), Some(target), Some(source), Some(roots), Some(server_name))
             if problems.is_empty() =>
@@ -239,6 +251,7 @@ pub(crate) fn check(path: &Path, file: &File) -> Result<Checked, Problems> {
                 server_name,
                 address: file.gateway.address.clone(),
                 source,
+                attestation,
             })
         }
         _ => Err(problems),
@@ -257,6 +270,7 @@ fn config(checked: Checked, identity: Arc<RotatingIdentity>) -> Result<Connector
         register: checked.register,
         limits: Limits::default(),
         handshake_timeout: Duration::from_secs(10),
+        attestation_file: checked.attestation,
     };
     Ok(ConnectorConfig::new(checked.gateways, session))
 }

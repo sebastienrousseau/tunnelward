@@ -1,0 +1,60 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "https://mcp.example.com/mcp",
+      "digest": {
+        "sha256": "a386a033799c95c21f3d01b2f0efcf71b95b1ef2a420908ce34e3c1eb41a2325"
+      }
+    }
+  ],
+  "predicateType": "https://satellion.com/attestation/mcp-evaluation/v1",
+  "predicate": {
+    "subjectKind": "mcp-target-descriptor",
+    "target": {
+      "transport": "http",
+      "endpoint": "https://mcp.example.com/mcp"
+    },
+    "judgedAgainst": {
+      "specRevision": "2026-07-28",
+      "rubric": "1",
+      "checkInventory": "1"
+    },
+    "instrument": {
+      "name": "passmcp",
+      "version": "0.0.3",
+      "reportSchemaVersion": 1
+    },
+    "ranAt": "2026-09-22T12:00:00Z",
+    "took": "3.2s",
+    "verdicts": [
+      {
+        "id": "auth.unauthenticated_tools",
+        "phase": "auth",
+        "status": "pass"
+      },
+      {
+        "id": "protocol.origin",
+        "phase": "protocol",
+        "status": "fail",
+        "severity": "major",
+        "evidence": [
+          "req#12"
+        ]
+      }
+    ],
+    "counts": {
+      "pass": 1,
+      "warn": 0,
+      "fail": 1,
+      "skip": 0,
+      "info": 0
+    },
+    "score": {
+      "total": 88,
+      "grade": "B",
+      "categoriesAssessed": 6,
+      "categoriesTotal": 6
+    }
+  }
+}

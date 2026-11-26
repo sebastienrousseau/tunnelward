@@ -78,8 +78,8 @@ A container image is at `ghcr.io/sebastienrousseau/tunnelward`.
 
 ```toml
 [dependencies]
-tunnelward-connector = "0.0.14"   # embed a connector in your service
-tunnelward-gateway = "0.0.14"     # embed a gateway in your server
+tunnelward-connector = "0.0.15"   # embed a connector in your service
+tunnelward-gateway = "0.0.15"     # embed a gateway in your server
 ```
 
 `tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
@@ -121,17 +121,14 @@ at startup, and every listener stays on loopback. Add
 ## The Tunnelward ecosystem
 
 One crate per concern, so the protocol core can be fuzzed and audited on
-its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
-`tunnelward-mcp`, `tunnelward-policy`, `tunnelward-audit`,
-`tunnelward-gateway`, `tunnelward-connector` and `tunnelward` have code;
-`tunnelward-attest` is a placeholder until the release the plan gives it.
+its own.
 
 | Component | Purpose | Use case |
 | :--- | :--- | :--- |
 | `tunnelward-proto` | Register frames, limits, error codes | Parsing what a connector sends before its identity is known |
 | `tunnelward-crypto` | rustls configuration with hybrid post-quantum key exchange | X25519MLKEM768 on every TLS hop |
 | `tunnelward-identity` | The SPIFFE ID in an X.509-SVID; the Workload API client; the enrolment CA and signing requests | Proving which workload a connector is |
-| `tunnelward-attest` | passmcp attestation verification | Admitting only MCP servers that passed passmcp |
+| `tunnelward-attest` | passmcp attestations in DSSE envelopes or Sigstore bundles, checked offline; per-route rules and revocation | Admitting only connectors whose MCP server passed passmcp |
 | `tunnelward-policy` | Per-tool policy and evidence levels (Cedar later, behind the same trait) | Allowing or denying each `tools/call` |
 | `tunnelward-mcp` | MCP envelope parsing, Streamable HTTP, SSE | Reading the method and tool name without parsing the body |
 | `tunnelward-audit` | Hash-chained log with signed checkpoints, pseudonyms, signed call receipts, offline verifier, OCSF export | Proving what was allowed, after the fact |
@@ -172,6 +169,7 @@ its own. `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
 | Benchmarks | Added latency, memory per connection and scaling measured against NFR-1 to NFR-3, with method and caveats (`docs/BENCHMARKS.md`, `cargo xtask bench`) | Shipped in 0.0.13 |
 | Audit log | Every request and admin action in a hash-chained JSON Lines log with composite ML-DSA-65 + Ed25519 signed checkpoints; client addresses and certificates as keyed-hash pseudonyms, arguments and results as digests; raw addresses only on opt-in, beside the chain, for at most 30 days (`[audit]`, `tunnelward audit verify`, `audit export` to OCSF 1.3.0) | Shipped in 0.0.14 |
 | Call receipts | An opt-in signed `tw-receipt` on every answer, naming the request, caller, calls, decision and status, checked offline with `tunnelward receipt verify` | Shipped in 0.0.14 |
+| Admission by attestation | A route can admit only connectors that present a passmcp statement about one of its targets, signed (cosign or DSSE) by a key the gateway trusts, recent enough and with the checks the route requires; revoking a statement drains its connections (`[attestation]`, `tunnelward attest verify`) | Shipped in 0.0.15 |
 
 ---
 
@@ -183,7 +181,7 @@ them, and is not written yet.
 
 | Project | Inbound port needed | Connector identity checked | Admission by attestation | Self-hosted |
 | :--- | :---: | :---: | :---: | :---: |
-| **Tunnelward** | No: connectors dial out (`tests/tunnel.rs`) | Yes: SPIFFE ID from the SVID (`tests/ownership.rs`) | Not yet (FR-5, planned) | Yes |
+| **Tunnelward** | No: connectors dial out (`tests/tunnel.rs`) | Yes: SPIFFE ID from the SVID (`tests/ownership.rs`) | Yes: a signed passmcp statement per route (`tests/attestation.rs`) | Yes |
 
 See [`docs/COMPARISON.md`](docs/COMPARISON.md) for the evidence and complete matrix.
 
@@ -220,7 +218,9 @@ owners, the admin token, and the OAuth issuers agents' tokens must come
 from (`[agents]`, documented in [`agents.rs`](crates/tw-cli/src/agents.rs)),
 the signed provider snapshot requests are tagged with (`[providers]`,
 documented in [`providers.rs`](crates/tw-cli/src/providers.rs)), and the
-audit log (`[audit]`, documented in [`audit.rs`](crates/tw-cli/src/audit.rs)). `tunnelward connector --config connector.toml` runs a connector
+audit log (`[audit]`, documented in [`audit.rs`](crates/tw-cli/src/audit.rs)), and the routes
+that admit only attested connectors (`[attestation]`, documented in
+[`attest.rs`](crates/tw-cli/src/attest.rs)). `tunnelward connector --config connector.toml` runs a connector
 in front of a local service. Each format, with every key, is documented
 at the top of [`config.rs`](crates/tw-cli/src/config.rs) and
 [`connector.rs`](crates/tw-cli/src/connector.rs).
@@ -247,7 +247,7 @@ gateway's tests show each feature end to end
 
 ## When not to use Tunnelward
 
-- In production, yet: connector attestation and timestamp-anchored audit checkpoints are still to come (see the plan).
+- In production, yet: timestamp-anchored audit checkpoints are still to come (see the plan), and attestations are trusted by key only, not through keyless Sigstore (ADR 0009).
 - For LLM routing, prompt guardrails or token accounting: use an MCP or LLM gateway such as agentgateway in front of it.
 - As a general-purpose VPN or mesh.
 - If you want a vendor edge to run the data plane for you: Tunnelward is self-hosted.

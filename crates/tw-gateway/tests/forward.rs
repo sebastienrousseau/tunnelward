@@ -176,10 +176,10 @@ async fn requests_reach_a_tcp_target_with_host_query_headers_and_body() -> Res<(
 
 #[tokio::test]
 async fn an_unreachable_target_is_502_and_the_tunnel_stays_up() -> Res<()> {
-    let closed = TcpListener::bind("127.0.0.1:0")
-        .await?
-        .local_addr()?
-        .to_string();
+    // Port 0 cannot be connected to, and no server can hold it. A port
+    // freed by dropping a listener could be taken by a parallel test's
+    // server, which answered 200 (MSRV job, PR #19).
+    let closed = "127.0.0.1:0".to_owned();
     let gateway = tunnel_to(Target::Http { addr: closed }, WAIT).await?;
     for _ in 0..3 {
         assert_eq!(

@@ -96,6 +96,8 @@ pub(crate) struct Link {
     pub(crate) grant: u32,
     pub(crate) peer: Option<IpAddr>,
     pub(crate) kill: Arc<KillSwitch>,
+    /// The digest of the attestation it was admitted with, if any.
+    pub(crate) attested: Option<[u8; 32]>,
 }
 
 /// One connection as the admin inventory reports it.
@@ -161,6 +163,7 @@ impl Registry {
             domains: register.domains,
             in_flight: Arc::new(AtomicU32::new(0)),
             sender: link.sender,
+            attested: link.attested,
         });
         self.changed.notify_waiters();
         session

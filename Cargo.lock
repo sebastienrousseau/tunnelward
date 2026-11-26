@@ -45,15 +45,15 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
 name = "bytes"
-version = "1.12.1"
+version = "1.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
+checksum = "776dfebd015e2d8732c684a2c71003674ccb49457b539b9e82151ba38e96dd7c"
 
 [[package]]
 name = "cbor4ii"
-version = "1.2.4"
+version = "1.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cae341ca01ee91c1e68cbcbd9f08e5c9fb6171c7daed060625563232520d37ae"
+checksum = "bdf8ceac45b2b267e889b7210129e47d3b82f3020877f24473ea0fc055488ffa"
 dependencies = [
  "serde",
 ]
@@ -710,7 +710,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tunnelward"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -721,6 +721,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "toml",
+ "tunnelward-attest",
  "tunnelward-audit",
  "tunnelward-connector",
  "tunnelward-crypto",
@@ -733,11 +734,19 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-attest"
-version = "0.0.14"
+version = "0.0.15"
+dependencies = [
+ "aws-lc-rs",
+ "serde",
+ "serde_json",
+ "tunnelward-audit",
+ "tunnelward-crypto",
+ "tunnelward-proto",
+]
 
 [[package]]
 name = "tunnelward-audit"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "aws-lc-rs",
  "serde",
@@ -747,7 +756,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-bench"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "bytes",
  "http",
@@ -765,7 +774,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-connector"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -782,7 +791,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-crypto"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "aws-lc-rs",
  "rustls",
@@ -791,7 +800,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-gateway"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -804,6 +813,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-rustls",
+ "tunnelward-attest",
  "tunnelward-audit",
  "tunnelward-connector",
  "tunnelward-crypto",
@@ -816,7 +826,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-identity"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -831,7 +841,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-mcp"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "proptest",
  "serde",
@@ -840,11 +850,11 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-policy"
-version = "0.0.14"
+version = "0.0.15"
 
 [[package]]
 name = "tunnelward-proto"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "cbor4ii",
  "proptest",
@@ -855,7 +865,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-testpki"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "bytes",
  "http",
@@ -994,7 +1004,7 @@ checksum = "8c3b93199df0ab874cdf0c6a94f0a0dc3423fe41f1cafb62b8bd7b1deb277aef"
 
 [[package]]
 name = "xtask"
-version = "0.0.14"
+version = "0.0.15"
 
 [[package]]
 name = "zeroize"

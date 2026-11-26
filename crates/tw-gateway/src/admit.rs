@@ -24,6 +24,10 @@ use crate::registry::{Link, Reservation};
 use crate::{AdmitError, Gateway};
 use tunnelward_identity::spiffe_id;
 
+/// An admitted registration: the frame, the claims it holds, and the
+/// digest of the attestation it was admitted with.
+type Decided<'a> = (Register, Reservation<'a>, Option<[u8; 32]>);
+
 /// What a decoded first frame turned into.
 enum Outcome {
     Admit(Register),
@@ -68,7 +72,7 @@ impl Gateway {
         let (mut tls, outcome) = timeout(config.registration_timeout, self.handshake(io))
             .await
             .map_err(|_| AdmitError::Timeout)??;
-        let (register, _reservation) = match self.decide(outcome, limited) {
+        let (register, _reservation, attested) = match self.decide(outcome, limited) {
             Ok(admitted) => admitted,
             Err((code, reason)) => return self.refuse(&mut tls, code, reason).await,
         };
@@ -79,7 +83,7 @@ impl Gateway {
         write_frame(&mut tls, &accept, &config.limits)
             .await
             .map_err(AdmitError::Write)?;
-        self.connect(tls, register, peer).await
+        self.connect(tls, register, peer, attested).await
     }
 
     async fn handshake<IO>(&self, io: IO) -> Result<(TlsStream<IO>, Outcome), AdmitError>
@@ -99,14 +103,11 @@ impl Gateway {
         Ok((tls, outcome))
     }
 
-    /// Admits a decoded registration unless its source is over its rate
-    /// or its claims do not fit ([`crate::claims::check`]). The
-    /// reservation holds its claims until the connector is registered.
-    fn decide(
-        &self,
-        outcome: Outcome,
-        limited: bool,
-    ) -> Result<(Register, Reservation<'_>), (RejectCode, String)> {
+    /// Admits a decoded registration unless its source is over its rate,
+    /// a claimed route's attestation rule is not met (FR-5), or its claims
+    /// do not fit ([`crate::claims::check`]). The reservation holds its
+    /// claims until the connector is registered.
+    fn decide(&self, outcome: Outcome, limited: bool) -> Result<Decided<'_>, (RejectCode, String)> {
         let register = match outcome {
             Outcome::Admit(r) => r,
             Outcome::Refuse(code, reason) => return Err((code, reason)),
@@ -116,6 +117,7 @@ impl Gateway {
             let reason = format!("more than {per_minute} registrations a minute from this source");
             return Err((RejectCode::RateLimited, reason));
         }
+        let attested = self.attest(&register)?;
         let config = &self.inner.config;
         let rules = Rules {
             max_domains: config.limits.max_domains,
@@ -123,7 +125,7 @@ impl Gateway {
             owners: &config.route_owners,
         };
         let reservation = self.inner.registry.reserve(&register, &rules)?;
-        Ok((register, reservation))
+        Ok((register, reservation, attested))
     }
 
     async fn refuse<IO>(
@@ -150,6 +152,7 @@ impl Gateway {
         tls: TlsStream<IO>,
         register: Register,
         peer: Option<IpAddr>,
+        attested: Option<[u8; 32]>,
     ) -> Result<ConnectorId, AdmitError>
     where
         IO: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -177,6 +180,7 @@ impl Gateway {
             grant: grant.max_concurrent_streams,
             peer,
             kill,
+            attested,
         };
         let session = self.inner.registry.insert(register, link);
         let gateway = self.clone();

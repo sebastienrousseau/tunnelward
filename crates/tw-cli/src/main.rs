@@ -5,6 +5,7 @@
 
 mod agents;
 mod args;
+mod attest;
 mod audit;
 mod backend;
 mod config;
@@ -76,6 +77,11 @@ Commands:
                  Write the log's entries as OCSF 1.3.0 events (JSON Lines)
   receipt verify --key <file.pub> <receipt | file | ->
                  Check a tw-receipt offline and print what it says
+  attest verify (--key <file.pub>[,<file.pub>...] | --config <gateway file>
+      --route <route>) <bundle>
+                 Check a passmcp attestation offline and print its digest:
+                 its signature by any of the keys, or the gateway's
+                 admission decision for <route>
 
 Options:
   -h, --help     Print this help
@@ -353,10 +359,42 @@ fn receipt(args: &[String]) -> Result<(), Outcome> {
     Ok(())
 }
 
+fn attest_usage() -> UsageError {
+    UsageError(
+        "usage: tunnelward attest verify (--key <file.pub> | --config <file> --route <route>) <bundle>"
+            .into(),
+    )
+}
+
+/// `--key`, or `--config` with `--route`, but not both.
+fn attest_check(args: &Args) -> Result<attest::Check<'_>, UsageError> {
+    match (args.get("key"), args.get("config"), args.get("route")) {
+        (Some(keys), None, None) => Ok(attest::Check::Keys(
+            keys.split(',').map(std::path::PathBuf::from).collect(),
+        )),
+        (None, Some(config), Some(route)) => Ok(attest::Check::Gateway(Path::new(config), route)),
+        _ => Err(attest_usage()),
+    }
+}
+
+fn attest(args: &[String]) -> Result<(), Outcome> {
+    let args = Args::parse(args, &["key", "config", "route"])?;
+    let [command, bundle] = args.positional.as_slice() else {
+        return Err(attest_usage().into());
+    };
+    if command != "verify" {
+        return Err(attest_usage().into());
+    }
+    let check = attest_check(&args)?;
+    let report = attest::verify(Path::new(bundle), &check).map_err(Outcome::Failed)?;
+    println!("{report}");
+    Ok(())
+}
+
 type Command = fn(&[String]) -> Result<(), Outcome>;
 
 /// Every command, by the names that call it.
-const COMMANDS: [(&[&str], Command); 12] = [
+const COMMANDS: [(&[&str], Command); 13] = [
     (&["-h", "--help"], |_| {
         print!("{USAGE}");
         Ok(())
@@ -375,6 +413,7 @@ const COMMANDS: [(&[&str], Command); 12] = [
     (&["policy"], policy),
     (&["audit"], audit),
     (&["receipt"], receipt),
+    (&["attest"], attest),
 ];
 
 fn dispatch(args: &[String]) -> Outcome {

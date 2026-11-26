@@ -48,3 +48,19 @@ path = [".github/logo.svg"]
 precedence = "override"
 SPDX-FileCopyrightText = "Noun Project contributor (item 8029303)"
 SPDX-License-Identifier = "LicenseRef-NounProject"
+
+# TEST-ONLY attestation vectors, written by scripts/gen-attest-vectors.sh
+# (ADR 0009). JSON and PEM have no comment syntax. Public keys only.
+[[annotations]]
+path = ["crates/tw-attest/tests/vectors/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>"
+SPDX-License-Identifier = "GPL-3.0-only"
+
+# passmcp's statement fixture, copied unchanged from passmcp-reporting
+# (attestation/testdata/statement.json), which is Apache-2.0.
+[[annotations]]
+path = ["crates/tw-attest/tests/vectors/statement.json"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>"
+SPDX-License-Identifier = "Apache-2.0"
