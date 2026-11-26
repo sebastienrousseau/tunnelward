@@ -55,13 +55,17 @@ routes across its connections. The reason names which.
 ### TW-R006
 
 **Attestation required.** The route requires a passmcp attestation and
-the connector sent none.
+the connector sent none. Give the connector the signed statement
+(`attestation` in its configuration file), or remove the route's
+`[[attestation.routes]]` rule on the gateway. See ADR 0009.
 
 ### TW-R007
 
 **Attestation invalid.** The attestation is expired, revoked, unsigned or
-for another server. Re-run passmcp against the server the connector
-fronts.
+for another server; the reason says which. Re-run passmcp against the
+server the connector fronts, sign the statement with a key the gateway
+trusts, and check it the way the gateway will with `tunnelward attest
+verify --config <gateway.toml> --route <route> <bundle>`.
 
 ### TW-R008
 

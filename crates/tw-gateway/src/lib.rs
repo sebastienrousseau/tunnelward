@@ -19,6 +19,7 @@
 mod admin;
 mod admit;
 mod answers;
+mod attestation;
 mod audit;
 mod auth;
 mod botauth;
@@ -126,6 +127,8 @@ struct Inner {
     ready: std::sync::atomic::AtomicBool,
     /// The tool policy, replaceable at runtime.
     policy: std::sync::RwLock<Option<Arc<dyn tunnelward_policy::PolicyEngine>>>,
+    /// Admission by attestation, replaceable at runtime.
+    admission: std::sync::RwLock<Option<Arc<tunnelward_attest::Admission>>>,
 }
 
 impl Gateway {
@@ -137,6 +140,7 @@ impl Gateway {
         let limiter = ratelimit::IngressLimit::new(config.ingress.rate_limit);
         let registrations = ratelimit::Limiter::per_minute(config.limits.registrations_per_minute);
         let policy = std::sync::RwLock::new(config.ingress.policy.clone());
+        let admission = std::sync::RwLock::new(config.attestation.clone());
         Self {
             inner: Arc::new(Inner {
                 config,
@@ -148,6 +152,7 @@ impl Gateway {
                 next_request: std::sync::atomic::AtomicU64::new(0),
                 ready: std::sync::atomic::AtomicBool::new(false),
                 policy,
+                admission,
             }),
         }
     }

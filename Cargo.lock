@@ -812,6 +812,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-rustls",
+ "tunnelward-attest",
  "tunnelward-audit",
  "tunnelward-connector",
  "tunnelward-crypto",

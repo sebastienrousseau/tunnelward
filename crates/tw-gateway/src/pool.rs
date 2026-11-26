@@ -41,6 +41,8 @@ pub(crate) struct Entry {
     pub(crate) capacity: u32,
     pub(crate) in_flight: Arc<AtomicU32>,
     pub(crate) sender: SendRequest<Full<Bytes>>,
+    /// The digest of the attestation it was admitted with, if any.
+    pub(crate) attested: Option<[u8; 32]>,
 }
 
 impl Entry {
