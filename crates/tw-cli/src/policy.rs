@@ -20,6 +20,8 @@
 //! methods = ["tools/call"]          # http:GET for plain requests
 //! tools = ["read_*"]
 //! evidence = "network"              # least: declared, network, cryptographic
+//! risk = 70                         # only calls whose risk score is 70
+//!                                   # or more (see [risk] in the gateway)
 //! mismatch = true                   # only calls whose User-Agent or
 //!                                   # clientInfo names a provider the
 //!                                   # gateway did not see (or false: none)
@@ -79,6 +81,7 @@ struct RulePart {
     tools: Vec<String>,
     evidence: Option<String>,
     mismatch: Option<bool>,
+    risk: Option<u8>,
 }
 
 fn effect(name: &str, at: &str, problems: &mut Problems) -> Effect {
@@ -120,6 +123,13 @@ fn rule(part: &RulePart, at: &str, problems: &mut Problems) -> Rule {
             .as_deref()
             .and_then(|e| evidence(e, at, problems)),
         mismatch: part.mismatch,
+        risk: part.risk.filter(|r| {
+            let ok = *r <= 100;
+            if !ok {
+                problems.push(format!("{at} risk {r}: give 0 to 100"));
+            }
+            ok
+        }),
     }
 }
 
@@ -171,6 +181,8 @@ struct Case {
     evidence: String,
     #[serde(default)]
     mismatch: bool,
+    #[serde(default)]
+    risk: u8,
     expect: String,
 }
 
@@ -200,6 +212,7 @@ fn run_case(policy: &Policy, case: &Case) -> (String, bool) {
         tool: case.tool.as_deref(),
         evidence: level,
         mismatch: case.mismatch,
+        risk: case.risk,
     };
     let (got, why) = match policy.decide(&call) {
         Decision::Allow { high_impact: true } => ("allow", "high impact".to_owned()),

@@ -70,6 +70,8 @@ pub struct Call<'a> {
     /// The request claims something the evidence does not back, such as
     /// a `User-Agent` naming a provider the gateway did not see (FR-14).
     pub mismatch: bool,
+    /// The request's risk score, 0 to 100 (FR-16); 0 with no scoring.
+    pub risk: u8,
 }
 
 /// What a rule does to the calls it matches.
@@ -103,6 +105,9 @@ pub struct Rule {
     /// Matches only calls with (`true`) or without (`false`) a mismatch
     /// between claims and evidence; `None` matches either.
     pub mismatch: Option<bool>,
+    /// Matches only calls whose risk score is this or more (FR-16);
+    /// `None` matches any score.
+    pub risk: Option<u8>,
 }
 
 impl Rule {
@@ -118,19 +123,31 @@ impl Rule {
             tools: Vec::new(),
             evidence: None,
             mismatch: None,
+            risk: None,
         }
     }
 
     /// Whether the rule covers `call`.
     #[must_use]
     pub fn matches(&self, call: &Call<'_>) -> bool {
+        self.names(call) && self.judges(call)
+    }
+
+    /// Whether the call's agent, provider, path, method and tool are
+    /// ones the rule names.
+    fn names(&self, call: &Call<'_>) -> bool {
         any_of(&self.agents, call.agent, glob)
             && any_of(&self.providers, call.provider, glob)
             && any_of(&self.paths, Some(call.path), covers)
             && any_of(&self.methods, Some(call.method), glob)
             && any_of(&self.tools, call.tool, glob)
-            && self.evidence.is_none_or(|least| call.evidence >= least)
+    }
+
+    /// Whether the call's evidence, mismatch and risk meet the rule.
+    fn judges(&self, call: &Call<'_>) -> bool {
+        self.evidence.is_none_or(|least| call.evidence >= least)
             && self.mismatch.is_none_or(|m| m == call.mismatch)
+            && self.risk.is_none_or(|least| call.risk >= least)
     }
 }
 
@@ -264,6 +281,7 @@ mod tests {
             tool: Some(tool),
             evidence,
             mismatch: false,
+            risk: 0,
         }
     }
 
@@ -398,6 +416,28 @@ mod tests {
         assert!(matches!(p.decide(&honest), Decision::Allow { .. }));
         assert_eq!(
             p.decide(&dressed_up),
+            Decision::Deny("forbidden by rule 2".into())
+        );
+    }
+
+    #[test]
+    fn a_rule_can_forbid_risky_calls() {
+        let forbid = Rule {
+            risk: Some(70),
+            ..Rule::any(Effect::Forbid)
+        };
+        let p = policy(vec![permit(&["*"]), forbid]);
+        let calm = Call {
+            risk: 69,
+            ..call("read", Evidence::Network)
+        };
+        let risky = Call {
+            risk: 70,
+            ..calm.clone()
+        };
+        assert!(matches!(p.decide(&calm), Decision::Allow { .. }));
+        assert_eq!(
+            p.decide(&risky),
             Decision::Deny("forbidden by rule 2".into())
         );
     }
