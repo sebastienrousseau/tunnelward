@@ -9,6 +9,33 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
 
 ## [0.0.16]
 
+### Added
+
+- A risk score for every request (FR-16, ADR 0011), in a new published
+  crate, `tunnelward-risk`. With `[risk]` in the gateway's file (or
+  `IngressConfig::risk`) each request is scored 0 to 100 before the
+  policy decides: velocity per client (else address), per tool and per
+  IP prefix (/24, /48), counted in the shared store so it holds across
+  gateways; drift, a step between tools the client has never taken,
+  which stays on it for the window; canary tools and canary records.
+  Impossible travel and first-seen ASN need IP data and are not built.
+  A policy rule matches by score (`risk = 70`). A canary refuses the
+  call and ends the client's and the MCP session's access for an hour
+  (`TW-I013`). Observers get `on_alert` at the threshold (70); the audit
+  entry carries `risk` and `risk_signals`. Store keys are SHA-256
+  digests, never addresses.
+- Telemetry without the OpenTelemetry SDK (ADR 0010): `/metrics` adds
+  requests by route and status class and a duration histogram per
+  route, with exemplars when scraped as OpenMetrics; with `[telemetry]`
+  (or `IngressConfig::otlp`) a span per request goes to a collector as
+  OTLP/HTTP JSON, `https://` or `http://` on loopback, continuing the
+  client's `traceparent` and naming the gateway's span as the parent the
+  connector sees. Export never holds up a request: a full queue drops
+  and counts.
+- `deploy/grafana/tunnelward.json`, a dashboard for those metrics.
+- `RequestInfo` gains the request's `trace`, `route`, `tls_group` and
+  `risk`.
+
 ### Fixed
 
 - The attestation limits from 0.0.15 were fixed constants, against the
