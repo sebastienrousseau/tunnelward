@@ -864,6 +864,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tunnelward-risk"
+version = "0.0.16"
+dependencies = [
+ "aws-lc-rs",
+ "tunnelward-audit",
+]
+
+[[package]]
 name = "tunnelward-testpki"
 version = "0.0.16"
 dependencies = [

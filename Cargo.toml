@@ -19,6 +19,7 @@ members = [
   "crates/tw-mcp",
   "crates/tw-policy",
   "crates/tw-proto",
+  "crates/tw-risk",
   "crates/tw-testpki",
   "crates/xtask",
 ]
@@ -46,6 +47,7 @@ tunnelward-identity = { path = "crates/tw-identity", version = "=0.0.16" }
 tunnelward-policy = { path = "crates/tw-policy", version = "=0.0.16" }
 tunnelward-audit = { path = "crates/tw-audit", version = "=0.0.16" }
 tunnelward-attest = { path = "crates/tw-attest", version = "=0.0.16" }
+tunnelward-risk = { path = "crates/tw-risk", version = "=0.0.16" }
 tunnelward-testpki = { path = "crates/tw-testpki" }
 cbor4ii = { version = "1.2.4", default-features = false, features = ["serde1", "use_std"] }
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
