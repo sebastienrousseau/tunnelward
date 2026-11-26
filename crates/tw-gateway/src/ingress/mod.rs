@@ -140,6 +140,7 @@ impl Ingress {
             request_id: provenance::request_id(),
             user_agent: provenance::declared(headers, "user-agent"),
             traceparent: provenance::traceparent(headers),
+            trace: provenance::Trace::of(provenance::traceparent(headers).as_deref()),
             mcp_session: provenance::declared(headers, tunnelward_mcp::SESSION_HEADER),
             client_id: None,
             provider,
@@ -160,7 +161,10 @@ impl Ingress {
     async fn handle(self, request: Request<Incoming>) -> Response<IngressBody> {
         let started = Instant::now();
         let ingress = &self.gateway.inner.config.ingress;
-        let info = self.info(&request);
+        let mut info = self.info(&request);
+        // The route the request is aimed at, for metrics and spans; the
+        // request is routed again when it is sent.
+        info.route = (self.gateway).route_of(info.trail.host.as_deref(), request.uri().path());
         for o in &ingress.observers {
             o.on_request(&info);
         }
@@ -448,6 +452,13 @@ impl Ingress {
         };
         rewrite(request.headers_mut(), &stamp);
         stamp_request_id(request.headers_mut(), info);
+        if ingress.otlp.is_some() {
+            // The gateway's span is exported: the connector's work is its
+            // child, not the client's.
+            if let Ok(parent) = http::HeaderValue::from_str(&info.trace.traceparent()) {
+                request.headers_mut().insert("traceparent", parent);
+            }
+        }
         if ingress.agent_auth.is_some() {
             // The token and its DPoP proof are for the gateway; passing
             // them on is forbidden.

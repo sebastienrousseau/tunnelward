@@ -117,6 +117,9 @@ pub struct IngressConfig {
     /// policy decides, the score in policy, audit and telemetry. `None`
     /// scores nothing.
     pub risk: Option<std::sync::Arc<tunnelward_risk::Risk>>,
+    /// Spans exported as OTLP/HTTP JSON (ADR 0010). `None` exports none;
+    /// RED metrics are on `/metrics` either way.
+    pub otlp: Option<std::sync::Arc<crate::OtlpExporter>>,
 }
 
 impl Default for IngressConfig {
@@ -143,6 +146,7 @@ impl Default for IngressConfig {
             enrolment: None,
             policy: None,
             risk: None,
+            otlp: None,
         }
     }
 }

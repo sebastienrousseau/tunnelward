@@ -32,6 +32,8 @@ pub struct RequestInfo {
     pub user_agent: Option<String>,
     /// A well-formed W3C `traceparent` header, when the client sent one.
     pub traceparent: Option<String>,
+    /// The trace the request's span belongs to: the client's, else new.
+    pub trace: crate::Trace,
     /// The MCP session (`Mcp-Session-Id`), when the client sent one.
     pub mcp_session: Option<String>,
     /// The OAuth client the agent's token names (`client_id`, else

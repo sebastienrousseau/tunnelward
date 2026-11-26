@@ -21,10 +21,14 @@ use crate::{Gateway, RequestInfo};
 const ENDED: &str = "TW-I013";
 
 impl Gateway {
-    /// The route claim that would serve `request` now, if any.
-    pub(crate) fn route_of(&self, request: &Request<Full<Bytes>>) -> Option<String> {
+    /// The route claim that would serve a request for `host` and `path`
+    /// now, if any.
+    pub(crate) fn route_of(&self, host: Option<&str>, path: &str) -> Option<String> {
         let resolver = self.inner.config.resolver.as_ref();
-        let target = crate::Target::of(request);
+        let target = crate::Target {
+            host: host.map(|h| h.split(':').next().unwrap_or(h).to_ascii_lowercase()),
+            path: path.to_owned(),
+        };
         self.inner.registry.route_for(resolver, &target)
     }
 }

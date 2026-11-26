@@ -202,8 +202,12 @@ async fn a_canary_record_in_the_arguments_ends_the_session_too() -> Res<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn the_score_and_its_signals_are_in_the_audit_entry() -> Res<()> {
+/// An audit log in a fresh directory: (directory, log path, sink).
+fn audit_log() -> Res<(
+    std::path::PathBuf,
+    std::path::PathBuf,
+    Arc<tunnelward_audit::Sink>,
+)> {
     let dir = std::env::temp_dir().join(format!(
         "tw-gw-risk-audit-{}-{}",
         std::process::id(),
@@ -212,9 +216,13 @@ async fn the_score_and_its_signals_are_in_the_audit_entry() -> Res<()> {
     std::fs::create_dir_all(&dir)?;
     let path = dir.join("audit.jsonl");
     let (key, _) = tunnelward_crypto::composite::SigningKey::generate()?;
-    let sink = Arc::new(tunnelward_audit::Sink::open(
-        tunnelward_audit::Settings::new(path.clone(), key, [9; 32]),
-    )?);
+    let settings = tunnelward_audit::Settings::new(path.clone(), key, [9; 32]);
+    Ok((dir, path, Arc::new(tunnelward_audit::Sink::open(settings)?)))
+}
+
+#[tokio::test]
+async fn the_score_and_its_signals_are_in_the_audit_entry() -> Res<()> {
+    let (dir, path, sink) = audit_log()?;
     let settings = Settings {
         canary_tools: vec!["export_all_customers".into()],
         ..Settings::default()

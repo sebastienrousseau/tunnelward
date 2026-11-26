@@ -54,6 +54,7 @@ mod risk;
 mod route;
 mod sfv;
 mod state;
+mod telemetry;
 mod tls;
 
 pub use admin::{AdminConfig, Connection, Inventory, Redaction};
@@ -71,10 +72,12 @@ pub use ingress::{Ingress, IngressBody};
 pub use mismatch::{ClaimSource, Mismatch};
 pub use observer::{ProxyObserver, RequestInfo};
 pub use pool::ResponseBody;
+pub use provenance::Trace;
 pub use providers::{ProviderError, ProviderTag, Providers};
 pub use ratelimit::RateLimit;
 pub use resolver::{LongestFirst, RouteResolver, Target};
 pub use state::{Claim, InMemory, RedisState, SharedState, StateError, StateFuture};
+pub use telemetry::{OtlpExporter, OtlpSettings};
 pub use tunnelward_policy::{Evidence, PolicyEngine};
 
 use std::sync::Arc;
@@ -130,12 +133,20 @@ struct Inner {
     policy: std::sync::RwLock<Option<Arc<dyn tunnelward_policy::PolicyEngine>>>,
     /// Admission by attestation, replaceable at runtime.
     admission: std::sync::RwLock<Option<Arc<tunnelward_attest::Admission>>>,
+    /// RED metrics per route, for `/metrics` (ADR 0010).
+    red: Arc<telemetry::Red>,
 }
 
 impl Gateway {
     /// A gateway with no connectors yet.
     #[must_use]
-    pub fn new(config: Config) -> Self {
+    pub fn new(mut config: Config) -> Self {
+        let red = Arc::new(telemetry::Red::default());
+        let observers = &mut config.ingress.observers;
+        observers.push(red.clone());
+        if let Some(otlp) = &config.ingress.otlp {
+            observers.push(otlp.clone());
+        }
         let acceptor = std::sync::RwLock::new(TlsAcceptor::from(config.tls.clone()));
         let ingress_tls = std::sync::RwLock::new(config.ingress.tls.clone().map(TlsAcceptor::from));
         let limiter = ratelimit::IngressLimit::new(config.ingress.rate_limit);
@@ -154,6 +165,7 @@ impl Gateway {
                 ready: std::sync::atomic::AtomicBool::new(false),
                 policy,
                 admission,
+                red,
             }),
         }
     }

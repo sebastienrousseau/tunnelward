@@ -66,6 +66,53 @@ pub(crate) fn declared(headers: &HeaderMap, name: &str) -> Option<String> {
     Some(value[..end].to_owned())
 }
 
+/// The trace a request's span belongs to (W3C trace context): the
+/// client's trace when it sent a well-formed `traceparent`, else a new
+/// one. The span id is the gateway's own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Trace {
+    /// 32 lower-case hex digits.
+    pub trace_id: String,
+    /// The gateway's span: 16 lower-case hex digits.
+    pub span_id: String,
+    /// The client's span, when it sent a `traceparent`.
+    pub parent_span_id: Option<String>,
+}
+
+impl Trace {
+    /// The trace continuing `traceparent` (already checked), or a new one.
+    pub(crate) fn of(traceparent: Option<&str>) -> Self {
+        let parts = traceparent.map(|t| t.split('-').collect::<Vec<_>>());
+        let (trace_id, parent) = match parts.as_deref() {
+            Some([_, trace, parent, _]) => ((*trace).to_owned(), Some((*parent).to_owned())),
+            _ => (random_hex(16), None),
+        };
+        Self {
+            trace_id,
+            span_id: random_hex(8),
+            parent_span_id: parent,
+        }
+    }
+
+    /// The `traceparent` naming the gateway's span as the parent.
+    #[must_use]
+    pub fn traceparent(&self) -> String {
+        format!("00-{}-{}-01", self.trace_id, self.span_id)
+    }
+}
+
+/// `bytes` random bytes as lower-case hex, never all zero.
+fn random_hex(bytes: usize) -> String {
+    let mut buf = vec![0_u8; bytes];
+    let _filled = SystemRandom::new().fill(&mut buf);
+    if buf.iter().all(|b| *b == 0)
+        && let Some(last) = buf.last_mut()
+    {
+        *last = 1;
+    }
+    tunnelward_audit::hex(&buf)
+}
+
 /// The `traceparent` header, if it is well formed.
 pub(crate) fn traceparent(headers: &HeaderMap) -> Option<String> {
     declared(headers, "traceparent").filter(|t| valid_traceparent(t))
@@ -83,6 +130,19 @@ mod tests {
         assert_ne!(a, b);
         std::thread::sleep(std::time::Duration::from_millis(2));
         assert!(request_id()[..10] > a[..10]);
+    }
+
+    #[test]
+    fn a_trace_continues_the_clients_or_starts_anew() {
+        let given = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+        let t = Trace::of(Some(given));
+        assert_eq!(t.trace_id, "0af7651916cd43dd8448eb211c80319c");
+        assert_eq!(t.parent_span_id.as_deref(), Some("b7ad6b7169203331"));
+        assert!(valid_traceparent(&t.traceparent()) && t.span_id != "b7ad6b7169203331");
+        let fresh = Trace::of(None);
+        assert_eq!((fresh.trace_id.len(), fresh.span_id.len()), (32, 16));
+        assert!(fresh.parent_span_id.is_none() && valid_traceparent(&fresh.traceparent()));
+        assert_ne!(Trace::of(None).trace_id, fresh.trace_id);
     }
 
     #[test]
