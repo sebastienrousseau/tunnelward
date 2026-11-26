@@ -25,7 +25,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.16"
+version = "0.0.17"
 edition = "2024"
 # The MSRV floor. See docs/POLICIES.md before changing it.
 rust-version = "1.89"
@@ -38,16 +38,16 @@ readme = "README.md"
 [workspace.dependencies]
 # Workspace crates. The version pins what a published crate depends on;
 # it moves with workspace.package.version on every release.
-tunnelward-proto = { path = "crates/tw-proto", version = "=0.0.16" }
-tunnelward-crypto = { path = "crates/tw-crypto", version = "=0.0.16" }
-tunnelward-connector = { path = "crates/tw-connector", version = "=0.0.16" }
-tunnelward-gateway = { path = "crates/tw-gateway", version = "=0.0.16" }
-tunnelward-mcp = { path = "crates/tw-mcp", version = "=0.0.16" }
-tunnelward-identity = { path = "crates/tw-identity", version = "=0.0.16" }
-tunnelward-policy = { path = "crates/tw-policy", version = "=0.0.16" }
-tunnelward-audit = { path = "crates/tw-audit", version = "=0.0.16" }
-tunnelward-attest = { path = "crates/tw-attest", version = "=0.0.16" }
-tunnelward-risk = { path = "crates/tw-risk", version = "=0.0.16" }
+tunnelward-proto = { path = "crates/tw-proto", version = "=0.0.17" }
+tunnelward-crypto = { path = "crates/tw-crypto", version = "=0.0.17" }
+tunnelward-connector = { path = "crates/tw-connector", version = "=0.0.17" }
+tunnelward-gateway = { path = "crates/tw-gateway", version = "=0.0.17" }
+tunnelward-mcp = { path = "crates/tw-mcp", version = "=0.0.17" }
+tunnelward-identity = { path = "crates/tw-identity", version = "=0.0.17" }
+tunnelward-policy = { path = "crates/tw-policy", version = "=0.0.17" }
+tunnelward-audit = { path = "crates/tw-audit", version = "=0.0.17" }
+tunnelward-attest = { path = "crates/tw-attest", version = "=0.0.17" }
+tunnelward-risk = { path = "crates/tw-risk", version = "=0.0.17" }
 tunnelward-testpki = { path = "crates/tw-testpki" }
 cbor4ii = { version = "1.2.4", default-features = false, features = ["serde1", "use_std"] }
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
