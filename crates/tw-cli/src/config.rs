@@ -54,6 +54,9 @@
 //! file = "policy.toml"          # read again when it changes
 //!
 //! [audit]                       # optional: the audit log (see audit.rs)
+//!
+//! [attestation]                 # optional: routes that admit only
+//!                               # attested connectors (see attest.rs)
 //! ```
 
 use std::net::SocketAddr;
@@ -90,9 +93,15 @@ pub(crate) struct File {
     state: Option<crate::state::Section>,
     policy: Option<crate::policy::Section>,
     audit: Option<crate::audit::Section>,
+    attestation: Option<crate::attest::Section>,
 }
 
 impl File {
+    /// The `[attestation]` section, if the file has one.
+    pub(crate) fn attestation(&self) -> Option<&crate::attest::Section> {
+        self.attestation.as_ref()
+    }
+
     /// The `[enrolment]` token store, if the file has one.
     pub(crate) fn enrolment(&self, base: &Path) -> Option<tunnelward_gateway::Tokens> {
         self.enrolment.as_ref().map(|e| e.tokens(base))
@@ -401,7 +410,7 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         .providers
         .as_ref()
         .and_then(|p| crate::providers::check(base, p, &mut problems));
-    let (shared, policy) = state_and_policy(base, &file, &mut problems);
+    let (shared, policy, attestation) = state_and_policy(base, &file, &mut problems);
     let audit = (file.audit.as_ref()).and_then(|a| crate::audit::check(base, a, &mut problems));
     let (Some((tls, ingress_tls)), true) = (tls, problems.is_empty()) else {
         return Err(problems);
@@ -413,7 +422,7 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         with_agents(&mut gateway, agents, file.ingress.client_certificates);
     let (providers, signer_keys) = with_providers(&mut gateway, providers);
     gateway.ingress.enrolment = enrolment.map(|e| e.enrolment);
-    with_state(&mut gateway, shared, policy);
+    with_state(&mut gateway, shared, policy, attestation);
     let key_sets = [key_sets, signer_keys].concat();
     with_ingress(&mut gateway.ingress, ingress_tls, trusted, cors, &file);
     if let Some(secs) = file.connectors.lease_secs {

@@ -154,7 +154,7 @@ pub(crate) fn default_version() -> u64 {
 }
 
 /// `at` as RFC 3339 UTC, to the second.
-fn humantime(at: SystemTime) -> String {
+pub(crate) fn humantime(at: SystemTime) -> String {
     let secs = at.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let (y, m, d) = crate::devcert::civil(secs / 86_400);
     let rest = secs % 86_400;

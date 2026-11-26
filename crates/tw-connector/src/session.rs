@@ -81,12 +81,7 @@ async fn register_inner(config: &Config) -> Result<Registered, Error> {
     if stream.get_ref().1.alpn_protocol() != Some(ALPN) {
         return Err(Error::Alpn);
     }
-    let mut claim = config.register.clone();
-    if let Some(path) = &config.attestation_file {
-        claim.attestation =
-            Some(read_attestation(path.clone(), config.limits.max_frame_len).await?);
-    }
-    let frame = Frame::Register(claim);
+    let frame = Frame::Register(claim(config).await?);
     write_frame(&mut stream, &frame, &config.limits)
         .await
         .map_err(Error::Write)?;
@@ -102,6 +97,17 @@ async fn register_inner(config: &Config) -> Result<Registered, Error> {
         Frame::Reject(reject) => Err(Error::Rejected(reject)),
         Frame::Register(_) => Err(Error::UnexpectedFrame),
     }
+}
+
+/// The register frame to send: `config.register`, with the attestation
+/// file's contents when there is one.
+async fn claim(config: &Config) -> Result<Register, Error> {
+    let mut claim = config.register.clone();
+    if let Some(path) = &config.attestation_file {
+        let max = config.limits.max_frame_len;
+        claim.attestation = Some(read_attestation(path.clone(), max).await?);
+    }
+    Ok(claim)
 }
 
 /// The file at `path`, refused unread when it is larger than `max`: a

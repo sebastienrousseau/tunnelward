@@ -4,6 +4,7 @@
 //! `tunnelward gateway --config <file>`: runs a gateway from its file.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use tunnelward_gateway::Gateway;
@@ -88,6 +89,18 @@ fn stamps(files: &[PathBuf]) -> Vec<Option<SystemTime>> {
         .collect()
 }
 
+/// Swaps in the `[attestation]` rules and drains connections whose
+/// statement is now revoked (ADR 0009).
+async fn admission(gateway: Gateway, admission: Option<Arc<tunnelward_attest::Admission>>) {
+    let drained = gateway.set_admission(admission).await;
+    if drained.sessions > 0 {
+        println!(
+            "tunnelward gateway: drained {} connections admitted with a revoked attestation",
+            drained.sessions
+        );
+    }
+}
+
 /// Every `every`, looks for changed files; when one changed, checks the
 /// whole file again and swaps in its TLS configurations (G16). A file
 /// that fails its checks leaves the running configuration in place.
@@ -111,6 +124,10 @@ async fn reload(path: PathBuf, gateway: Gateway, watch: Watch) {
                 gateway.set_tls(checked.gateway.tls.clone());
                 gateway.set_ingress_tls(checked.gateway.ingress.tls.clone());
                 gateway.set_policy(checked.gateway.ingress.policy.clone());
+                tokio::spawn(admission(
+                    gateway.clone(),
+                    checked.gateway.attestation.clone(),
+                ));
                 seen = stamps(&checked.watched);
                 files = checked.watched;
                 println!("tunnelward gateway: certificates and policy reloaded");
