@@ -7,6 +7,18 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.16]
+
+### Fixed
+
+- The attestation limits from 0.0.15 were fixed constants, against the
+  rule that every limit is configurable. They are now `Limits` in
+  `tunnelward-attest` and keys in `[attestation]`: `max_signatures` (8),
+  `future_skew_secs` (300) and `max_revoked` (100,000), defaults
+  unchanged. An envelope's signatures are counted before any is decoded,
+  and the envelope is read in one pass instead of being buffered first.
+  This landed on main after the v0.0.15 tag.
+
 ## [0.0.15]
 
 ### Added
@@ -32,9 +44,6 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   `Config::attestation_file`) names the bundle to present. It is read at
   every registration, so a statement renewed by CI is sent at the next
   lease without a restart; a file that cannot be read is `TW-C008`.
-- Its limits are configurable in `[attestation]` (`Limits`):
-  `max_signatures` (8), `future_skew_secs` (300) and `max_revoked`
-  (100,000); signatures are counted before any is decoded.
 - `tunnelward attest verify` checks a bundle offline with `--key`, or
   with `--config` and `--route` to print the gateway's decision, and
   prints the statement digest a revocation file names.

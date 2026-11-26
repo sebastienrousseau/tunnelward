@@ -67,11 +67,11 @@ connector is the party the check is about.
   route needs one is `AttestationRequired` (TW-R006); anything else
   wrong with it is `AttestationInvalid` (TW-R007), with the reason.
 
-## Amendment: the limits are configurable (2026-11-26, before the tag)
+## Amendment: the limits are configurable (2026-11-26, in 0.0.16)
 
 The 8 signatures, 5 minutes of skew and a revocation list's size were
 first fixed constants, against the rule that every limit is
-configurable with a documented default. They are now `Limits`
+configurable with a documented default. 0.0.15 shipped them that way. From 0.0.16 they are `Limits`
 (`max_signatures`, `future_skew`, `max_revoked`, defaults 8, 5 minutes
 and 100,000), set in `[attestation]`. The signatures are counted
 before any is decoded, and the envelope is read without buffering the
