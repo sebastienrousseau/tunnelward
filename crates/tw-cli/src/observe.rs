@@ -172,8 +172,14 @@ pub(crate) fn telemetry(
     if settings.queue == 0 || settings.batch == 0 || settings.every.is_zero() {
         problems.push("[telemetry]: queue, batch and every_ms are at least 1".into());
     }
-    let roots = crate::agents::system_roots(section.ca.as_ref().map(|c| resolve(base, c)))
-        .map_err(|e| problems.push(format!("[telemetry] ca: {e}")))
-        .ok()?;
+    // Roots only for https://: a collector on loopback over plain HTTP
+    // needs no CA bundle, and a machine may have none.
+    let roots = if settings.endpoint.starts_with("https://") {
+        crate::agents::system_roots(section.ca.as_ref().map(|c| resolve(base, c)))
+            .map_err(|e| problems.push(format!("[telemetry] ca: {e}")))
+            .ok()?
+    } else {
+        Arc::new(RootCertStore::empty())
+    };
     (problems.len() == before).then_some(Otlp { settings, roots })
 }

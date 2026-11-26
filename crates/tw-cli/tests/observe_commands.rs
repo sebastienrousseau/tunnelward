@@ -58,6 +58,23 @@ fn risk_and_telemetry_check_ok_or_list_their_problems() -> Res<()> {
     Ok(std::fs::remove_dir_all(dir)?)
 }
 
+/// A collector on loopback needs no CA bundle: `config check` passes on
+/// a machine without one, as Windows runners are.
+#[test]
+fn a_loopback_collector_needs_no_ca_bundle() -> Res<()> {
+    let dir = pki_dir("observe-no-bundle")?;
+    let path = write_config(
+        &dir,
+        "[telemetry]\notlp_endpoint = \"http://127.0.0.1:4318\"\n",
+    )?;
+    let out = Command::new(env!("CARGO_BIN_EXE_tunnelward"))
+        .args(["config", "check", &path.to_string_lossy()])
+        .env("SSL_CERT_FILE", dir.join("no-such-bundle.pem"))
+        .output()?;
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    Ok(std::fs::remove_dir_all(dir)?)
+}
+
 /// A collector that answers 200 and sends each request body on.
 fn collector() -> Res<(String, mpsc::Receiver<String>)> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
