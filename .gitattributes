@@ -1,2 +1,4 @@
 # Fuzz seeds are exact bytes: PROXY v1 needs its CRLF.
 fuzz/seeds/** binary
+# Signed test vectors are exact bytes: a CRLF checkout breaks their digests.
+crates/tw-attest/tests/vectors/** -text
