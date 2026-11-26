@@ -29,6 +29,7 @@ serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "time"] }
 toml.workspace = true
+tunnelward-conformance.workspace = true
 tunnelward-connector.workspace = true
 tunnelward-attest.workspace = true
 tunnelward-risk.workspace = true

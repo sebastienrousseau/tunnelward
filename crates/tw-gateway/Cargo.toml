@@ -39,6 +39,7 @@ tunnelward-risk.workspace = true
 [dev-dependencies]
 hyper = { workspace = true, features = ["client", "http1", "http2", "server"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tunnelward-conformance.workspace = true
 tunnelward-connector.workspace = true
 tunnelward-testpki.workspace = true
 

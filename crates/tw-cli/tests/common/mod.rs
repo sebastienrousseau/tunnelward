@@ -6,8 +6,9 @@
 
 #![allow(dead_code, unreachable_pub)] // each test file uses a different subset
 
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Child, Command, Output, Stdio};
 
 use tunnelward_testpki as pki;
 
@@ -57,4 +58,42 @@ pub fn write_config(dir: &Path, extra: &str) -> Res<PathBuf> {
         ),
     )?;
     Ok(path)
+}
+
+/// Kills the child when dropped.
+pub struct Running(pub Child);
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        let _killed = self.0.kill();
+        let _reaped = self.0.wait();
+    }
+}
+
+/// `tunnelward gateway` on `path`, and its connector and ingress
+/// addresses once bound.
+pub fn spawn_gateway_at(path: &Path) -> Res<(Running, String, String)> {
+    let mut child = Running(
+        Command::new(env!("CARGO_BIN_EXE_tunnelward"))
+            .args(["gateway", "--config", &path.to_string_lossy()])
+            .stdout(Stdio::piped())
+            .spawn()?,
+    );
+    let mut started = String::new();
+    BufReader::new(child.0.stdout.take().ok_or("no stdout")?).read_line(&mut started)?;
+    let after = |label: &str| {
+        (started.split(label).nth(1))
+            .and_then(|rest| rest.split([',', ' ', '\n']).next())
+            .map(str::to_owned)
+            .ok_or_else(|| format!("no {label:?} address in {started:?}"))
+    };
+    let connectors = after("connectors on ")?;
+    let agents = after("agents on ")?;
+    Ok((child, connectors, agents))
+}
+
+/// [`spawn_gateway_at`], with only the ingress address.
+pub fn spawn_gateway(path: &Path) -> Res<(Running, String)> {
+    let (child, _connectors, agents) = spawn_gateway_at(path)?;
+    Ok((child, agents))
 }

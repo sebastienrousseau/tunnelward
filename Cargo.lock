@@ -723,6 +723,7 @@ dependencies = [
  "toml",
  "tunnelward-attest",
  "tunnelward-audit",
+ "tunnelward-conformance",
  "tunnelward-connector",
  "tunnelward-crypto",
  "tunnelward-gateway",
@@ -774,6 +775,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tunnelward-conformance"
+version = "0.0.17"
+dependencies = [
+ "cbor4ii",
+ "h2",
+ "serde",
+ "tokio",
+ "tokio-rustls",
+ "tunnelward-crypto",
+ "tunnelward-proto",
+]
+
+[[package]]
 name = "tunnelward-connector"
 version = "0.0.17"
 dependencies = [
@@ -816,6 +830,7 @@ dependencies = [
  "tokio-rustls",
  "tunnelward-attest",
  "tunnelward-audit",
+ "tunnelward-conformance",
  "tunnelward-connector",
  "tunnelward-crypto",
  "tunnelward-identity",
