@@ -734,6 +734,14 @@ dependencies = [
 [[package]]
 name = "tunnelward-attest"
 version = "0.0.15"
+dependencies = [
+ "aws-lc-rs",
+ "serde",
+ "serde_json",
+ "tunnelward-audit",
+ "tunnelward-crypto",
+ "tunnelward-proto",
+]
 
 [[package]]
 name = "tunnelward-audit"

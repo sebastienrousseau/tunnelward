@@ -16,3 +16,4 @@ never rewritten once accepted; a new record supersedes it.
 | [0006](0006-in-house-policy-before-cedar.md) | An in-house policy engine before Cedar | Accepted, implemented in 0.0.12 |
 | [0007](0007-composite-signatures.md) | Composite ML-DSA-65 and Ed25519 signatures | Accepted, implemented in 0.0.12 |
 | [0008](0008-audit-log-and-receipts.md) | A hash-chained audit log, pseudonymous by default, and signed receipts | Accepted, implemented in 0.0.14 |
+| [0009](0009-admission-by-passmcp-attestation.md) | Admission by passmcp attestation, signed by keys the operator names | Accepted, implemented in 0.0.15 |
