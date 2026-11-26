@@ -14,7 +14,7 @@
 cargo install cargo-deny --locked
 cargo install cargo-vet --version 0.10.2 --locked
 cargo install rust-code-analysis-cli --version 0.0.25 --locked
-pipx install reuse
+pipx install 'reuse[charset-normalizer]'   # the extra detects file encodings
 ```
 
 ## The gate
