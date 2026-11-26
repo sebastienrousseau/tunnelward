@@ -32,6 +32,9 @@ versions follow the 0.0.N release train described in `AGENTS.md`.
   `Config::attestation_file`) names the bundle to present. It is read at
   every registration, so a statement renewed by CI is sent at the next
   lease without a restart; a file that cannot be read is `TW-C008`.
+- Its limits are configurable in `[attestation]` (`Limits`):
+  `max_signatures` (8), `future_skew_secs` (300) and `max_revoked`
+  (100,000); signatures are counted before any is decoded.
 - `tunnelward attest verify` checks a bundle offline with `--key`, or
   with `--config` and `--route` to print the gateway's decision, and
   prints the statement digest a revocation file names.

@@ -11,17 +11,14 @@ use std::collections::HashSet;
 pub struct Revoked(HashSet<[u8; 32]>);
 
 impl Revoked {
-    /// Most digests a list may hold.
-    pub const MAX: usize = 100_000;
-
     /// A list from text: one hex SHA-256 per line; blank lines and text
     /// after `#` are ignored.
     ///
     /// # Errors
     ///
     /// The first line that is not a digest, by number, or more than
-    /// [`Revoked::MAX`] digests.
-    pub fn parse(text: &str) -> Result<Self, String> {
+    /// `max` digests ([`crate::Limits::max_revoked`]).
+    pub fn parse(text: &str, max: usize) -> Result<Self, String> {
         let mut set = HashSet::new();
         for (n, line) in text.lines().enumerate() {
             let line = line.split('#').next().unwrap_or_default().trim();
@@ -31,10 +28,9 @@ impl Revoked {
             let digest = tunnelward_audit::unhex(line)
                 .and_then(|b| <[u8; 32]>::try_from(b).ok())
                 .ok_or_else(|| format!("line {}: not a hex SHA-256", n + 1))?;
-            if set.len() == Self::MAX {
-                return Err(format!("more than {} digests", Self::MAX));
+            if set.insert(digest) && set.len() > max {
+                return Err(format!("more than {max} digests"));
             }
-            set.insert(digest);
         }
         Ok(Self(set))
     }
@@ -69,7 +65,7 @@ mod tests {
             "# revoked 2026-11-26\n\n{one}  # passmcp run 41\n{}\n",
             one.to_uppercase()
         );
-        let revoked = Revoked::parse(&text).unwrap();
+        let revoked = Revoked::parse(&text, 1).unwrap();
         assert_eq!(revoked.len(), 1);
         assert!(revoked.contains(&[0xab; 32]));
         assert!(!revoked.contains(&[0; 32]));
@@ -78,9 +74,12 @@ mod tests {
     #[test]
     fn names_the_bad_line() {
         assert_eq!(
-            Revoked::parse("\nabc\n"),
+            Revoked::parse("\nabc\n", 10),
             Err("line 2: not a hex SHA-256".into())
         );
-        assert!(Revoked::parse(&"0".repeat(62)).is_err());
+        assert!(Revoked::parse(&"0".repeat(62), 10).is_err());
+        let two = format!("{}\n{}\n", "ab".repeat(32), "cd".repeat(32));
+        assert_eq!(Revoked::parse(&two, 1), Err("more than 1 digests".into()));
+        assert_eq!(Revoked::parse(&two, 2).map(|r| r.len()), Ok(2));
     }
 }

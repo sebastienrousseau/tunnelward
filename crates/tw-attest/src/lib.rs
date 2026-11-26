@@ -14,12 +14,12 @@
 //!
 //! ```
 //! use std::time::{Duration, UNIX_EPOCH};
-//! use tunnelward_attest::{Admission, Rule, Target, TrustedKey};
+//! use tunnelward_attest::{Admission, Limits, Rule, Target, TrustedKey};
 //!
 //! let key = TrustedKey::from_pem(include_bytes!("../tests/vectors/cosign-p256.pub"))?;
 //! let mut rule = Rule::new("mcp/payments", vec![Target::http("https://mcp.example.com/mcp")]);
 //! rule.max_fail = 1; // the fixture's run failed protocol.origin
-//! let admission = Admission::new(vec![key], vec![rule], Default::default());
+//! let admission = Admission::new(vec![key], vec![rule], Default::default(), Limits::default());
 //! let bundle = include_bytes!("../tests/vectors/cosign-bundle.json");
 //! let ran = UNIX_EPOCH + Duration::from_secs(1_790_078_400); // 2026-09-22T12:00:00Z
 //! let routes = ["mcp/payments".to_owned()];
@@ -40,7 +40,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use aws_lc_rs::digest::{SHA256, digest};
 
-pub use envelope::{MAX_SIGNATURES, PAYLOAD_TYPE};
+pub use envelope::PAYLOAD_TYPE;
 pub use keys::TrustedKey;
 pub use revoked::Revoked;
 pub use rule::{Admission, Refusal, Rule, Target};
@@ -65,7 +65,7 @@ pub enum Error {
     Revoked,
     /// The run is older than the rule allows.
     Expired,
-    /// The run is dated more than [`FUTURE_SKEW`] ahead.
+    /// The run is dated more than [`Limits::future_skew`] ahead.
     Future,
     /// The statement is about a target the route is not served by.
     Target(String),
@@ -93,8 +93,29 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// How far ahead of the gateway's clock a run may be dated.
-pub const FUTURE_SKEW: Duration = Duration::from_secs(300);
+/// The bounds a gateway holds attestations to, each configurable
+/// (`[attestation]` in the gateway file).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    /// Most signatures an envelope may carry, counted before any is
+    /// decoded: each is tried against every trusted key.
+    pub max_signatures: usize,
+    /// Most statements a revocation list may name.
+    pub max_revoked: usize,
+    /// How far ahead of the gateway's clock a run may be dated.
+    pub future_skew: Duration,
+}
+
+impl Default for Limits {
+    /// 8 signatures, 100,000 revoked statements, 5 minutes of skew.
+    fn default() -> Self {
+        Self {
+            max_signatures: 8,
+            max_revoked: 100_000,
+            future_skew: Duration::from_secs(300),
+        }
+    }
+}
 
 /// A statement whose envelope, signature and contents passed [`verify`].
 #[derive(Debug, Clone, PartialEq)]
@@ -139,15 +160,16 @@ impl Attested {
     }
 }
 
-/// Checks `bytes`, a DSSE envelope or a Sigstore bundle: a signature by
-/// one of `keys` over an in-toto statement that passmcp would accept.
+/// Checks `bytes`, a DSSE envelope or a Sigstore bundle with at most
+/// `limits.max_signatures` signatures: a signature by one of `keys` over
+/// an in-toto statement that passmcp would accept.
 /// Says nothing about freshness, targets or verdicts: that is a [`Rule`].
 ///
 /// # Errors
 ///
 /// The first thing found wrong.
-pub fn verify(bytes: &[u8], keys: &[TrustedKey]) -> Result<Attested, Error> {
-    let envelope = Envelope::parse(bytes)?;
+pub fn verify(bytes: &[u8], keys: &[TrustedKey], limits: &Limits) -> Result<Attested, Error> {
+    let envelope = Envelope::parse(bytes, limits.max_signatures)?;
     let key = signer(&envelope, keys).ok_or(Error::Unsigned)?;
     let statement: Statement = serde_json::from_slice(&envelope.payload)
         .map_err(|e| Error::Statement(format!("unreadable: {e}")))?;

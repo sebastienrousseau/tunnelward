@@ -10,6 +10,10 @@
 //!                                   # P-256 or Ed25519
 //! revoked = "revoked.txt"           # optional: one statement digest per
 //!                                   # line; read again when it changes
+//! max_signatures = 8                # optional limits, defaults shown:
+//! max_revoked = 100000              # signatures per envelope, digests in
+//! future_skew_secs = 300            # the revocation file, and how far
+//!                                   # ahead of this clock a run may be
 //!
 //! [[attestation.routes]]            # a route that needs a statement
 //! route = "mcp/payments"
@@ -26,7 +30,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use serde::Deserialize;
-use tunnelward_attest::{Admission, Attested, Revoked, Rule, Target, TrustedKey};
+use tunnelward_attest::{Admission, Attested, Limits, Revoked, Rule, Target, TrustedKey};
 use tunnelward_proto::is_route;
 
 use crate::config::{Problems, resolve};
@@ -37,6 +41,9 @@ use crate::config::{Problems, resolve};
 pub(crate) struct Section {
     keys: Vec<PathBuf>,
     revoked: Option<PathBuf>,
+    max_signatures: Option<usize>,
+    max_revoked: Option<usize>,
+    future_skew_secs: Option<u64>,
     #[serde(default)]
     routes: Vec<RoutePart>,
 }
@@ -81,12 +88,30 @@ pub(crate) fn check(
     let keys: Vec<TrustedKey> = (section.keys.iter())
         .filter_map(|p| note(problems, key(&resolve(base, p))))
         .collect();
+    let limits = limits(section, problems);
     let revoked = match &section.revoked {
-        Some(p) => note(problems, revoked(&resolve(base, p))).unwrap_or_default(),
-        None => Revoked::default(),
+        Some(p) => note(problems, revoked(&resolve(base, p), limits.max_revoked)),
+        None => Some(Revoked::default()),
     };
     let rules = rules(&section.routes, problems);
-    (problems.len() == before).then(|| Arc::new(Admission::new(keys, rules, revoked)))
+    let revoked = revoked.filter(|_| problems.len() == before)?;
+    Some(Arc::new(Admission::new(keys, rules, revoked, limits)))
+}
+
+/// The section's limits, each at least 1, the rest at their defaults.
+fn limits(section: &Section, problems: &mut Problems) -> Limits {
+    let default = Limits::default();
+    let limits = Limits {
+        max_signatures: section.max_signatures.unwrap_or(default.max_signatures),
+        max_revoked: section.max_revoked.unwrap_or(default.max_revoked),
+        future_skew: section
+            .future_skew_secs
+            .map_or(default.future_skew, Duration::from_secs),
+    };
+    if limits.max_signatures == 0 || limits.max_revoked == 0 {
+        problems.push("[attestation]: max_signatures and max_revoked are at least 1".into());
+    }
+    limits
 }
 
 fn note<T>(problems: &mut Problems, result: Result<T, String>) -> Option<T> {
@@ -99,10 +124,10 @@ fn key(path: &Path) -> Result<TrustedKey, String> {
     TrustedKey::from_pem(&pem).map_err(|e| format!("[attestation] keys: {}: {e}", path.display()))
 }
 
-fn revoked(path: &Path) -> Result<Revoked, String> {
+fn revoked(path: &Path, max: usize) -> Result<Revoked, String> {
     let at = |e: String| format!("[attestation] revoked: {}: {e}", path.display());
     let text = std::fs::read_to_string(path).map_err(|e| at(e.to_string()))?;
-    Revoked::parse(&text).map_err(at)
+    Revoked::parse(&text, max).map_err(at)
 }
 
 /// The `[[attestation.routes]]`, each route named once.
@@ -204,7 +229,8 @@ pub(crate) fn verify(bundle: &Path, check: &Check<'_>) -> Result<String, String>
                 .iter()
                 .map(|k| key(k))
                 .collect::<Result<Vec<_>, _>>()?;
-            let attested = tunnelward_attest::verify(&bytes, &keys).map_err(|e| e.to_string())?;
+            let attested = tunnelward_attest::verify(&bytes, &keys, &Limits::default())
+                .map_err(|e| e.to_string())?;
             Ok(describe(&attested))
         }
         Check::Gateway(config, route) => decide(&bytes, &*admission(config)?, route),
@@ -213,7 +239,8 @@ pub(crate) fn verify(bundle: &Path, check: &Check<'_>) -> Result<String, String>
 
 /// The gateway's decision on `bytes` for `route`, with what it says.
 fn decide(bytes: &[u8], admission: &Admission, route: &str) -> Result<String, String> {
-    let attested = tunnelward_attest::verify(bytes, admission.keys()).map_err(|e| e.to_string())?;
+    let attested = tunnelward_attest::verify(bytes, admission.keys(), admission.limits())
+        .map_err(|e| e.to_string())?;
     let routes = [route.to_owned()];
     let facts = describe(&attested);
     match admission.admit(&routes, Some(bytes), None, SystemTime::now()) {

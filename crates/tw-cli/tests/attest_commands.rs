@@ -128,6 +128,33 @@ fn the_attestation_section_checks_ok_or_lists_its_problems() -> Res<()> {
 }
 
 #[test]
+fn the_attestation_limits_are_set_in_the_file() -> Res<()> {
+    let dir = dir_with_key("attest-limits")?;
+    std::fs::write(
+        dir.join("revoked.txt"),
+        format!("{STATEMENT}\n{}\n", "ab".repeat(32)),
+    )?;
+    let limits = "revoked = \"revoked.txt\"\nmax_signatures = 2\nfuture_skew_secs = 60\n";
+    let (code, errors) = check(&write_config(&dir, &section(limits, ""))?)?;
+    assert_eq!(code, Some(0), "{errors}");
+    let short = "revoked = \"revoked.txt\"\nmax_revoked = 1\n";
+    let (code, errors) = check(&write_config(&dir, &section(short, ""))?)?;
+    assert_eq!(code, Some(1));
+    assert!(
+        errors.contains("revoked.txt: more than 1 digests"),
+        "{errors}"
+    );
+    let zero = "max_signatures = 0\n";
+    let (code, errors) = check(&write_config(&dir, &section(zero, ""))?)?;
+    assert_eq!(code, Some(1));
+    assert!(
+        errors.contains("max_signatures and max_revoked are at least 1"),
+        "{errors}"
+    );
+    Ok(std::fs::remove_dir_all(dir)?)
+}
+
+#[test]
 fn a_connector_file_names_an_attestation_that_exists() -> Res<()> {
     let dir = pki_dir("attest-connector")?;
     let file = |attestation: &str| -> Res<PathBuf> {

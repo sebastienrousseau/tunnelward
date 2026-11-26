@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use tunnelward_proto::{McpDescriptor, RejectCode};
 
-use crate::{Attested, Error, FUTURE_SKEW, Revoked, TrustedKey, subject_digest, verify};
+use crate::{Attested, Error, Limits, Revoked, TrustedKey, subject_digest, verify};
 
 /// A server a route may be served by, as passmcp names it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,7 +77,8 @@ impl Rule {
     }
 
     /// Whether `attested`, offered by a connector that reports `mcp`,
-    /// admits it to this route at `now`.
+    /// admits it to this route at `now`, a run dated at most
+    /// `future_skew` ahead.
     ///
     /// # Errors
     ///
@@ -87,8 +88,9 @@ impl Rule {
         attested: &Attested,
         mcp: Option<&McpDescriptor>,
         now: SystemTime,
+        future_skew: Duration,
     ) -> Result<(), Error> {
-        if attested.ran_at > now + FUTURE_SKEW {
+        if attested.ran_at > now + future_skew {
             return Err(Error::Future);
         }
         if now.duration_since(attested.ran_at).unwrap_or_default() > self.max_age {
@@ -157,16 +159,19 @@ pub struct Admission {
     keys: Vec<TrustedKey>,
     rules: Vec<Rule>,
     revoked: Revoked,
+    limits: Limits,
 }
 
 impl Admission {
-    /// Rules signed for by `keys`, less `revoked` statements.
+    /// Rules signed for by `keys`, less `revoked` statements, within
+    /// `limits`.
     #[must_use]
-    pub fn new(keys: Vec<TrustedKey>, rules: Vec<Rule>, revoked: Revoked) -> Self {
+    pub fn new(keys: Vec<TrustedKey>, rules: Vec<Rule>, revoked: Revoked, limits: Limits) -> Self {
         Self {
             keys,
             rules,
             revoked,
+            limits,
         }
     }
 
@@ -203,12 +208,13 @@ impl Admission {
             code: RejectCode::AttestationInvalid,
             reason: e.to_string(),
         };
-        let attested = verify(bundle, &self.keys).map_err(invalid)?;
+        let attested = verify(bundle, &self.keys, &self.limits).map_err(invalid)?;
         if self.revoked.contains(&attested.digest) {
             return Err(invalid(Error::Revoked));
         }
         for rule in rules {
-            rule.check(&attested, mcp, now).map_err(invalid)?;
+            rule.check(&attested, mcp, now, self.limits.future_skew)
+                .map_err(invalid)?;
         }
         Ok(Some(attested.digest))
     }
@@ -229,5 +235,11 @@ impl Admission {
     #[must_use]
     pub fn keys(&self) -> &[TrustedKey] {
         &self.keys
+    }
+
+    /// The limits statements are held to.
+    #[must_use]
+    pub fn limits(&self) -> &Limits {
+        &self.limits
     }
 }
