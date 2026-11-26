@@ -388,19 +388,17 @@ fn a_gateway_and_a_connector_from_their_files_serve_a_request() -> Res<()> {
     Ok(std::fs::remove_dir_all(dir)?)
 }
 
-/// tunnelward-connector's `stdio-echo` example, built beside this test
-/// by a workspace `cargo test`.
+/// tunnelward-connector's `stdio-echo` example, which a workspace
+/// `cargo test` builds into the profile directory's `examples`. The test
+/// binary sits in `deps` below that directory, or deeper in Cargo's newer
+/// build layout (`build/<package>/<hash>/out`), so every ancestor is
+/// tried.
 fn stdio_echo() -> Res<PathBuf> {
     let exe = std::env::current_exe()?;
-    let debug = exe
-        .parent()
-        .and_then(Path::parent)
-        .ok_or("no target directory")?;
-    let path = debug
-        .join("examples")
-        .join(format!("stdio-echo{}", std::env::consts::EXE_SUFFIX));
-    path.is_file()
-        .then_some(path)
+    let name = format!("stdio-echo{}", std::env::consts::EXE_SUFFIX);
+    exe.ancestors()
+        .map(|dir| dir.join("examples").join(&name))
+        .find(|path| path.is_file())
         .ok_or_else(|| "the stdio-echo example is not built: run `cargo test --workspace`".into())
 }
 
