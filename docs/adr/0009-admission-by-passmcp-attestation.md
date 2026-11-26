@@ -67,6 +67,17 @@ connector is the party the check is about.
   route needs one is `AttestationRequired` (TW-R006); anything else
   wrong with it is `AttestationInvalid` (TW-R007), with the reason.
 
+## Amendment: the limits are configurable (2026-11-26, before the tag)
+
+The 8 signatures, 5 minutes of skew and a revocation list's size were
+first fixed constants, against the rule that every limit is
+configurable with a documented default. They are now `Limits`
+(`max_signatures`, `future_skew`, `max_revoked`, defaults 8, 5 minutes
+and 100,000), set in `[attestation]`. The signatures are counted
+before any is decoded, and the envelope is read without buffering the
+document; the register frame limit (64 KiB by default) bounds the bytes
+read before that.
+
 ## Why the signature is classical
 
 ADR 0002 makes key exchange hybrid post-quantum by default. This

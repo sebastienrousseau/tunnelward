@@ -3,16 +3,16 @@
 
 //! DSSE envelopes, bare or inside a Sigstore bundle.
 
+use core::fmt;
+
 use serde::Deserialize;
+use serde::de::{Deserializer, IgnoredAny, SeqAccess, Visitor};
 use tunnelward_audit::b64;
 
 use crate::Error;
 
 /// The payload type of an in-toto statement.
 pub const PAYLOAD_TYPE: &str = "application/vnd.in-toto+json";
-
-/// Most signatures an envelope may carry; each is tried against every key.
-pub const MAX_SIGNATURES: usize = 8;
 
 /// A DSSE envelope as JSON writes it.
 #[derive(Deserialize)]
@@ -28,19 +28,52 @@ struct WireSignature {
     sig: String,
 }
 
-/// A Sigstore bundle: only its envelope is read.
+/// A Sigstore bundle (only its `dsseEnvelope` is read) or a bare
+/// envelope, in one pass and without buffering the document.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Bundle {
-    dsse_envelope: Wire,
+struct Shape {
+    dsse_envelope: Option<Wire>,
+    payload_type: Option<String>,
+    payload: Option<String>,
+    #[serde(default)]
+    signatures: Vec<WireSignature>,
 }
 
-/// Either shape on the wire.
+/// How many signatures either shape carries, read without keeping any.
 #[derive(Deserialize)]
-#[serde(untagged)]
-enum Shape {
-    Bundle(Bundle),
-    Envelope(Wire),
+#[serde(rename_all = "camelCase")]
+struct Counted {
+    dsse_envelope: Option<CountedEnvelope>,
+    signatures: Option<Items>,
+}
+
+#[derive(Deserialize)]
+struct CountedEnvelope {
+    signatures: Option<Items>,
+}
+
+/// The length of a JSON array whose items are skipped, not stored.
+struct Items(usize);
+
+impl<'de> Deserialize<'de> for Items {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct Count;
+        impl<'de> Visitor<'de> for Count {
+            type Value = Items;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("an array")
+            }
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Items, A::Error> {
+                let mut n = 0_usize;
+                while seq.next_element::<IgnoredAny>()?.is_some() {
+                    n = n.saturating_add(1);
+                }
+                Ok(Items(n))
+            }
+        }
+        d.deserialize_seq(Count)
+    }
 }
 
 /// A decoded envelope.
@@ -52,18 +85,21 @@ pub(crate) struct Envelope {
     pub(crate) signatures: Vec<Vec<u8>>,
 }
 
+const NOT_AN_ENVELOPE: Error = Error::Envelope("neither a DSSE envelope nor a Sigstore bundle");
+
 impl Envelope {
-    /// `bytes` read as a Sigstore bundle or a bare DSSE envelope.
-    pub(crate) fn parse(bytes: &[u8]) -> Result<Self, Error> {
-        let wire = match serde_json::from_slice(bytes) {
-            Ok(Shape::Bundle(b)) => b.dsse_envelope,
-            Ok(Shape::Envelope(e)) => e,
-            Err(_) => {
-                return Err(Error::Envelope(
-                    "neither a DSSE envelope nor a Sigstore bundle",
-                ));
-            }
-        };
+    /// `bytes` read as a Sigstore bundle or a bare DSSE envelope with at
+    /// most `max_signatures` signatures, counted before any is kept.
+    pub(crate) fn parse(bytes: &[u8], max_signatures: usize) -> Result<Self, Error> {
+        if count(bytes)? > max_signatures {
+            return Err(Error::Envelope("more signatures than the gateway allows"));
+        }
+        let wire = wire(serde_json::from_slice(bytes).map_err(|_| NOT_AN_ENVELOPE)?)?;
+        Self::decode(&wire)
+    }
+
+    /// `wire`'s payload type checked and its base64 decoded.
+    fn decode(wire: &Wire) -> Result<Self, Error> {
         if wire.payload_type != PAYLOAD_TYPE {
             return Err(Error::Envelope(
                 "the payload type is not an in-toto statement",
@@ -71,9 +107,6 @@ impl Envelope {
         }
         if wire.signatures.is_empty() {
             return Err(Error::Unsigned);
-        }
-        if wire.signatures.len() > MAX_SIGNATURES {
-            return Err(Error::Envelope("more than 8 signatures"));
         }
         let payload = base64(&wire.payload).ok_or(Error::Envelope("the payload is not base64"))?;
         let signatures = wire
@@ -91,6 +124,28 @@ impl Envelope {
     /// The DSSE pre-authentication encoding the signatures cover.
     pub(crate) fn pae(&self) -> Vec<u8> {
         pae(PAYLOAD_TYPE, &self.payload)
+    }
+}
+
+/// How many signatures `bytes` carries, either shape, none kept.
+fn count(bytes: &[u8]) -> Result<usize, Error> {
+    let counted: Counted = serde_json::from_slice(bytes).map_err(|_| NOT_AN_ENVELOPE)?;
+    let inner = counted.dsse_envelope.and_then(|e| e.signatures);
+    Ok(inner.or(counted.signatures).map_or(0, |Items(n)| n))
+}
+
+/// The envelope inside a bundle, or the bare one.
+fn wire(shape: Shape) -> Result<Wire, Error> {
+    if let Some(wire) = shape.dsse_envelope {
+        return Ok(wire);
+    }
+    match (shape.payload_type, shape.payload) {
+        (Some(payload_type), Some(payload)) => Ok(Wire {
+            payload_type,
+            payload,
+            signatures: shape.signatures,
+        }),
+        _ => Err(NOT_AN_ENVELOPE),
     }
 }
 
@@ -130,13 +185,13 @@ mod tests {
     #[test]
     fn reads_both_shapes_and_both_alphabets() {
         let bare = br#"{"payloadType":"application/vnd.in-toto+json","payload":"e30=","signatures":[{"sig":"AQI"}]}"#;
-        let e = Envelope::parse(bare).unwrap();
+        let e = Envelope::parse(bare, 8).unwrap();
         assert_eq!(
             (e.payload.as_slice(), e.signatures[0].as_slice()),
             (&b"{}"[..], &[1, 2][..])
         );
         let bundle = br#"{"mediaType":"x","dsseEnvelope":{"payloadType":"application/vnd.in-toto+json","payload":"e30=","signatures":[{"sig":"AQI="}]}}"#;
-        assert_eq!(Envelope::parse(bundle).unwrap(), e);
+        assert_eq!(Envelope::parse(bundle, 8).unwrap(), e);
     }
 
     #[test]
@@ -149,15 +204,22 @@ mod tests {
             br#"{"payloadType":"application/vnd.in-toto+json","payload":"e30=","signatures":[{"sig":"*"}]}"#,
         ];
         for case in cases {
-            assert!(Envelope::parse(case).is_err());
+            assert!(Envelope::parse(case, 8).is_err());
         }
         let many = format!(
             r#"{{"payloadType":"{PAYLOAD_TYPE}","payload":"e30=","signatures":[{}]}}"#,
             [r#"{"sig":"AQI="}"#; 9].join(",")
         );
-        assert_eq!(
-            Envelope::parse(many.as_bytes()),
-            Err(Error::Envelope("more than 8 signatures"))
-        );
+        let too_many = Err(Error::Envelope("more signatures than the gateway allows"));
+        assert_eq!(Envelope::parse(many.as_bytes(), 8), too_many);
+        assert!(Envelope::parse(many.as_bytes(), 9).is_ok());
+        let bundle = format!(r#"{{"dsseEnvelope":{many}}}"#);
+        assert_eq!(Envelope::parse(bundle.as_bytes(), 8), too_many);
+        // Counted before any is decoded: nine undecodable signatures are
+        // refused for their number, not their content.
+        let junk = many.replace("AQI=", "*");
+        assert_eq!(Envelope::parse(junk.as_bytes(), 8), too_many);
+        let bare = br#"{"signatures":[{"sig":"AQI="}]}"#;
+        assert!(Envelope::parse(bare, 8).is_err(), "no payload");
     }
 }

@@ -7,7 +7,7 @@
 use std::time::{Duration, UNIX_EPOCH};
 
 use aws_lc_rs::digest::{SHA256, digest};
-use tunnelward_attest::{Error, TrustedKey, verify};
+use tunnelward_attest::{Error, Limits, TrustedKey, verify};
 
 const STATEMENT: &[u8] = include_bytes!("vectors/statement.json");
 const COSIGN_BUNDLE: &[u8] = include_bytes!("vectors/cosign-bundle.json");
@@ -25,7 +25,12 @@ fn ed25519() -> Result<TrustedKey, String> {
 #[test]
 fn a_cosign_bundle_verifies_and_reads_back_passmcps_statement() {
     let key = p256().unwrap();
-    let attested = verify(COSIGN_BUNDLE, &[ed25519().unwrap(), p256().unwrap()]).unwrap();
+    let attested = verify(
+        COSIGN_BUNDLE,
+        &[ed25519().unwrap(), p256().unwrap()],
+        &Limits::default(),
+    )
+    .unwrap();
     assert_eq!(attested.key, key.id());
     assert_eq!(
         attested.digest.as_slice(),
@@ -51,7 +56,7 @@ fn a_cosign_bundle_verifies_and_reads_back_passmcps_statement() {
 
 #[test]
 fn an_openssl_ed25519_envelope_verifies() {
-    let attested = verify(ED25519_DSSE, &[ed25519().unwrap()]).unwrap();
+    let attested = verify(ED25519_DSSE, &[ed25519().unwrap()], &Limits::default()).unwrap();
     assert_eq!(
         attested.digest.as_slice(),
         digest(&SHA256, STATEMENT).as_ref()
@@ -61,17 +66,23 @@ fn an_openssl_ed25519_envelope_verifies() {
 #[test]
 fn a_signature_by_another_key_is_unsigned() {
     assert_eq!(
-        verify(COSIGN_BUNDLE, &[ed25519().unwrap()]),
+        verify(COSIGN_BUNDLE, &[ed25519().unwrap()], &Limits::default()),
         Err(Error::Unsigned)
     );
     assert_eq!(
-        verify(ED25519_DSSE, &[p256().unwrap()]),
+        verify(ED25519_DSSE, &[p256().unwrap()], &Limits::default()),
         Err(Error::Unsigned)
     );
-    assert_eq!(verify(COSIGN_BUNDLE, &[]), Err(Error::Unsigned));
+    assert_eq!(
+        verify(COSIGN_BUNDLE, &[], &Limits::default()),
+        Err(Error::Unsigned)
+    );
 }
 
 #[test]
 fn one_changed_payload_byte_breaks_the_signature() {
-    assert_eq!(verify(TAMPERED, &[p256().unwrap()]), Err(Error::Unsigned));
+    assert_eq!(
+        verify(TAMPERED, &[p256().unwrap()], &Limits::default()),
+        Err(Error::Unsigned)
+    );
 }

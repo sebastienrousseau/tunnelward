@@ -9,7 +9,7 @@ use aws_lc_rs::encoding::AsDer;
 use aws_lc_rs::rand::SystemRandom;
 use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
 use serde_json::{Value, json};
-use tunnelward_attest::{Admission, PAYLOAD_TYPE, Revoked, Rule, Target, TrustedKey};
+use tunnelward_attest::{Admission, Limits, PAYLOAD_TYPE, Revoked, Rule, Target, TrustedKey};
 use tunnelward_audit::b64;
 use tunnelward_proto::{McpDescriptor, RejectCode};
 
@@ -74,6 +74,7 @@ impl Signer {
             vec![self.key()?],
             vec![rule],
             Revoked::default(),
+            Limits::default(),
         ))
     }
 }
@@ -185,6 +186,27 @@ fn a_run_may_be_dated_at_most_five_minutes_ahead() -> Res<()> {
 }
 
 #[test]
+fn the_future_skew_is_the_gateways_to_set() -> Res<()> {
+    let signer = Signer::new()?;
+    let limits = Limits {
+        future_skew: std::time::Duration::from_secs(60),
+        ..Limits::default()
+    };
+    let admission = Admission::new(
+        vec![signer.key()?],
+        vec![rule()],
+        Revoked::default(),
+        limits,
+    );
+    let within = signer.statement(-60, |_| {})?;
+    let admitted = admission.admit(&routes(), Some(&within), None, signer.now);
+    assert!(admitted.is_ok());
+    let ahead = signer.statement(-61, |_| {})?;
+    assert!(reason(&admission, &ahead, None, signer.now)?.contains("future"));
+    Ok(())
+}
+
+#[test]
 fn a_statement_about_another_target_is_refused() -> Res<()> {
     let signer = Signer::new()?;
     let mut rule = rule();
@@ -280,6 +302,7 @@ fn every_rule_for_a_claimed_route_applies() -> Res<()> {
         vec![signer.key()?],
         vec![rule(), strict],
         Revoked::default(),
+        Limits::default(),
     );
     let bundle = signer.statement(60, |_| {})?;
     assert!(reason(&admission, &bundle, None, signer.now)?.contains("1 failed"));
@@ -295,8 +318,13 @@ fn a_revoked_statement_is_refused() -> Res<()> {
         .admit(&routes(), Some(&bundle), None, signer.now)
         .unwrap()
         .unwrap();
-    let revoked = Revoked::parse(&tunnelward_audit::hex(&digest)).unwrap();
-    let admission = Admission::new(vec![signer.key()?], vec![rule()], revoked);
+    let revoked = Revoked::parse(&tunnelward_audit::hex(&digest), 1).unwrap();
+    let admission = Admission::new(
+        vec![signer.key()?],
+        vec![rule()],
+        revoked,
+        Limits::default(),
+    );
     assert!(admission.is_revoked(&digest));
     assert!(reason(&admission, &bundle, None, signer.now)?.contains("revoked"));
     Ok(())

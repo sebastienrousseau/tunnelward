@@ -11,7 +11,7 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tunnelward_attest::{Admission, Revoked, Rule, Target, TrustedKey};
+use tunnelward_attest::{Admission, Limits, Revoked, Rule, Target, TrustedKey};
 use tunnelward_connector::{Error, Registered, register};
 use tunnelward_gateway::Gateway;
 use tunnelward_proto::{Register, RejectCode};
@@ -30,7 +30,12 @@ fn admission(revoked: Revoked) -> Res<Arc<Admission>> {
     rule.max_age = Duration::from_secs(100 * 365 * 86_400);
     rule.max_fail = 1;
     let key = TrustedKey::from_pem(KEY)?;
-    Ok(Arc::new(Admission::new(vec![key], vec![rule], revoked)))
+    Ok(Arc::new(Admission::new(
+        vec![key],
+        vec![rule],
+        revoked,
+        Limits::default(),
+    )))
 }
 
 async fn gateway() -> Res<(Gateway, String)> {
@@ -89,7 +94,7 @@ async fn revoking_a_statement_drains_its_connectors() -> Res<()> {
     let (gateway, addr) = gateway().await?;
     let _pay = start_connector(&addr, "pay", claim(1, &["pay"], Some(BUNDLE))).await?;
     let _open = start_connector(&addr, "open", claim(2, &["open"], None)).await?;
-    let revoked = Revoked::parse(&statement_digest())?;
+    let revoked = Revoked::parse(&statement_digest(), 1)?;
     let report = gateway.set_admission(Some(admission(revoked)?)).await;
     assert_eq!(report.sessions, 1, "only the attested connection drains");
     let (code, reason) = refusal(&addr, claim(3, &["pay"], Some(BUNDLE))).await?;
