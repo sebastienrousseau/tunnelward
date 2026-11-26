@@ -16,6 +16,7 @@ mod doctor;
 mod enrol;
 mod enrolled;
 mod gateway;
+mod observe;
 mod policy;
 mod providers;
 mod serve;

@@ -50,6 +50,16 @@ pub struct OtlpSettings {
 }
 
 impl OtlpSettings {
+    /// Whether the endpoint is one spans may go to: `https://`, or
+    /// `http://` to a loopback address.
+    ///
+    /// # Errors
+    ///
+    /// A sentence saying what is wrong with it.
+    pub fn check(&self) -> Result<(), String> {
+        traces_url(&self.endpoint).map(drop)
+    }
+
     /// Spans to `endpoint` as `tunnelward-gateway`: a queue of 2,048,
     /// batches of 512, sent at least every 5 s.
     #[must_use]

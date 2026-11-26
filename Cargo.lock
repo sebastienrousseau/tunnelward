@@ -729,6 +729,7 @@ dependencies = [
  "tunnelward-identity",
  "tunnelward-policy",
  "tunnelward-proto",
+ "tunnelward-risk",
  "tunnelward-testpki",
 ]
 
