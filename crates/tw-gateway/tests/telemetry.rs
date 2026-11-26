@@ -248,31 +248,34 @@ async fn metrics_count_requests_per_route_with_exemplars_on_request() -> Res<()>
     Ok(())
 }
 
+/// Every `tunnelward_*` name the Grafana dashboard's queries use.
+fn dashboard_metrics() -> Res<Vec<String>> {
+    let dashboard: Value =
+        serde_json::from_str(include_str!("../../../deploy/grafana/tunnelward.json"))?;
+    let panels = dashboard["panels"].as_array().ok_or("no panels")?;
+    let exprs = (panels.iter())
+        .flat_map(|p| p["targets"].as_array().into_iter().flatten())
+        .filter_map(|t| t["expr"].as_str());
+    Ok(exprs
+        .flat_map(|e| e.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')))
+        .filter(|name| name.starts_with("tunnelward_"))
+        .map(str::to_owned)
+        .collect())
+}
+
 /// Every metric the Grafana dashboard queries is one `/metrics` writes.
 #[tokio::test]
 async fn the_dashboard_queries_only_metrics_the_gateway_writes() -> Res<()> {
     let (gateway, ingress, _collector) = traced().await?;
     call(&ingress, "read_balance", None).await?;
     let (_, text) = scrape(&gateway, "text/plain").await?;
-    let dashboard: Value =
-        serde_json::from_str(include_str!("../../../deploy/grafana/tunnelward.json"))?;
-    let panels = dashboard["panels"].as_array().ok_or("no panels")?;
-    let exprs = panels
-        .iter()
-        .flat_map(|p| p["targets"].as_array().into_iter().flatten())
-        .filter_map(|t| t["expr"].as_str());
-    let mut names = 0;
-    for expr in exprs {
-        for name in expr.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
-            if name.starts_with("tunnelward_") {
-                names += 1;
-                assert!(
-                    text.contains(&format!("\n{name}")),
-                    "{name} is not in /metrics:\n{text}"
-                );
-            }
-        }
+    let names = dashboard_metrics()?;
+    assert!(names.len() >= 10, "found {names:?}");
+    for name in names {
+        assert!(
+            text.contains(&format!("\n{name}")),
+            "{name} is not in /metrics:\n{text}"
+        );
     }
-    assert!(names >= 10, "found {names} metric names");
     Ok(())
 }

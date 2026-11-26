@@ -99,12 +99,8 @@ fn read_request(tcp: &mut TcpStream) -> Res<String> {
     ))
 }
 
-#[test]
-fn a_running_gateway_exports_a_span_per_request() -> Res<()> {
-    let dir = pki_dir("observe-run")?;
-    let (endpoint, received) = collector()?;
-    let extra = format!("[risk]\n\n[telemetry]\notlp_endpoint = \"{endpoint}\"\nevery_ms = 50\n");
-    let path = write_config(&dir, &extra)?;
+/// `tunnelward gateway` on `path`, and its ingress address once bound.
+fn spawn_gateway(path: &std::path::Path) -> Res<(Running, String)> {
     let mut child = Running(
         Command::new(env!("CARGO_BIN_EXE_tunnelward"))
             .args(["gateway", "--config", &path.to_string_lossy()])
@@ -113,18 +109,31 @@ fn a_running_gateway_exports_a_span_per_request() -> Res<()> {
     );
     let mut started = String::new();
     BufReader::new(child.0.stdout.take().ok_or("no stdout")?).read_line(&mut started)?;
-    let agents = started
-        .split("agents on ")
-        .nth(1)
+    let agents = (started.split("agents on ").nth(1))
         .and_then(|rest| rest.split([',', ' ', '\n']).next())
         .ok_or_else(|| format!("no ingress address in {started:?}"))?;
-    let mut agent = TcpStream::connect(agents)?;
+    Ok((child, agents.to_owned()))
+}
+
+/// An agent's GET for `path` at `ingress`.
+fn ask(ingress: &str, path: &str) -> Res<String> {
+    let mut agent = TcpStream::connect(ingress)?;
     write!(
         agent,
-        "GET /mcp/x HTTP/1.1\r\nhost: h\r\nconnection: close\r\n\r\n"
+        "GET {path} HTTP/1.1\r\nhost: h\r\nconnection: close\r\n\r\n"
     )?;
     let mut answer = String::new();
     agent.read_to_string(&mut answer)?;
+    Ok(answer)
+}
+
+#[test]
+fn a_running_gateway_exports_a_span_per_request() -> Res<()> {
+    let dir = pki_dir("observe-run")?;
+    let (endpoint, received) = collector()?;
+    let extra = format!("[risk]\n\n[telemetry]\notlp_endpoint = \"{endpoint}\"\nevery_ms = 50\n");
+    let (child, agents) = spawn_gateway(&write_config(&dir, &extra)?)?;
+    ask(&agents, "/mcp/x")?;
     let exported = received.recv_timeout(Duration::from_secs(10))?;
     assert!(
         exported.starts_with("POST /v1/traces HTTP/1.1"),
