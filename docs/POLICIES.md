@@ -35,6 +35,13 @@ stay dependencies. `.dependency-baseline` lists every third-party crate
 in `Cargo.lock` and may only shrink; `scripts/deps-baseline.sh` enforces
 it in `cargo xtask ci`.
 
+Approved by name:
+
+| Package | Scope | Approved | Why |
+| :-- | :-- | :-- | :-- |
+| `kyberlib` 0.0.17 | test only (`tunnelward-crypto`) | 0.0.22 | expands X-Wing's draft seeds for its known-answer test (ADR 0016); a second ML-KEM implementation, not ours to write |
+| `rand_core` 0.6, `zeroize_derive`, `syn` 2 | test only, through `kyberlib` | 0.0.22 | `kyberlib`'s own dependency, and the `derive` feature it turns on in `zeroize` |
+
 ## Complexity
 
 Every function stays within cyclomatic complexity 10, cognitive complexity

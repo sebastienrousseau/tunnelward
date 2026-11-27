@@ -135,6 +135,13 @@ user-id = 55123 # rust-lang-owner
 start = "2024-07-23"
 end = "2027-11-07"
 
+[[trusted.kyberlib]]
+criteria = "safe-to-deploy"
+trusted-publisher = "github:sebastienrousseau/kyberlib"
+start = "2026-10-11"
+end = "2027-11-27"
+notes = "Maintainer's trust decision (2026-11-27): the maintainer's own crate, test-only here (ADR 0016)."
+
 [[trusted.libc]]
 criteria = "safe-to-deploy"
 user-id = 55123 # rust-lang-owner
@@ -410,6 +417,13 @@ criteria = "safe-to-deploy"
 user-id = 6743 # Ed Page (epage)
 start = "2023-02-22"
 end = "2027-11-08"
+
+[[trusted.zeroize_derive]]
+criteria = "safe-to-deploy"
+trusted-publisher = "github:RustCrypto/utils"
+start = "2026-06-12"
+end = "2027-11-27"
+notes = "Rule 2: kyberlib trusts this publisher for zeroize_derive."
 
 [[trusted.zmij]]
 criteria = "safe-to-deploy"

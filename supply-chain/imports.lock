@@ -157,6 +157,11 @@ when = "2026-07-06"
 user-id = 55123
 user-login = "rust-lang-owner"
 
+[[publisher.kyberlib]]
+version = "0.0.17"
+when = "2026-11-27"
+trusted-publisher = "github:sebastienrousseau/kyberlib"
+
 [[publisher.libc]]
 version = "0.2.191"
 when = "2026-10-16"
@@ -306,6 +311,13 @@ when = "2026-07-13"
 user-id = 6025
 user-login = "Thomasdezeeuw"
 user-name = "Thomas de Zeeuw"
+
+[[publisher.syn]]
+version = "2.0.119"
+when = "2026-07-15"
+user-id = 3618
+user-login = "dtolnay"
+user-name = "David Tolnay"
 
 [[publisher.syn]]
 version = "3.0.9"
@@ -474,6 +486,11 @@ when = "2026-11-05"
 user-id = 6743
 user-login = "epage"
 user-name = "Ed Page"
+
+[[publisher.zeroize_derive]]
+version = "1.5.0"
+when = "2026-06-12"
+trusted-publisher = "github:RustCrypto/utils"
 
 [[publisher.zmij]]
 version = "1.0.23"
