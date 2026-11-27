@@ -7,6 +7,36 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.18]
+
+### Added
+
+- Connector registrations in the audit log (FR-10). Every registration
+  the gateway decides is a `registration` entry in the hash-chained
+  log: `accepted`, `refused` (with the `TW-R` error id and the reason
+  sent to the connector) or `failed` (accepted, then the HTTP/2
+  connection failed). Each entry holds the SPIFFE ID the client
+  certificate proves next to the one the frame claims, the connector
+  id, the routes and domains claimed, the address as a pseudonym, and
+  the SHA-256 of the attestation an admission used (FR-5, ADR 0009).
+  Only connections that complete mutual TLS reach a decision, so a
+  source without a certificate cannot write to the log. `tunnelward
+  audit export` maps a registration to an OCSF Authentication event
+  (class 3002).
+
+- A dependency gate in `cargo xtask ci`: `.dependency-baseline` lists
+  the 97 third-party crates in `Cargo.lock` and may only shrink, so a
+  new dependency, or an update that pulls in a new transitive crate,
+  fails the build (`scripts/deps-baseline.sh`, `~/Code/AGENTS.md`
+  section 11).
+
+### Changed
+
+- New capabilities are built in this repository, not taken from new
+  dependencies. QUIC for connectors, HTTP/3 for agents and the
+  Kubernetes operator moved later: `quinn` and `h3` would add 20 crates
+  and `kube` more, so each waits for an in-house design.
+
 ## [0.0.17]
 
 ### Added

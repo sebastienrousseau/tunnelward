@@ -78,8 +78,8 @@ A container image is at `ghcr.io/sebastienrousseau/tunnelward`.
 
 ```toml
 [dependencies]
-tunnelward-connector = "0.0.17"   # embed a connector in your service
-tunnelward-gateway = "0.0.17"     # embed a gateway in your server
+tunnelward-connector = "0.0.18"   # embed a connector in your service
+tunnelward-gateway = "0.0.18"     # embed a gateway in your server
 ```
 
 `tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
@@ -169,7 +169,7 @@ its own.
 | Claim mismatches | A `User-Agent` or MCP `clientInfo` naming a provider the gateway did not see is recorded as a mismatch, and policy can forbid such calls | Shipped in 0.0.13 |
 | stdio bridge | A connector serves a local stdio MCP server as Streamable HTTP through the tunnel: one process per session, an event stream with `Last-Event-ID` resumption (`[target] stdio`); checked in CI against the MCP reference server, server-everything 2.0.1 | Shipped in 0.0.13 |
 | Benchmarks | Added latency, memory per connection and scaling measured against NFR-1 to NFR-3, with method and caveats (`docs/BENCHMARKS.md`, `cargo xtask bench`) | Shipped in 0.0.13 |
-| Audit log | Every request and admin action in a hash-chained JSON Lines log with composite ML-DSA-65 + Ed25519 signed checkpoints; client addresses and certificates as keyed-hash pseudonyms, arguments and results as digests; raw addresses only on opt-in, beside the chain, for at most 30 days (`[audit]`, `tunnelward audit verify`, `audit export` to OCSF 1.3.0) | Shipped in 0.0.14 |
+| Audit log | Every request, admin action and connector registration (accepted or refused, with the identity the certificate proves and the attestation it was admitted with) in a hash-chained JSON Lines log with composite ML-DSA-65 + Ed25519 signed checkpoints; client addresses and certificates as keyed-hash pseudonyms, arguments and results as digests; raw addresses only on opt-in, beside the chain, for at most 30 days (`[audit]`, `tunnelward audit verify`, `audit export` to OCSF 1.3.0) | Shipped in 0.0.14; registrations Shipped in 0.0.18 |
 | Call receipts | An opt-in signed `tw-receipt` on every answer, naming the request, caller, calls, decision and status, checked offline with `tunnelward receipt verify` | Shipped in 0.0.14 |
 | Admission by attestation | A route can admit only connectors that present a passmcp statement about one of its targets, signed (cosign or DSSE) by a key the gateway trusts, recent enough and with the checks the route requires; revoking a statement drains its connections (`[attestation]`, `tunnelward attest verify`) | Shipped in 0.0.15 |
 | Risk scoring | Every request scored 0 to 100 from velocity per client, tool and IP prefix (counted across gateways), tool-sequence drift, canary tools and canary records; policy can forbid by score (`risk = 70`); a canary refuses the call and ends the session (`TW-I013`); the score is in the audit entry and the span (`[risk]`) | Shipped in 0.0.16 |
