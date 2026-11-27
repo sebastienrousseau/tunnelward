@@ -7,6 +7,38 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.22]
+
+### Added
+
+- Gateway-blind mode, experimental (spec G4, ADR 0016). An agent seals
+  a `tools/call`'s arguments to the connector's X-Wing public key with
+  HPKE (RFC 9180: X-Wing, HKDF-SHA256, AES-256-GCM); the method, tool
+  name and id stay in the clear, so the gateway still routes, applies
+  policy and rate limits, and audits the call, but cannot read the
+  arguments or change them (the tool name is bound into the
+  ciphertext). The connector opens the call, forwards it to its server
+  and seals the answer under a key from the same HPKE context. With
+  `require`, an unsealed `tools/call` never reaches the server.
+- `tunnelward-crypto`: `hpke` (RFC 9180 base mode), `xwing`
+  (draft-connolly-cfrg-xwing-kem-11) and `blind`, written here over
+  aws-lc-rs and checked against RFC 9180's vectors and the draft's
+  known answers. `tunnelward-mcp::blind`: the JSON wire format.
+  `tunnelward-connector`: `Forward::with_blind`.
+- The connector file's `[blind]` (`experimental`, `key`, `require`,
+  `max_body`), and `tunnelward blind keygen --out <file>`, which writes
+  the key owner-only and its public key to `<file>.pub`.
+- Agent helpers on standard libraries: `sdk/typescript/blind` (Node
+  24.7 or later; browsers through kyberlib-wasm, not yet tested in a
+  browser) and `sdk/java/blind` (JDK 25). `scripts/sdk-interop.sh`
+  checks both against the Rust connector side; CI runs the Java half.
+
+### Changed
+
+- `kyberlib` 0.0.18 is a test dependency of `tunnelward-crypto`, with
+  `rand_core` 0.6, approved by name (docs/POLICIES.md); neither reaches
+  a release build.
+
 ## [0.0.21]
 
 ### Added

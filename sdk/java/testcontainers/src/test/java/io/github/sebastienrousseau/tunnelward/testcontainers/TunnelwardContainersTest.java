@@ -25,7 +25,7 @@ import org.testcontainers.utility.DockerImageName;
 class TunnelwardContainersTest {
 
     private static final DockerImageName IMAGE = DockerImageName.parse(
-            System.getProperty("tunnelward.image", "ghcr.io/sebastienrousseau/tunnelward:0.0.21"));
+            System.getProperty("tunnelward.image", "ghcr.io/sebastienrousseau/tunnelward:0.0.22"));
 
     /** Each container's output in the test log, prefixed with its name. */
     private static Slf4jLogConsumer log(String name) {

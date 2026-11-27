@@ -70,7 +70,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: operator
-          image: ghcr.io/sebastienrousseau/tunnelward:0.0.21
+          image: ghcr.io/sebastienrousseau/tunnelward:0.0.22
           args: [operator]
           resources:
             requests:
