@@ -1,0 +1,171 @@
+# SPDX-FileCopyrightText: 2026 Sebastien Rousseau
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# The operator's custom resources (ADR 0015): tunnelward.satellion.com/v1alpha1.
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: tunnelwardgateways.tunnelward.satellion.com
+spec:
+  group: tunnelward.satellion.com
+  scope: Namespaced
+  names:
+    kind: TunnelwardGateway
+    plural: tunnelwardgateways
+    singular: tunnelwardgateway
+    shortNames: [twgw]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Accepted
+          type: string
+          jsonPath: .status.conditions[?(@.type=="Accepted")].status
+        - name: Ready
+          type: string
+          jsonPath: .status.conditions[?(@.type=="Ready")].status
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [tlsSecret]
+              properties:
+                image:
+                  type: string
+                  description: The gateway image; the operator's own version by default.
+                replicas:
+                  type: integer
+                  minimum: 0
+                  default: 1
+                tlsSecret:
+                  type: string
+                  minLength: 1
+                  description: A Secret with tls.crt, tls.key and ca.crt for the connector listener.
+                ingressTlsSecret:
+                  type: string
+                  description: A Secret with tls.crt and tls.key for agents; plain HTTP without one.
+                adminTokenSecret:
+                  type: object
+                  required: [name]
+                  description: The admin API's bearer token; no admin API without one.
+                  properties:
+                    name:
+                      type: string
+                    key:
+                      type: string
+                      default: token
+                serviceType:
+                  type: string
+                  enum: [ClusterIP, NodePort, LoadBalancer]
+                config:
+                  type: string
+                  description: More of the gateway file (TOML), appended as written.
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: connectorbindings.tunnelward.satellion.com
+spec:
+  group: tunnelward.satellion.com
+  scope: Namespaced
+  names:
+    kind: ConnectorBinding
+    plural: connectorbindings
+    singular: connectorbinding
+    shortNames: [twcb]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Gateway
+          type: string
+          jsonPath: .spec.gateway
+        - name: Identity
+          type: string
+          jsonPath: .spec.identity
+        - name: Bound
+          type: string
+          jsonPath: .status.conditions[?(@.type=="Bound")].status
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [gateway, identity, routes]
+              properties:
+                gateway:
+                  type: string
+                  description: The TunnelwardGateway in this namespace.
+                identity:
+                  type: string
+                  description: The SPIFFE ID that owns the routes (FR-3).
+                routes:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: routepolicies.tunnelward.satellion.com
+spec:
+  group: tunnelward.satellion.com
+  scope: Namespaced
+  names:
+    kind: RoutePolicy
+    plural: routepolicies
+    singular: routepolicy
+    shortNames: [twrp]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Gateway
+          type: string
+          jsonPath: .spec.gateway
+        - name: Accepted
+          type: string
+          jsonPath: .status.conditions[?(@.type=="Accepted")].status
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [gateway, policy]
+              properties:
+                gateway:
+                  type: string
+                  description: The TunnelwardGateway in this namespace.
+                policy:
+                  type: string
+                  description: The tool policy file (TOML), as `tunnelward policy test` reads it.
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
