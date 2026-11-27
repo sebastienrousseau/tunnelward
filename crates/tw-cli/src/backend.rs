@@ -32,6 +32,13 @@ pub(crate) struct TargetPart {
     idle_secs: Option<u64>,
 }
 
+impl TargetPart {
+    /// Whether the target is a stdio command rather than a URL.
+    pub(crate) fn is_stdio(&self) -> bool {
+        self.stdio.is_some()
+    }
+}
+
 /// What the connector serves.
 #[derive(Debug, Clone)]
 pub(crate) enum Backend {

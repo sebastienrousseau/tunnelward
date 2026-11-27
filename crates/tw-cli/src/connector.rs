@@ -32,6 +32,9 @@
 //!
 //! [target]                              # see backend.rs: or a stdio command
 //! url = "http://127.0.0.1:8080"         # or unix:/path/to/socket
+//!
+//! [blind]                               # optional, experimental: open
+//!                                       # gateway-blind calls (see blind.rs)
 //! ```
 
 use std::net::SocketAddr;
@@ -64,6 +67,7 @@ pub(crate) struct File {
     identity: IdentityPart,
     register: RegisterPart,
     target: crate::backend::TargetPart,
+    blind: Option<crate::blind::Section>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -200,6 +204,16 @@ fn enrolment(base: &Path, part: &EnrolPart) -> Result<crate::enrolled::Enrol, St
     })
 }
 
+/// `[blind]`, checked: gateway-blind mode needs an HTTP target.
+fn blind(base: &Path, file: &File, problems: &mut Problems) -> Option<tunnelward_connector::Blind> {
+    let blind = (file.blind.as_ref()).and_then(|b| crate::blind::check(base, b, problems))?;
+    if file.target.is_stdio() {
+        problems.push("[blind]: gateway-blind mode needs an HTTP [target]".into());
+        return None;
+    }
+    Some(blind)
+}
+
 /// A file that passed every check: everything but the SVID itself.
 pub(crate) struct Checked {
     gateways: Gateways,
@@ -210,6 +224,7 @@ pub(crate) struct Checked {
     address: String,
     source: Source,
     attestation: Option<PathBuf>,
+    blind: Option<tunnelward_connector::Blind>,
 }
 
 /// `result`'s value, or its error added to `problems`.
@@ -232,6 +247,7 @@ pub(crate) fn check(path: &Path, file: &File) -> Result<Checked, Problems> {
             .map_err(|e| format!("[gateway] server_name {name:?}: {e}")),
     );
     let register = register(file, &mut problems);
+    let blind = blind(base, file, &mut problems);
     let attestation = file.register.attestation.as_ref().map(|p| resolve(base, p));
     if let Some(path) = attestation.as_ref().filter(|p| !p.is_file()) {
         problems.push(format!(
@@ -252,6 +268,7 @@ pub(crate) fn check(path: &Path, file: &File) -> Result<Checked, Problems> {
                 address: file.gateway.address.clone(),
                 source,
                 attestation,
+                blind,
             })
         }
         _ => Err(problems),
@@ -283,17 +300,28 @@ pub(crate) async fn run(path: &Path) -> Result<(), String> {
     let (identity, keeper) =
         svid::start(checked.source.clone(), checked.register.spiffe_id.clone()).await?;
     let backend = checked.target.clone();
+    let blind = checked.blind.take();
     let config = config(checked, identity)?;
     println!("tunnelward connector: {}", backend.describe());
     let connector = match backend {
-        crate::backend::Backend::Http(target) => {
-            Connector::start(config, Forward::new(target, Duration::from_secs(30)))
-        }
+        crate::backend::Backend::Http(target) => Connector::start(config, forward(target, blind)),
         crate::backend::Backend::Stdio(stdio) => Connector::start(config, StdioBridge::new(stdio)),
     };
     report(&connector).await;
     keeper.abort();
     Ok(())
+}
+
+/// The forwarder to an HTTP target, opening sealed calls with `blind`.
+fn forward(
+    target: tunnelward_connector::Target,
+    blind: Option<tunnelward_connector::Blind>,
+) -> Forward {
+    let forward = Forward::new(target, Duration::from_secs(30));
+    match blind {
+        Some(blind) => forward.with_blind(blind),
+        None => forward,
+    }
 }
 
 /// A random connector id.
