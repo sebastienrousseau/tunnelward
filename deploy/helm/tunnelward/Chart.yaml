@@ -4,8 +4,8 @@ apiVersion: v2
 name: tunnelward
 description: Tunnelward gateway, which connectors dial out to and AI agents connect through
 type: application
-version: 0.0.19
-appVersion: "0.0.19"
+version: 0.0.20
+appVersion: "0.0.20"
 home: https://github.com/sebastienrousseau/tunnelward
 sources:
   - https://github.com/sebastienrousseau/tunnelward

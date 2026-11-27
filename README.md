@@ -78,8 +78,8 @@ A container image is at `ghcr.io/sebastienrousseau/tunnelward`.
 
 ```toml
 [dependencies]
-tunnelward-connector = "0.0.19"   # embed a connector in your service
-tunnelward-gateway = "0.0.19"     # embed a gateway in your server
+tunnelward-connector = "0.0.20"   # embed a connector in your service
+tunnelward-gateway = "0.0.20"     # embed a gateway in your server
 ```
 
 `tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
@@ -178,6 +178,9 @@ its own.
 | Kubernetes | Helm chart for the gateway (non-root, read-only root, Secrets for TLS and the admin token, optional ServiceMonitor), published as a signed OCI chart | Shipped in 0.0.17 |
 | Testcontainers | Java module starting a gateway and a connector with a throwaway PKI, for integration tests through Tunnelward | Shipped in 0.0.17 |
 | Control plane (alpha) | `tunnelward control` signs tool policies operators publish with OIDC tokens (roles `viewer`, `operator`, `admin` from a token claim) and serves them to gateways over mutual TLS; a gateway with `[control]` applies each newer signed bundle and denies every call until its first; publishes and rollbacks are in the audit log with who made them (ADR 0012) | Shipped in 0.0.19 |
+| SIEM export | Each audit entry as its OCSF event, live, to syslog (RFC 5424 over TLS, octet-counted) and OTLP logs; a bounded queue that drops and counts rather than slow the log, which stays the record (`[audit.export]`, ADR 0013) | Shipped in 0.0.20 |
+| Approval of high-impact calls | A call to a `high_impact` tool runs only with a person's approval of exactly that call (agent, path, tool, arguments): the agent gets MCP's URL elicitation, the approver signs in with OIDC (PKCE), and the approved call runs once (`[approval]`, FR-17, ADR 0014) | Shipped in 0.0.20 |
+| Crypto inventory | `tunnelward crypto report` lists each connector connection's TLS version, key exchange, cipher suite and certificate key, and counts the hybrid post-quantum ones | Shipped in 0.0.20 |
 
 ---
 
@@ -241,6 +244,12 @@ at the top of [`config.rs`](crates/tw-cli/src/config.rs) and
 its policy from it with `[control]`
 ([`control/pull.rs`](crates/tw-cli/src/control/pull.rs)), and operators
 use the API in [`control/api.rs`](crates/tw-cli/src/control/api.rs).
+The audit log's live export to a SIEM is `[audit.export]`
+([`export.rs`](crates/tw-cli/src/export.rs)), and approval of
+high-impact calls is `[approval]`
+([`approval.rs`](crates/tw-cli/src/approval.rs)).
+[`docs/DPIA.md`](docs/DPIA.md) is a template for the data protection
+impact assessment, stating what each of these records.
 Check a file before deploying it:
 
 ```bash
