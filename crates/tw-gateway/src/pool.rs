@@ -43,6 +43,8 @@ pub(crate) struct Entry {
     pub(crate) sender: SendRequest<Full<Bytes>>,
     /// The digest of the attestation it was admitted with, if any.
     pub(crate) attested: Option<[u8; 32]>,
+    /// What its TLS session negotiated.
+    pub(crate) tls: crate::admin::Tls,
 }
 
 impl Entry {

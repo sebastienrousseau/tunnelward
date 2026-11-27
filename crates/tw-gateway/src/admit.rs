@@ -178,6 +178,7 @@ impl Gateway {
     where
         IO: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
+        let crypto = crate::admin::Tls::of(tls.get_ref().1);
         let (stream, kill) = Killable::new(tls);
         let grant = self.inner.config.limits.stream;
         let keep_alive = self.inner.config.keep_alive;
@@ -202,6 +203,7 @@ impl Gateway {
             peer,
             kill,
             attested,
+            tls: crypto,
         };
         let session = self.inner.registry.insert(register, link);
         let gateway = self.clone();

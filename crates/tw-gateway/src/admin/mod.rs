@@ -23,7 +23,7 @@ mod metrics;
 
 use metrics::openmetrics;
 
-pub use inventory::{Connection, Inventory, Redaction};
+pub use inventory::{Connection, Inventory, Redaction, Tls};
 
 use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};

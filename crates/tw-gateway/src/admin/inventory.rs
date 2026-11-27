@@ -64,6 +64,44 @@ pub struct Connection {
     pub draining: bool,
     /// Whether it is dark: connected, but taking no new request (G14).
     pub dark: bool,
+    /// The TLS session it runs on.
+    pub tls: Tls,
+}
+
+/// A connection's TLS session, for `tunnelward crypto report`: the
+/// evidence a post-quantum migration inventory asks for.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct Tls {
+    /// The protocol version, such as `TLSv1_3`.
+    pub version: Option<String>,
+    /// The cipher suite, such as `TLS13_AES_256_GCM_SHA384`.
+    pub cipher_suite: Option<String>,
+    /// The key-exchange group, such as `X25519MLKEM768`.
+    pub key_exchange: Option<String>,
+    /// The connector certificate's key algorithm, such as `ECDSA P-256`.
+    /// In TLS 1.3 it decides the signature scheme the connector signed
+    /// the handshake with (an RSA key may use any RSA-PSS hash).
+    pub peer_key: Option<String>,
+}
+
+impl Tls {
+    /// What `session`, a finished handshake, negotiated.
+    pub(crate) fn of(session: &tunnelward_crypto::rustls::CommonState) -> Self {
+        let named = |name: Option<&'static str>| name.map(str::to_owned);
+        Self {
+            version: named(session.protocol_version().and_then(|v| v.as_str())),
+            cipher_suite: named(
+                (session.negotiated_cipher_suite()).and_then(|s| s.suite().as_str()),
+            ),
+            key_exchange: named(
+                tunnelward_crypto::negotiated_group(session).and_then(|g| g.as_str()),
+            ),
+            peer_key: (session.peer_certificates())
+                .and_then(<[_]>::first)
+                .and_then(|c| tunnelward_identity::key_algorithm(c.as_ref())),
+        }
+    }
 }
 
 impl From<Snapshot> for Connection {
@@ -77,6 +115,7 @@ impl From<Snapshot> for Connection {
             in_flight: s.in_flight,
             draining: s.draining,
             dark: s.dark,
+            tls: s.tls,
         }
     }
 }

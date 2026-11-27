@@ -98,6 +98,7 @@ pub(crate) struct Link {
     pub(crate) kill: Arc<KillSwitch>,
     /// The digest of the attestation it was admitted with, if any.
     pub(crate) attested: Option<[u8; 32]>,
+    pub(crate) tls: crate::admin::Tls,
 }
 
 /// One connection as the admin inventory reports it.
@@ -110,6 +111,7 @@ pub(crate) struct Snapshot {
     pub(crate) in_flight: u32,
     pub(crate) draining: bool,
     pub(crate) dark: bool,
+    pub(crate) tls: crate::admin::Tls,
 }
 
 #[derive(Default)]
@@ -164,6 +166,7 @@ impl Registry {
             in_flight: Arc::new(AtomicU32::new(0)),
             sender: link.sender,
             attested: link.attested,
+            tls: link.tls,
         });
         self.changed.notify_waiters();
         session
@@ -273,6 +276,7 @@ impl Registry {
                 in_flight: e.load(),
                 draining: e.draining,
                 dark: state.dark.iter().any(|d| d.matches(e)),
+                tls: e.tls.clone(),
             })
             .collect()
     }
