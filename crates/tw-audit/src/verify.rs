@@ -18,7 +18,7 @@ use crate::{b64, chain};
 pub struct Report {
     /// Lines read.
     pub lines: u64,
-    /// Request and admin entries.
+    /// Request, admin and registration entries.
     pub entries: u64,
     /// Signed checkpoints.
     pub checkpoints: u64,

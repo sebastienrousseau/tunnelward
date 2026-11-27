@@ -107,6 +107,37 @@ pub fn connector_config_as(
     Ok(config)
 }
 
+/// An audit sink writing to a fresh file, and the file.
+pub fn audit_sink(name: &str) -> Res<(Arc<tunnelward_audit::Sink>, std::path::PathBuf)> {
+    let dir = std::env::temp_dir().join(format!(
+        "tw-gw-{name}-{}-{}",
+        std::process::id(),
+        tunnelward_audit::now_ms()
+    ));
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("audit.jsonl");
+    let (key, _) = tunnelward_crypto::composite::SigningKey::generate()?;
+    let settings = tunnelward_audit::Settings::new(path.clone(), key, [9; 32]);
+    Ok((Arc::new(tunnelward_audit::Sink::open(settings)?), path))
+}
+
+/// The entries of `kind` in `path`, once `sink` has written and closed it.
+pub fn logged(
+    sink: &tunnelward_audit::Sink,
+    path: &std::path::Path,
+    kind: &str,
+) -> Res<Vec<serde_json::Value>> {
+    sink.close();
+    let mut found = Vec::new();
+    for line in std::fs::read_to_string(path)?.lines() {
+        let value: serde_json::Value = serde_json::from_str(line)?;
+        if value["kind"] == kind {
+            found.push(value);
+        }
+    }
+    Ok(found)
+}
+
 /// Answers every request with `<name> <method> <path>`.
 pub fn echo(name: &str, req: &Request<Incoming>) -> Response<Full<Bytes>> {
     let text = format!("{name} {} {}", req.method(), req.uri().path());

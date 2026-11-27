@@ -100,7 +100,8 @@ TLS, FR-3) is what ties that to a process. Continuous re-attestation
 
 Keyless Sigstore when a design partner signs that way. Composite or
 ML-DSA keys when cosign supports them. Recording each admission in the
-audit log when registrations are audited (FR-10).
+audit log when registrations are audited (FR-10): done in 0.0.18, as
+the `attestation` digest of a `registration` entry.
 
 ## Consequences
 

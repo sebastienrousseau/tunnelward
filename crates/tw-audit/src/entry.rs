@@ -117,6 +117,45 @@ impl AdminEntry {
     }
 }
 
+/// A connector's registration, as the gateway decided it (FR-10). Only
+/// registrations that reach a decision are recorded: the connector has
+/// completed mutual TLS, so a source with no certificate cannot write
+/// to the log.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct RegistrationEntry {
+    /// `accepted`, `refused`, or `failed` (accepted, but the HTTP/2
+    /// connection then failed).
+    pub decision: String,
+    /// The error id, for example `TW-R003`, unless accepted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Why, as sent to the connector, unless accepted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// The connector address's pseudonym.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer: Option<String>,
+    /// The SPIFFE ID the client certificate proves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub certificate: Option<String>,
+    /// The SPIFFE ID the register frame claims, when it decoded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spiffe_id: Option<String>,
+    /// The connector id, in hex.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connector_id: Option<String>,
+    /// The routes claimed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routes: Vec<String>,
+    /// The domains claimed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub domains: Vec<String>,
+    /// SHA-256 of the attestation it was admitted with (FR-5), in hex.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attestation: Option<String>,
+}
+
 /// What a [`crate::Sink`] records.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -126,4 +165,6 @@ pub enum Entry {
     Request(Box<RequestEntry>),
     /// An admin action.
     Admin(AdminEntry),
+    /// A connector registration.
+    Registration(Box<RegistrationEntry>),
 }

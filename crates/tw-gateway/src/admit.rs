@@ -18,6 +18,7 @@ use tunnelward_proto::{
     ALPN, Accept, ConnectorId, Frame, MAX_REASON_LEN, Register, Reject, RejectCode,
 };
 
+use crate::attempt::{Attempt, Verdict};
 use crate::claims::Rules;
 use crate::kill::Killable;
 use crate::registry::{Link, Reservation};
@@ -69,12 +70,19 @@ impl Gateway {
         // Counted on arrival, so attempts that fail later count too.
         let limited =
             peer.is_some_and(|ip| self.inner.registrations.check(ip, Instant::now()).is_err());
-        let (mut tls, outcome) = timeout(config.registration_timeout, self.handshake(io))
-            .await
-            .map_err(|_| AdmitError::Timeout)??;
+        let (mut tls, outcome, mut attempt) =
+            timeout(config.registration_timeout, self.handshake(io))
+                .await
+                .map_err(|_| AdmitError::Timeout)??;
+        attempt.peer = peer;
+        let sink = config.audit.as_deref();
         let (register, _reservation, attested) = match self.decide(outcome, limited) {
             Ok(admitted) => admitted,
-            Err((code, reason)) => return self.refuse(&mut tls, code, reason).await,
+            Err((code, reason)) => {
+                let reason = printable(&reason);
+                attempt.record(sink, Verdict::Refused(code, &reason));
+                return self.refuse(&mut tls, code, reason).await;
+            }
         };
         let accept = Frame::Accept(Accept {
             lease_secs: config.lease_secs,
@@ -83,10 +91,16 @@ impl Gateway {
         write_frame(&mut tls, &accept, &config.limits)
             .await
             .map_err(AdmitError::Write)?;
-        self.connect(tls, register, peer, attested).await
+        let connected = self.connect(tls, register, peer, attested).await;
+        let verdict = match &connected {
+            Ok(_) => Verdict::Accepted(attested),
+            Err(e) => Verdict::Failed(e.id(), e.to_string()),
+        };
+        attempt.record(sink, verdict);
+        connected
     }
 
-    async fn handshake<IO>(&self, io: IO) -> Result<(TlsStream<IO>, Outcome), AdmitError>
+    async fn handshake<IO>(&self, io: IO) -> Result<(TlsStream<IO>, Outcome, Attempt), AdmitError>
     where
         IO: AsyncRead + AsyncWrite + Unpin,
     {
@@ -94,13 +108,20 @@ impl Gateway {
         if tls.get_ref().1.alpn_protocol() != Some(ALPN) {
             return Err(AdmitError::Alpn);
         }
+        let cert = tls.get_ref().1.peer_certificates().and_then(<[_]>::first);
+        let proven = cert.map(|c| spiffe_id(c.as_ref()).map_err(|e| e.to_string()));
+        let mut attempt = Attempt::default();
+        attempt.certificate = proven.clone().and_then(Result::ok);
         let outcome = match read_frame(&mut tls, &self.inner.config.limits).await {
-            Ok(Frame::Register(r)) => proven(&tls, r),
+            Ok(Frame::Register(r)) => {
+                attempt.claims(&r);
+                checked(proven, r)
+            }
             Ok(_) => Outcome::Refuse(RejectCode::Malformed, "expected a Register frame".into()),
             Err(ReadError::Decode(e)) => Outcome::Refuse(e.reject_code(), e.to_string()),
             Err(e) => return Err(AdmitError::Read(e)),
         };
-        Ok((tls, outcome))
+        Ok((tls, outcome, attempt))
     }
 
     /// Admits a decoded registration unless its source is over its rate,
@@ -205,18 +226,16 @@ impl Gateway {
     }
 }
 
-/// Admits `register` only if its SPIFFE ID is the one in the client
-/// certificate, an X.509-SVID the handshake verified.
-fn proven<IO>(tls: &TlsStream<IO>, register: Register) -> Outcome {
-    let cert = tls.get_ref().1.peer_certificates().and_then(<[_]>::first);
-    let proven = cert.map(|c| spiffe_id(c.as_ref()));
+/// Admits `register` only if its SPIFFE ID is `proven`, the one in the
+/// client certificate, an X.509-SVID the handshake verified.
+fn checked(proven: Option<Result<String, String>>, register: Register) -> Outcome {
     match proven {
         Some(Ok(id)) if id == register.spiffe_id => Outcome::Admit(register),
         Some(Ok(id)) => Outcome::Refuse(
             RejectCode::IdentityMismatch,
             format!("the certificate is {id}, not {}", register.spiffe_id),
         ),
-        Some(Err(e)) => Outcome::Refuse(RejectCode::IdentityMismatch, e.to_string()),
+        Some(Err(e)) => Outcome::Refuse(RejectCode::IdentityMismatch, e),
         None => Outcome::Refuse(RejectCode::IdentityMismatch, "no client certificate".into()),
     }
 }
