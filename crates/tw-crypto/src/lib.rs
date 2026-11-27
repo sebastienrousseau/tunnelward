@@ -18,11 +18,14 @@
 //! # let _ = negotiated_group;
 //! ```
 
+pub mod blind;
 pub mod composite;
 mod config;
 mod holder;
+pub mod hpke;
 mod identity;
 mod rotating;
+pub mod xwing;
 
 pub use config::{ClientAuth, Error, client_config, server_config};
 pub use identity::Identity;
