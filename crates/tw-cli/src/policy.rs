@@ -133,16 +133,18 @@ fn rule(part: &RulePart, at: &str, problems: &mut Problems) -> Rule {
     }
 }
 
-fn read(path: &Path) -> Result<File, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
-}
-
 /// The policy in the file at `path`, or every problem with it.
 pub(crate) fn load(path: &Path) -> Result<Policy, Problems> {
-    let file = read(path).map_err(|e| vec![e])?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| vec![format!("{}: {e}", path.display())])?;
+    parse(&text, &path.display().to_string())
+}
+
+/// The policy in `text`, named `at` in problems, or every problem with
+/// it: the checks a policy file gets, for a bundle's policy too.
+pub(crate) fn parse(text: &str, at: &str) -> Result<Policy, Problems> {
+    let file: File = toml::from_str(text).map_err(|e| vec![format!("{at}: {e}")])?;
     let mut problems = Problems::new();
-    let at = path.display().to_string();
     let default = file.default.as_deref().map_or(Effect::Forbid, |d| {
         effect(d, &format!("{at} default"), &mut problems)
     });

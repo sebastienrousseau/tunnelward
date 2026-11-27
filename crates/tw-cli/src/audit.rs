@@ -44,7 +44,7 @@ fn beside(key: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
-fn signing_key(path: &Path) -> Result<composite::SigningKey, String> {
+pub(crate) fn signing_key(path: &Path) -> Result<composite::SigningKey, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
     composite::SigningKey::from_bytes(&bytes).map_err(|e| format!("{}: {e}", path.display()))
 }

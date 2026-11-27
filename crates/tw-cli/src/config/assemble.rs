@@ -68,10 +68,11 @@ pub(super) struct Sections {
     attestation: Option<Arc<tunnelward_attest::Admission>>,
     risk: Option<Arc<tunnelward_risk::Risk>>,
     otlp: Option<crate::observe::Otlp>,
+    control: Option<crate::control::pull::Puller>,
 }
 
 /// The `[state]` store, the `[policy]`, the `[attestation]`, the
-/// `[risk]` and the `[telemetry]`, each checked.
+/// `[risk]`, the `[telemetry]` and the `[control]`, each checked.
 pub(super) fn state_and_policy(base: &Path, file: &File, problems: &mut Problems) -> Sections {
     Sections {
         shared: (file.state.as_ref()).and_then(|s| crate::state::check(base, s, problems)),
@@ -80,19 +81,30 @@ pub(super) fn state_and_policy(base: &Path, file: &File, problems: &mut Problems
             .and_then(|a| crate::attest::check(base, a, problems)),
         risk: (file.risk.as_ref()).and_then(|r| crate::observe::risk(r, problems)),
         otlp: (file.telemetry.as_ref()).and_then(|t| crate::observe::telemetry(base, t, problems)),
+        control: (file.control.as_ref())
+            .and_then(|c| crate::control::pull::check(base, c, file.policy.is_some(), problems)),
     }
 }
 
 /// Shares state through the `[state]` store when one was given, turns
 /// the tool policy, admission by attestation (FR-5) and the risk score
-/// (FR-16) on; returns the span exporter to start with the gateway.
-pub(super) fn with_state(gateway: &mut Config, sections: Sections) -> Option<crate::observe::Otlp> {
+/// (FR-16) on; returns the span exporter and the `[control]` puller to
+/// start with the gateway. With `[control]` the gateway denies every
+/// call until its first bundle (ADR 0012).
+pub(super) fn with_state(
+    gateway: &mut Config,
+    sections: Sections,
+) -> (
+    Option<crate::observe::Otlp>,
+    Option<crate::control::pull::Puller>,
+) {
     let Sections {
         shared,
         policy,
         attestation,
         risk,
         otlp,
+        control,
     } = sections;
     gateway.attestation = attestation;
     gateway.ingress.risk = risk;
@@ -102,7 +114,10 @@ pub(super) fn with_state(gateway: &mut Config, sections: Sections) -> Option<cra
     }
     gateway.ingress.policy =
         policy.map(|p| Arc::new(p) as Arc<dyn tunnelward_gateway::PolicyEngine>);
-    otlp
+    if control.is_some() {
+        gateway.ingress.policy = Some(crate::control::pull::until_first_bundle());
+    }
+    (otlp, control)
 }
 
 /// The file and every certificate and key it names, to watch for

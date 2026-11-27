@@ -54,6 +54,8 @@
 //! file = "policy.toml"          # read again when it changes
 //!
 //! [audit]                       # optional: the audit log (see audit.rs)
+//! [control]                     # optional: the policy from the control
+//!                               # plane, instead of [policy] (control/pull.rs)
 //!
 //! [attestation]                 # optional: routes that admit only
 //!                               # attested connectors (see attest.rs)
@@ -96,6 +98,7 @@ pub(crate) struct File {
     enrolment: Option<crate::enrol::Section>,
     state: Option<crate::state::Section>,
     policy: Option<crate::policy::Section>,
+    control: Option<crate::control::pull::Section>,
     audit: Option<crate::audit::Section>,
     attestation: Option<crate::attest::Section>,
     risk: Option<crate::observe::RiskSection>,
@@ -253,6 +256,8 @@ pub(crate) struct Checked {
     pub(crate) audit: Option<tunnelward_audit::Settings>,
     /// The span exporter to start with the gateway (`[telemetry]`).
     pub(crate) otlp: Option<crate::observe::Otlp>,
+    /// Where policy bundles come from (`[control]`, ADR 0012).
+    pub(crate) control: Option<crate::control::pull::Puller>,
 }
 
 /// Reads and parses `path`. A parse error names the line and column.
@@ -430,7 +435,7 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         with_agents(&mut gateway, agents, file.ingress.client_certificates);
     let (providers, signer_keys) = with_providers(&mut gateway, providers);
     gateway.ingress.enrolment = enrolment.map(|e| e.enrolment);
-    let otlp = with_state(&mut gateway, sections);
+    let (otlp, control) = with_state(&mut gateway, sections);
     let key_sets = [key_sets, signer_keys].concat();
     with_ingress(&mut gateway.ingress, ingress_tls, trusted, cors, &file);
     if let Some(secs) = file.connectors.lease_secs {
@@ -449,5 +454,6 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         providers,
         audit,
         otlp,
+        control,
     })
 }

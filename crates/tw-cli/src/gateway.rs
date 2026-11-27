@@ -43,6 +43,10 @@ pub(crate) async fn run(path: &Path) -> Result<(), String> {
             .providers
             .map(|p| tokio::spawn(crate::providers::keep_fresh(p))),
     );
+    tasks.extend(
+        (checked.control)
+            .map(|c| tokio::spawn(crate::control::pull::keep_pulling(c, gateway.clone()))),
+    );
     let stopped = until_one_stops(&gateway, listeners).await;
     tasks.iter().for_each(tokio::task::JoinHandle::abort);
     // A last checkpoint signs everything written.
@@ -132,7 +136,10 @@ async fn reload(path: PathBuf, gateway: Gateway, watch: Watch) {
             Ok(checked) => {
                 gateway.set_tls(checked.gateway.tls.clone());
                 gateway.set_ingress_tls(checked.gateway.ingress.tls.clone());
-                gateway.set_policy(checked.gateway.ingress.policy.clone());
+                // With [control] the policy comes from bundles, not the file.
+                if checked.control.is_none() {
+                    gateway.set_policy(checked.gateway.ingress.policy.clone());
+                }
                 tokio::spawn(admission(
                     gateway.clone(),
                     checked.gateway.attestation.clone(),
