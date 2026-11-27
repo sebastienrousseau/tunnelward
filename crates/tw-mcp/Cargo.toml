@@ -18,6 +18,8 @@ categories = ["network-programming", "parser-implementations"]
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+# Gateway-blind mode (ADR 0016): HPKE with X-Wing.
+tunnelward-crypto.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

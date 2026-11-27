@@ -864,6 +864,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "tunnelward-crypto",
 ]
 
 [[package]]
