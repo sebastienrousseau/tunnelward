@@ -7,6 +7,50 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.17]
+
+### Added
+
+- A conformance kit (alpha), in a new published crate,
+  `tunnelward-conformance` (MIT OR Apache-2.0), and the command
+  `tunnelward conformance`. It connects to a gateway as a connector and
+  runs six checks: a connection without `tw/1` is refused, bytes that
+  are not a frame are answered `Malformed` (`TW-R001`), a length prefix
+  over the limit is refused before any body is sent, an unknown protocol
+  version is answered `UnsupportedVersion` (`TW-R002`), a SPIFFE ID that
+  is not the certificate's is answered `IdentityMismatch` (`TW-R003`),
+  and a valid registration is accepted and followed by the gateway's
+  HTTP/2 preface. Text or JSON (`--format json`); the command fails
+  unless every check passes. The SPIFFE ID is read from `--cert`.
+- A Helm chart, `deploy/helm/tunnelward`, for the gateway: the
+  distroless image, non-root, read-only root filesystem, every
+  capability dropped. It takes the connector TLS Secret (renewals reach
+  the gateway's reload) and the admin token from Secrets, an optional
+  ingress TLS Secret, extra gateway TOML in `config`, and an optional
+  ServiceMonitor. Releases push it to
+  `oci://ghcr.io/sebastienrousseau/charts/tunnelward`, signed with
+  cosign. `make helm` (and CI) lints it, renders its gateway file, runs
+  a gateway from that file and passes the conformance kit against it.
+- A Testcontainers module for Java, `sdk/java/testcontainers`
+  (`io.github.sebastienrousseau:tunnelward-testcontainers`, MIT OR
+  Apache-2.0, not yet on Maven Central): `TunnelwardGatewayContainer`
+  and `TunnelwardConnectorContainer` with a throwaway PKI, so a test
+  sends agent requests through a real gateway and connector to a
+  service in another container. CI runs its tests against an image of
+  the commit.
+
+### Changed
+
+- QUIC for connectors and HTTP/3 for agents, planned for this version,
+  moved later: `quinn` and `h3` bring 17 crates that `cargo vet` does
+  not yet cover, and trusting their publishers is the maintainer's call.
+
+### Fixed
+
+- `DEVELOPMENT.md` installs `reuse[charset-normalizer]`: plain
+  `pipx install reuse` gives a `reuse` that fails at start on Python
+  3.15 without libmagic.
+
 ## [0.0.16]
 
 ### Added

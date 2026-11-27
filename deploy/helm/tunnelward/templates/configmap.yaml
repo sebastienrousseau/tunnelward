@@ -1,0 +1,40 @@
+{{/*
+SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+SPDX-License-Identifier: GPL-3.0-only
+*/}}
+{{- $dir := include "tunnelward.dir" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tunnelward.fullname" . }}
+  labels:
+    {{- include "tunnelward.labels" . | nindent 4 }}
+data:
+  tunnelward.toml: |
+    [listen]
+    connectors = "0.0.0.0:{{ .Values.containerPorts.connectors }}"
+    ingress = "0.0.0.0:{{ .Values.containerPorts.agents }}"
+    {{- if .Values.admin.enabled }}
+    admin = "0.0.0.0:{{ .Values.admin.port }}"
+    {{- end }}
+
+    [tls]
+    cert = "{{ $dir }}/tls/tls.crt"
+    key = "{{ $dir }}/tls/tls.key"
+    client_ca = "{{ $dir }}/tls/ca.crt"
+    reload_secs = {{ .Values.tls.reloadSecs }}
+    {{- if .Values.tls.ingressSecret }}
+
+    [ingress]
+    cert = "{{ $dir }}/ingress/tls.crt"
+    key = "{{ $dir }}/ingress/tls.key"
+    {{- end }}
+    {{- if .Values.admin.enabled }}
+
+    [admin]
+    token_env = "TUNNELWARD_ADMIN_TOKEN"
+    {{- end }}
+    {{- with .Values.config }}
+
+    {{- . | nindent 4 }}
+    {{- end }}

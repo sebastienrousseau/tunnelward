@@ -1,0 +1,32 @@
+{{/*
+SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+SPDX-License-Identifier: GPL-3.0-only
+*/}}
+{{- if .Values.serviceMonitor.enabled }}
+{{- if not .Values.admin.enabled }}
+{{- fail "serviceMonitor.enabled needs admin.enabled: /metrics is on the admin API" }}
+{{- end }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "tunnelward.fullname" . }}
+  labels:
+    {{- include "tunnelward.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "tunnelward.selector" . | nindent 6 }}
+      app.kubernetes.io/component: admin
+  endpoints:
+    - port: admin
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ .Values.admin.tokenSecret.name }}
+          key: {{ .Values.admin.tokenSecret.key }}
+{{- end }}

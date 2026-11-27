@@ -29,7 +29,7 @@ is specific here and wins where it is stricter.
    and the audit log stay in the open crates.
 5. **No performance number without a benchmark anyone can rerun.**
 6. **Keep the licence boundary.** `tunnelward-proto`, `tunnelward-crypto`, `tunnelward-identity`,
-   `tunnelward-mcp`, `tunnelward-connector` and `tunnelward-testpki` are MIT OR Apache-2.0 and must
+   `tunnelward-mcp`, `tunnelward-connector`, `tunnelward-conformance` and `tunnelward-testpki` are MIT OR Apache-2.0 and must
    never depend on a GPL crate (`scripts/licence-boundary.sh`). A new crate
    an SDK needs is permissive from its first commit.
 7. **Crypto changes need an ADR** in `docs/adr/` and test vectors.

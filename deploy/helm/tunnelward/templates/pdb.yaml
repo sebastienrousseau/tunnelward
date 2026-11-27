@@ -1,0 +1,17 @@
+{{/*
+SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+SPDX-License-Identifier: GPL-3.0-only
+*/}}
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "tunnelward.fullname" . }}
+  labels:
+    {{- include "tunnelward.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "tunnelward.selector" . | nindent 6 }}
+{{- end }}

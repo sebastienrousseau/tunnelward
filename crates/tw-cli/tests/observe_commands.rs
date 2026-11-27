@@ -9,21 +9,11 @@ mod common;
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use common::{Res, pki_dir, text, tunnelward, write_config};
-
-/// Kills the child when dropped.
-struct Running(Child);
-
-impl Drop for Running {
-    fn drop(&mut self) {
-        let _killed = self.0.kill();
-        let _reaped = self.0.wait();
-    }
-}
+use common::{Res, pki_dir, spawn_gateway, text, tunnelward, write_config};
 
 fn check(dir: &std::path::Path, extra: &str) -> Res<(Option<i32>, String)> {
     let path = write_config(dir, extra)?;
@@ -114,22 +104,6 @@ fn read_request(tcp: &mut TcpStream) -> Res<String> {
         head.lines().next().unwrap_or_default(),
         String::from_utf8(body)?
     ))
-}
-
-/// `tunnelward gateway` on `path`, and its ingress address once bound.
-fn spawn_gateway(path: &std::path::Path) -> Res<(Running, String)> {
-    let mut child = Running(
-        Command::new(env!("CARGO_BIN_EXE_tunnelward"))
-            .args(["gateway", "--config", &path.to_string_lossy()])
-            .stdout(Stdio::piped())
-            .spawn()?,
-    );
-    let mut started = String::new();
-    BufReader::new(child.0.stdout.take().ok_or("no stdout")?).read_line(&mut started)?;
-    let agents = (started.split("agents on ").nth(1))
-        .and_then(|rest| rest.split([',', ' ', '\n']).next())
-        .ok_or_else(|| format!("no ingress address in {started:?}"))?;
-    Ok((child, agents.to_owned()))
 }
 
 /// An agent's GET for `path` at `ingress`.

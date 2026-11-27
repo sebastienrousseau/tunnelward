@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>
+# SPDX-License-Identifier: MIT OR Apache-2.0
+
+[package]
+name = "tunnelward-conformance"
+description = "Tunnelward conformance kit: protocol checks any gateway or connector implementation can run against a gateway"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords = ["tunnel", "mcp", "conformance", "testing", "protocol"]
+categories = ["network-programming", "development-tools::testing"]
+
+[dependencies]
+# The wrong-version register frame, which the proto encoder refuses.
+cbor4ii.workspace = true
+# The reversed HTTP/2 handshake after Accept.
+h2.workspace = true
+serde.workspace = true
+tokio = { workspace = true, features = ["io-util", "net", "rt", "time"] }
+tokio-rustls.workspace = true
+tunnelward-crypto.workspace = true
+tunnelward-proto = { workspace = true, features = ["io"] }
+
+[lints]
+workspace = true

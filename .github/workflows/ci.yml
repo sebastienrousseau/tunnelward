@@ -103,6 +103,56 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: bash scripts/stdio-reference.sh
 
+  helm:
+    name: Helm chart
+    # The chart lints, refuses to render without its required values,
+    # and the gateway file it renders runs a gateway that passes the
+    # conformance kit.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+        with:
+          version: v4.3.2
+      - run: bash scripts/helm-check.sh
+
+  java:
+    name: Testcontainers module (Java)
+    # The module's tests against an image of this commit: an agent's
+    # request through gateway and connector containers to a service.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --release --locked -p tunnelward --target x86_64-unknown-linux-musl
+      - name: Image of this commit
+        run: |
+          set -euo pipefail
+          mkdir -p ctx/linux/amd64
+          cp target/x86_64-unknown-linux-musl/release/tunnelward ctx/linux/amd64/
+          docker build --platform linux/amd64 -f pkg/docker/Dockerfile -t tunnelward:ci ctx
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - run: mvn -B -f sdk/java/testcontainers/pom.xml test -Dtunnelward.image=tunnelward:ci
+
   msrv:
     name: MSRV (1.89)
     runs-on: ubuntu-latest

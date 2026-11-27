@@ -9,6 +9,7 @@ mod attest;
 mod audit;
 mod backend;
 mod config;
+mod conformance;
 mod connector;
 mod dev;
 mod devcert;
@@ -83,6 +84,11 @@ Commands:
                  Check a passmcp attestation offline and print its digest:
                  its signature by any of the keys, or the gateway's
                  admission decision for <route>
+  conformance --gateway <host:port> --server-name <name> --ca <file>
+      --cert <file> --key <file> [--route <route>] [--timeout-secs <n>]
+      [--format text|json]
+                 Run the conformance kit against a gateway as the connector
+                 in <cert>; fail unless every check passes
 
 Options:
   -h, --help     Print this help
@@ -395,7 +401,7 @@ fn attest(args: &[String]) -> Result<(), Outcome> {
 type Command = fn(&[String]) -> Result<(), Outcome>;
 
 /// Every command, by the names that call it.
-const COMMANDS: [(&[&str], Command); 13] = [
+const COMMANDS: [(&[&str], Command); 14] = [
     (&["-h", "--help"], |_| {
         print!("{USAGE}");
         Ok(())
@@ -415,6 +421,7 @@ const COMMANDS: [(&[&str], Command); 13] = [
     (&["audit"], audit),
     (&["receipt"], receipt),
     (&["attest"], attest),
+    (&["conformance"], conformance::command),
 ];
 
 fn dispatch(args: &[String]) -> Outcome {

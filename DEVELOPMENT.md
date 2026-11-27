@@ -14,7 +14,7 @@
 cargo install cargo-deny --locked
 cargo install cargo-vet --version 0.10.2 --locked
 cargo install rust-code-analysis-cli --version 0.0.25 --locked
-pipx install reuse
+pipx install 'reuse[charset-normalizer]'   # the extra detects file encodings
 ```
 
 ## The gate
@@ -96,9 +96,14 @@ with a merge commit. Then, on an up-to-date `main`:
 2. `git tag -s -a vX.Y.Z -m "tunnelward vX.Y.Z"`, then the preflight
    again, which now also checks the tag's signature, message and target.
 3. `git push origin vX.Y.Z`. `.github/workflows/release.yml` builds the
-   binaries, SBOM, provenance, signed checksums, Homebrew formula and
-   container image, and publishes the GitHub Release titled
-   `tunnelward X.Y.Z`.
+   binaries, SBOM, provenance, signed checksums, Homebrew formula,
+   container image and the signed Helm chart
+   (`oci://ghcr.io/sebastienrousseau/charts/tunnelward`), and publishes
+   the GitHub Release titled `tunnelward X.Y.Z`.
+
+A version bump changes `version` and `appVersion` in
+`deploy/helm/tunnelward/Chart.yaml` with the workspace version; the tag
+check and the preflight refuse a chart that is behind.
 
 crates.io: the five crates with code are published from 0.0.8. The
 first publish is by hand (`cargo publish --workspace` with a crates.io
