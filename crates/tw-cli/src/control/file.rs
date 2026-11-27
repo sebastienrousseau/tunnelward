@@ -90,7 +90,7 @@ pub(crate) struct Checked {
     pub(crate) roles: Roles,
     pub(crate) store_dir: PathBuf,
     pub(crate) key: SigningKey,
-    pub(crate) audit: Option<tunnelward_audit::Settings>,
+    pub(crate) audit: Option<crate::audit::Checked>,
 }
 
 /// The control file at `path`, checked, or every problem with it.

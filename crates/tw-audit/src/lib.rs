@@ -31,7 +31,7 @@ pub use chain::{GENESIS, hash_line, key_id};
 pub use entry::{AdminEntry, Call, Entry, RegistrationEntry, RequestEntry};
 pub use pseudonym::{KEY_LEN as PSEUDONYM_KEY_LEN, Pseudonyms};
 pub use raw::Raw;
-pub use sink::{MAX_RAW_DAYS, Settings, Sink};
+pub use sink::{Forward, MAX_RAW_DAYS, Settings, Sink};
 
 /// Lower-case hex.
 #[must_use]

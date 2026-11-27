@@ -20,3 +20,4 @@ never rewritten once accepted; a new record supersedes it.
 | [0010](0010-telemetry-without-the-sdk.md) | Telemetry as OTLP/HTTP JSON, written in-house | Accepted, implemented in 0.0.16 |
 | [0011](0011-risk-signals.md) | Risk signals that need no IP data | Accepted, implemented in 0.0.16 |
 | [0012](0012-control-plane-alpha.md) | A control plane that signs policy bundles for gateways to pull | Accepted, implemented in 0.0.19 |
+| [0013](0013-audit-export-to-siem.md) | Audit export to a SIEM over syslog and OTLP logs | Accepted, implemented in 0.0.20 |

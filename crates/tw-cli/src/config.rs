@@ -253,7 +253,7 @@ pub(crate) struct Checked {
     /// The provider snapshot, to reload when it changes (FR-12).
     pub(crate) providers: Option<crate::providers::Loaded>,
     /// The audit log to open when the gateway starts.
-    pub(crate) audit: Option<tunnelward_audit::Settings>,
+    pub(crate) audit: Option<crate::audit::Checked>,
     /// The span exporter to start with the gateway (`[telemetry]`).
     pub(crate) otlp: Option<crate::observe::Otlp>,
     /// Where policy bundles come from (`[control]`, ADR 0012).

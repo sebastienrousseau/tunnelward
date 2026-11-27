@@ -17,6 +17,7 @@ mod devcert;
 mod doctor;
 mod enrol;
 mod enrolled;
+mod export;
 mod gateway;
 mod observe;
 mod policy;

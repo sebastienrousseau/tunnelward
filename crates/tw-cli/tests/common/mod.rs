@@ -6,9 +6,12 @@
 
 #![allow(dead_code, unreachable_pub)] // each test file uses a different subset
 
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
+use std::sync::mpsc;
+use std::time::Duration;
 
 use tunnelward_testpki as pki;
 
@@ -96,4 +99,57 @@ pub fn spawn_gateway_at(path: &Path) -> Res<(Running, String, String)> {
 pub fn spawn_gateway(path: &Path) -> Res<(Running, String)> {
     let (child, _connectors, agents) = spawn_gateway_at(path)?;
     Ok((child, agents))
+}
+
+/// A collector that answers 200 and sends each request body on.
+pub fn collector() -> Res<(String, mpsc::Receiver<String>)> {
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let endpoint = format!("http://{}", listener.local_addr()?);
+    let (sent, received) = mpsc::channel();
+    std::thread::spawn(move || {
+        for mut tcp in listener.incoming().flatten() {
+            if let Ok(body) = read_request(&mut tcp) {
+                let _ok = tcp.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}");
+                let _sent = sent.send(body);
+            }
+        }
+    });
+    Ok((endpoint, received))
+}
+
+/// One HTTP/1.1 request's request line and body.
+pub fn read_request(tcp: &mut TcpStream) -> Res<String> {
+    tcp.set_read_timeout(Some(Duration::from_secs(5)))?;
+    let mut reader = BufReader::new(tcp);
+    let (mut head, mut length) = (String::new(), 0);
+    loop {
+        let mut line = String::new();
+        reader.read_line(&mut line)?;
+        if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+            length = n.trim().parse()?;
+        }
+        if line == "\r\n" || line.is_empty() {
+            break;
+        }
+        head.push_str(&line);
+    }
+    let mut body = vec![0; length];
+    reader.read_exact(&mut body)?;
+    Ok(format!(
+        "{}\n{}",
+        head.lines().next().unwrap_or_default(),
+        String::from_utf8(body)?
+    ))
+}
+
+/// An agent's GET for `path` at `ingress`.
+pub fn ask(ingress: &str, path: &str) -> Res<String> {
+    let mut agent = TcpStream::connect(ingress)?;
+    write!(
+        agent,
+        "GET {path} HTTP/1.1\r\nhost: h\r\nconnection: close\r\n\r\n"
+    )?;
+    let mut answer = String::new();
+    agent.read_to_string(&mut answer)?;
+    Ok(answer)
 }

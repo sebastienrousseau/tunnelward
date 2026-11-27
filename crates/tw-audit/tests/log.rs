@@ -238,3 +238,34 @@ fn raw_days_over_thirty_are_refused() {
     settings.raw_days = 31;
     assert!(Sink::open(settings).is_err());
 }
+
+/// Keeps every line it is given.
+#[derive(Debug, Default)]
+struct Copies(std::sync::Mutex<Vec<String>>);
+
+impl tunnelward_audit::Forward for Copies {
+    fn line(&self, line: &[u8]) {
+        let mut copies = self.0.lock().unwrap_or_else(|e| unreachable!("{e:?}"));
+        copies.push(String::from_utf8_lossy(line).into_owned());
+    }
+}
+
+#[test]
+fn each_line_written_is_forwarded_as_written() {
+    let dir = dir("forward");
+    let path = dir.join("audit.jsonl");
+    let copies = std::sync::Arc::new(Copies::default());
+    let mut settings = Settings::new(path.clone(), key().0, [7; 32]);
+    settings.checkpoint_every = 2;
+    settings.forward = Some(copies.clone());
+    let sink = Sink::open(settings).unwrap_or_else(|e| unreachable!("{e:?}"));
+    for n in 0..3 {
+        sink.record(request(&sink, n), None);
+    }
+    sink.close();
+    let written = std::fs::read_to_string(&path).unwrap_or_else(|e| unreachable!("{e:?}"));
+    let forwarded = copies.0.lock().unwrap_or_else(|e| unreachable!("{e:?}"));
+    assert_eq!(written.lines().collect::<Vec<_>>(), *forwarded);
+    assert!(forwarded.iter().any(|l| l.contains("checkpoint")));
+    std::fs::remove_dir_all(&dir).unwrap_or_else(|e| unreachable!("{e:?}"));
+}

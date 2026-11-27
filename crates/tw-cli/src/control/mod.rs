@@ -47,7 +47,7 @@ async fn run(path: &Path) -> Result<(), String> {
     let checked = file::check(path).map_err(|p| p.join("\n"))?;
     let store = store::Store::open(&checked.store_dir, checked.key)?;
     let audit = (checked.audit)
-        .map(|settings| tunnelward_audit::Sink::open(settings).map(Arc::new))
+        .map(crate::audit::Checked::open)
         .transpose()
         .map_err(|e| format!("audit log: {e}"))?;
     for keys in &checked.operators.fetched {
