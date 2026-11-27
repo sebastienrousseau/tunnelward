@@ -40,6 +40,10 @@ use tunnelward_crypto::rustls::pki_types::ServerName;
 /// The body [`Forward`] answers with.
 pub type ForwardBody = BoxBody<Bytes, hyper::Error>;
 
+/// A request on its way to the target: streamed from the gateway, or
+/// buffered (gateway-blind mode rewrites its body).
+pub(crate) type Outgoing = Request<ForwardBody>;
+
 /// Where [`Forward`] sends requests.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -78,6 +82,7 @@ pub struct Forward {
     target: Arc<Target>,
     timeout: Duration,
     hook: Option<RequestHook>,
+    blind: Option<Arc<crate::blind::Blind>>,
 }
 
 impl core::fmt::Debug for Forward {
@@ -86,6 +91,7 @@ impl core::fmt::Debug for Forward {
             .field("target", &self.target)
             .field("timeout", &self.timeout)
             .field("hook", &self.hook.is_some())
+            .field("blind", &self.blind.is_some())
             .finish()
     }
 }
@@ -99,6 +105,7 @@ impl Forward {
             target: Arc::new(target),
             timeout,
             hook: None,
+            blind: None,
         }
     }
 
@@ -110,10 +117,27 @@ impl Forward {
         self
     }
 
+    /// Opens gateway-blind calls sealed to the connector and seals their
+    /// answers (ADR 0016, experimental).
+    #[must_use]
+    pub fn with_blind(mut self, blind: crate::blind::Blind) -> Self {
+        self.blind = Some(Arc::new(blind));
+        self
+    }
+
     async fn forward(self, mut request: Request<Incoming>) -> Response<ForwardBody> {
         if let Some(hook) = &self.hook {
             hook(&mut request);
         }
+        let request = request.map(BodyExt::boxed);
+        if let Some(blind) = self.blind.clone() {
+            return blind.forward(&self, request).await;
+        }
+        self.send(request).await
+    }
+
+    /// Sends `request` to the target within the timeout.
+    pub(crate) async fn send(&self, request: Outgoing) -> Response<ForwardBody> {
         match timeout(self.timeout, self.exchange(request)).await {
             Ok(Ok(response)) => response.map(BodyExt::boxed),
             Ok(Err(why)) => error_response(StatusCode::BAD_GATEWAY, &why),
@@ -124,7 +148,7 @@ impl Forward {
         }
     }
 
-    async fn exchange(&self, request: Request<Incoming>) -> Result<Response<Incoming>, String> {
+    async fn exchange(&self, request: Outgoing) -> Result<Response<Incoming>, String> {
         let request = origin_form(request, &self.target)?;
         match self.target.as_ref() {
             Target::Http { addr } => send(tcp(addr).await?, request).await,
@@ -175,7 +199,7 @@ impl hyper::service::Service<Request<Incoming>> for Forward {
 }
 
 /// One HTTP/1.1 exchange on a fresh connection.
-async fn send<IO>(io: IO, request: Request<Incoming>) -> Result<Response<Incoming>, String>
+async fn send<IO>(io: IO, request: Outgoing) -> Result<Response<Incoming>, String>
 where
     IO: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -197,10 +221,7 @@ where
 /// Rewrites a gateway request for an HTTP/1.1 target: origin-form URI, a
 /// `Host` header (the gateway's authority, else the target's), no
 /// hop-by-hop headers.
-fn origin_form(
-    mut request: Request<Incoming>,
-    target: &Target,
-) -> Result<Request<Incoming>, String> {
+fn origin_form(mut request: Outgoing, target: &Target) -> Result<Outgoing, String> {
     let host = request
         .uri()
         .authority()
@@ -262,7 +283,7 @@ const HOP_BY_HOP: &[&str] = &[
     "upgrade",
 ];
 
-fn error_response(status: StatusCode, why: &str) -> Response<ForwardBody> {
+pub(crate) fn error_response(status: StatusCode, why: &str) -> Response<ForwardBody> {
     let mut response = Response::new(
         Full::new(Bytes::from(format!("{why}\n")))
             .map_err(|e| match e {})

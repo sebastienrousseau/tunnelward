@@ -802,6 +802,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tunnelward-crypto",
+ "tunnelward-mcp",
  "tunnelward-proto",
 ]
 

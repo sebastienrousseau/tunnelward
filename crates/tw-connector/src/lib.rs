@@ -21,6 +21,7 @@
 //! shuts down gracefully.
 
 mod backoff;
+mod blind;
 mod error;
 mod event;
 mod forward;
@@ -30,6 +31,7 @@ mod stdio;
 mod supervisor;
 
 pub use backoff::Backoff;
+pub use blind::Blind;
 pub use error::Error;
 pub use event::ConnectorEvent;
 pub use forward::{Forward, ForwardBody, RequestHook, Target};
