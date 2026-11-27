@@ -8,17 +8,22 @@
 //! specification requires. It does not verify the certificate: call it
 //! on a certificate the TLS handshake already verified.
 //!
+//! [`key_algorithm`] names a certificate's public-key algorithm, for a
+//! crypto inventory.
+//!
 //! [`enrol`] is the certificate authority a gateway runs to enrol
 //! connectors that have no SVID yet, and the request they send it.
 
 mod der;
 pub mod enrol;
+mod key;
 #[cfg(unix)]
 mod proto;
 #[cfg(unix)]
 pub mod workload;
 mod x509;
 
+pub use key::key_algorithm;
 use tunnelward_proto::is_spiffe_id;
 
 const SEQUENCE: u8 = 0x30;

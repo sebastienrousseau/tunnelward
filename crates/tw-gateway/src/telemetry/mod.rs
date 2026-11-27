@@ -10,4 +10,5 @@ mod red;
 mod span;
 
 pub use otlp::{OtlpExporter, OtlpSettings};
+pub(crate) use otlp::{post, signal_url};
 pub(crate) use red::Red;

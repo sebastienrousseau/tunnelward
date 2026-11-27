@@ -164,3 +164,52 @@ fn client_certificates_need_ingress_tls() -> Res<()> {
     assert!(out.status.success(), "{}", text(&out.stderr));
     Ok(std::fs::remove_dir_all(dir)?)
 }
+
+/// `[approval]` (FR-17) with `body`'s keys, after `[agents]` when asked.
+fn approval(dir: &Path, agents: bool, body: &str) -> Res<(Option<i32>, String)> {
+    let agents = if agents {
+        "[agents]\nresource = \"https://mcp.example.org\"\n\
+         [[agents.issuers]]\nissuer = \"https://as.example.org\"\njwks = \"keys.json\"\n"
+    } else {
+        ""
+    };
+    let path = write_config(dir, &format!("{agents}[approval]\n{body}"))?;
+    let out = tunnelward(&["config", "check", &path.to_string_lossy()])?;
+    Ok((out.status.code(), text(&out.stderr)))
+}
+
+#[test]
+fn approval_checks_ok_or_lists_its_problems() -> Res<()> {
+    let dir = pki_dir("approval")?;
+    std::fs::write(dir.join("keys.json"), r#"{"keys":[]}"#)?;
+    let good = "public_url = \"https://mcp.example.org\"\nissuer = \"https://login.example.org\"\n\
+                authorization_endpoint = \"https://login.example.org/authorize\"\n\
+                token_endpoint = \"https://login.example.org/token\"\njwks = \"keys.json\"\n\
+                client_id = \"tunnelward-approvals\"\nca = \"ca.crt\"\n\
+                approver_groups = [\"tw-approvers\"]\n";
+    let (code, errors) = approval(&dir, true, good)?;
+    assert_eq!(code, Some(0), "{errors}");
+    let bad =
+        good.replace(
+            "https://login.example.org/token",
+            "http://login.example.org/token",
+        )
+        .replace(
+            "jwks = \"keys.json\"",
+            "jwks = \"keys.json\"\njwks_uri = \"https://x/keys\"",
+        ) + "client_secret_env = \"TW_TEST_NO_SUCH_VARIABLE\"\n";
+    let (code, errors) = approval(&dir, false, &bad)?;
+    assert_eq!(code, Some(1));
+    for expected in [
+        "[approval] needs [agents]",
+        "[approval] token_endpoint \"http://login.example.org/token\": give an https:// URL",
+        "[approval] client_secret_env: TW_TEST_NO_SUCH_VARIABLE is not set",
+        "[approval] give jwks_uri or jwks, not both",
+    ] {
+        assert!(
+            errors.contains(expected),
+            "{expected} missing from: {errors}"
+        );
+    }
+    Ok(std::fs::remove_dir_all(dir)?)
+}

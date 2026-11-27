@@ -4,6 +4,7 @@
 //! The `tunnelward` command-line tool.
 
 mod agents;
+mod approval;
 mod args;
 mod attest;
 mod audit;
@@ -12,11 +13,13 @@ mod config;
 mod conformance;
 mod connector;
 mod control;
+mod crypto;
 mod dev;
 mod devcert;
 mod doctor;
 mod enrol;
 mod enrolled;
+mod export;
 mod gateway;
 mod observe;
 mod policy;
@@ -53,6 +56,10 @@ Commands:
                  Check a gateway's or a connector's file and list every problem
   doctor [--config <file>]
                  Check this machine and, given a file, its configuration
+  crypto report --admin <addr>
+                 List each connector connection's TLS version, key exchange,
+                 cipher suite and key, from a gateway's admin API
+                 (token from TUNNELWARD_ADMIN_TOKEN)
   providers keygen --out <file>
                  Make a composite ML-DSA-65 + Ed25519 key for signing
                  provider snapshots; its public key goes to <file>.pub
@@ -408,7 +415,7 @@ fn attest(args: &[String]) -> Result<(), Outcome> {
 type Command = fn(&[String]) -> Result<(), Outcome>;
 
 /// Every command, by the names that call it.
-const COMMANDS: [(&[&str], Command); 15] = [
+const COMMANDS: [(&[&str], Command); 16] = [
     (&["-h", "--help"], |_| {
         print!("{USAGE}");
         Ok(())
@@ -430,6 +437,7 @@ const COMMANDS: [(&[&str], Command); 15] = [
     (&["attest"], attest),
     (&["conformance"], conformance::command),
     (&["control"], control::command),
+    (&["crypto"], crypto::command),
 ];
 
 fn dispatch(args: &[String]) -> Outcome {

@@ -192,6 +192,24 @@ fn fetched_from(base: &Path, agents: &Agents, url: &str) -> Result<Arc<KeySet>, 
         .map_err(|e| e.to_string())
 }
 
+/// One issuer's keys for a section other than `[agents]` (the approvers'
+/// provider, ADR 0014): the file `jwks`, or fetched from `jwks_uri`
+/// trusting `roots`, with whether they need refreshing.
+pub(crate) fn issuer_keys(
+    base: &Path,
+    (jwks_uri, jwks): (Option<&str>, Option<&PathBuf>),
+    roots: Arc<RootCertStore>,
+) -> Result<(Arc<KeySet>, bool), String> {
+    match (jwks_uri, jwks) {
+        (Some(_), Some(_)) => Err("give jwks_uri or jwks, not both".to_owned()),
+        (None, None) => Err("give jwks_uri or jwks".to_owned()),
+        (None, Some(file)) => fixed(&resolve(base, file)).map(|k| (k, false)),
+        (Some(url), None) => KeySet::from_url(url, roots)
+            .map(|k| (Arc::new(k), true))
+            .map_err(|e| e.to_string()),
+    }
+}
+
 fn fixed(path: &Path) -> Result<Arc<KeySet>, String> {
     let json = std::fs::read(path).map_err(|e| format!("jwks {}: {e}", path.display()))?;
     KeySet::from_jwks(&json)

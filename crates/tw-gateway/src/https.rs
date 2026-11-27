@@ -3,7 +3,8 @@
 
 //! Plain HTTPS (HTTP/1.1 over TLS 1.3): a GET for the public documents a
 //! gateway reads, issuers' JWK Sets and providers' published ranges, a
-//! JSON POST for a connector's enrolment, and a GET that presents a
+//! JSON POST for a connector's enrolment, a form POST for an OIDC
+//! token endpoint (approvals, ADR 0014), and a GET that presents a
 //! client certificate, for the control plane's fleet listener.
 
 use std::sync::Arc;
@@ -80,9 +81,34 @@ pub async fn https_post(
     roots: Arc<RootCertStore>,
     limit: usize,
 ) -> Result<Vec<u8>, String> {
+    post(url, (body, "application/json"), roots, limit).await
+}
+
+/// [`https_post`] with an `application/x-www-form-urlencoded` body, as an
+/// OAuth token endpoint takes.
+///
+/// # Errors
+///
+/// As [`https_post`].
+pub(crate) async fn https_post_form(
+    url: &str,
+    body: String,
+    roots: Arc<RootCertStore>,
+    limit: usize,
+) -> Result<Vec<u8>, String> {
+    let form = (body.into_bytes(), "application/x-www-form-urlencoded");
+    post(url, form, roots, limit).await
+}
+
+async fn post(
+    url: &str,
+    (body, content_type): (Vec<u8>, &'static str),
+    roots: Arc<RootCertStore>,
+    limit: usize,
+) -> Result<Vec<u8>, String> {
     let uri = https_uri(url)?;
     let request = Request::post(uri.path_and_query().map_or("/", |p| p.as_str()))
-        .header(http::header::CONTENT_TYPE, "application/json")
+        .header(http::header::CONTENT_TYPE, content_type)
         .header(http::header::ACCEPT, "application/json")
         .body(Full::new(Bytes::from(body)))
         .map_err(|e| fail("request", &e))?;

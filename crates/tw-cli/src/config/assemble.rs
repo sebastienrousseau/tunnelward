@@ -69,10 +69,20 @@ pub(super) struct Sections {
     risk: Option<Arc<tunnelward_risk::Risk>>,
     otlp: Option<crate::observe::Otlp>,
     control: Option<crate::control::pull::Puller>,
+    approval: Option<crate::approval::Checked>,
+}
+
+/// What [`with_state`] leaves to start with the gateway: the span
+/// exporter, the `[control]` puller, and key sets to keep fresh.
+pub(super) struct Extras {
+    pub(super) otlp: Option<crate::observe::Otlp>,
+    pub(super) control: Option<crate::control::pull::Puller>,
+    pub(super) keys: Vec<Arc<tunnelward_gateway::KeySet>>,
 }
 
 /// The `[state]` store, the `[policy]`, the `[attestation]`, the
-/// `[risk]`, the `[telemetry]` and the `[control]`, each checked.
+/// `[risk]`, the `[telemetry]`, the `[control]` and the `[approval]`,
+/// each checked.
 pub(super) fn state_and_policy(base: &Path, file: &File, problems: &mut Problems) -> Sections {
     Sections {
         shared: (file.state.as_ref()).and_then(|s| crate::state::check(base, s, problems)),
@@ -83,21 +93,16 @@ pub(super) fn state_and_policy(base: &Path, file: &File, problems: &mut Problems
         otlp: (file.telemetry.as_ref()).and_then(|t| crate::observe::telemetry(base, t, problems)),
         control: (file.control.as_ref())
             .and_then(|c| crate::control::pull::check(base, c, file.policy.is_some(), problems)),
+        approval: (file.approval.as_ref())
+            .and_then(|a| crate::approval::check(base, a, file.agents.is_some(), problems)),
     }
 }
 
 /// Shares state through the `[state]` store when one was given, turns
-/// the tool policy, admission by attestation (FR-5) and the risk score
-/// (FR-16) on; returns the span exporter and the `[control]` puller to
-/// start with the gateway. With `[control]` the gateway denies every
-/// call until its first bundle (ADR 0012).
-pub(super) fn with_state(
-    gateway: &mut Config,
-    sections: Sections,
-) -> (
-    Option<crate::observe::Otlp>,
-    Option<crate::control::pull::Puller>,
-) {
+/// the tool policy, admission by attestation (FR-5), the risk score
+/// (FR-16) and approvals (FR-17) on. With `[control]` the gateway denies
+/// every call until its first bundle (ADR 0012).
+pub(super) fn with_state(gateway: &mut Config, sections: Sections) -> Extras {
     let Sections {
         shared,
         policy,
@@ -105,6 +110,7 @@ pub(super) fn with_state(
         risk,
         otlp,
         control,
+        approval,
     } = sections;
     gateway.attestation = attestation;
     gateway.ingress.risk = risk;
@@ -117,7 +123,13 @@ pub(super) fn with_state(
     if control.is_some() {
         gateway.ingress.policy = Some(crate::control::pull::until_first_bundle());
     }
-    (otlp, control)
+    let (approvals, keys) = approval.map_or((None, None), |a| (Some(a.approvals), a.fetched));
+    gateway.ingress.approvals = approvals;
+    Extras {
+        otlp,
+        control,
+        keys: keys.into_iter().collect(),
+    }
 }
 
 /// The file and every certificate and key it names, to watch for

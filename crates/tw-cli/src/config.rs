@@ -56,6 +56,8 @@
 //! [audit]                       # optional: the audit log (see audit.rs)
 //! [control]                     # optional: the policy from the control
 //!                               # plane, instead of [policy] (control/pull.rs)
+//! [approval]                    # optional: a person approves each
+//!                               # high-impact call (see approval.rs)
 //!
 //! [attestation]                 # optional: routes that admit only
 //!                               # attested connectors (see attest.rs)
@@ -99,6 +101,7 @@ pub(crate) struct File {
     state: Option<crate::state::Section>,
     policy: Option<crate::policy::Section>,
     control: Option<crate::control::pull::Section>,
+    approval: Option<crate::approval::Section>,
     audit: Option<crate::audit::Section>,
     attestation: Option<crate::attest::Section>,
     risk: Option<crate::observe::RiskSection>,
@@ -253,7 +256,7 @@ pub(crate) struct Checked {
     /// The provider snapshot, to reload when it changes (FR-12).
     pub(crate) providers: Option<crate::providers::Loaded>,
     /// The audit log to open when the gateway starts.
-    pub(crate) audit: Option<tunnelward_audit::Settings>,
+    pub(crate) audit: Option<crate::audit::Checked>,
     /// The span exporter to start with the gateway (`[telemetry]`).
     pub(crate) otlp: Option<crate::observe::Otlp>,
     /// Where policy bundles come from (`[control]`, ADR 0012).
@@ -435,8 +438,8 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         with_agents(&mut gateway, agents, file.ingress.client_certificates);
     let (providers, signer_keys) = with_providers(&mut gateway, providers);
     gateway.ingress.enrolment = enrolment.map(|e| e.enrolment);
-    let (otlp, control) = with_state(&mut gateway, sections);
-    let key_sets = [key_sets, signer_keys].concat();
+    let extras = with_state(&mut gateway, sections);
+    let key_sets = [key_sets, signer_keys, extras.keys].concat();
     with_ingress(&mut gateway.ingress, ingress_tls, trusted, cors, &file);
     if let Some(secs) = file.connectors.lease_secs {
         gateway.lease_secs = secs;
@@ -453,7 +456,7 @@ pub(crate) fn check(path: &Path, file: File) -> Result<Checked, Problems> {
         key_refresh,
         providers,
         audit,
-        otlp,
-        control,
+        otlp: extras.otlp,
+        control: extras.control,
     })
 }

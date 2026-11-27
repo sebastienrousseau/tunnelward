@@ -26,7 +26,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.19"
+version = "0.0.20"
 edition = "2024"
 # The MSRV floor. See docs/POLICIES.md before changing it.
 rust-version = "1.89"
@@ -39,17 +39,17 @@ readme = "README.md"
 [workspace.dependencies]
 # Workspace crates. The version pins what a published crate depends on;
 # it moves with workspace.package.version on every release.
-tunnelward-proto = { path = "crates/tw-proto", version = "=0.0.19" }
-tunnelward-crypto = { path = "crates/tw-crypto", version = "=0.0.19" }
-tunnelward-connector = { path = "crates/tw-connector", version = "=0.0.19" }
-tunnelward-gateway = { path = "crates/tw-gateway", version = "=0.0.19" }
-tunnelward-mcp = { path = "crates/tw-mcp", version = "=0.0.19" }
-tunnelward-identity = { path = "crates/tw-identity", version = "=0.0.19" }
-tunnelward-policy = { path = "crates/tw-policy", version = "=0.0.19" }
-tunnelward-audit = { path = "crates/tw-audit", version = "=0.0.19" }
-tunnelward-attest = { path = "crates/tw-attest", version = "=0.0.19" }
-tunnelward-risk = { path = "crates/tw-risk", version = "=0.0.19" }
-tunnelward-conformance = { path = "crates/tw-conformance", version = "=0.0.19" }
+tunnelward-proto = { path = "crates/tw-proto", version = "=0.0.20" }
+tunnelward-crypto = { path = "crates/tw-crypto", version = "=0.0.20" }
+tunnelward-connector = { path = "crates/tw-connector", version = "=0.0.20" }
+tunnelward-gateway = { path = "crates/tw-gateway", version = "=0.0.20" }
+tunnelward-mcp = { path = "crates/tw-mcp", version = "=0.0.20" }
+tunnelward-identity = { path = "crates/tw-identity", version = "=0.0.20" }
+tunnelward-policy = { path = "crates/tw-policy", version = "=0.0.20" }
+tunnelward-audit = { path = "crates/tw-audit", version = "=0.0.20" }
+tunnelward-attest = { path = "crates/tw-attest", version = "=0.0.20" }
+tunnelward-risk = { path = "crates/tw-risk", version = "=0.0.20" }
+tunnelward-conformance = { path = "crates/tw-conformance", version = "=0.0.20" }
 tunnelward-testpki = { path = "crates/tw-testpki" }
 cbor4ii = { version = "1.2.4", default-features = false, features = ["serde1", "use_std"] }
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }

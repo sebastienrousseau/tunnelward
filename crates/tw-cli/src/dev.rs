@@ -141,8 +141,8 @@ fn audit(key: &std::path::Path) -> Result<Arc<tunnelward_audit::Sink>, Error> {
     let section: crate::audit::Section = toml::from_str(&section)?;
     let base = key.parent().unwrap_or_else(|| std::path::Path::new("."));
     let mut problems = Vec::new();
-    let settings = crate::audit::check(base, &section, &mut problems).ok_or(problems.join("\n"))?;
-    Ok(Arc::new(tunnelward_audit::Sink::open(settings)?))
+    let checked = crate::audit::check(base, &section, &mut problems).ok_or(problems.join("\n"))?;
+    Ok(checked.open()?)
 }
 
 /// Waits until the connector's route is registered.

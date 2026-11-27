@@ -14,12 +14,15 @@
 //! raw_days = 0                  # days to keep raw client addresses beside
 //!                               # the log, at most 30; 0 keeps none
 //! receipts = false              # sign a tw-receipt on every answer
+//!
+//! [audit.export]                # optional: to a SIEM (see export.rs)
 //! ```
 
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use tunnelward_audit::{PSEUDONYM_KEY_LEN, Settings, hex, unhex, verify};
+use tunnelward_audit::{PSEUDONYM_KEY_LEN, Settings, Sink, hex, unhex, verify};
 use tunnelward_crypto::composite;
 
 use crate::config::{Problems, resolve};
@@ -35,6 +38,28 @@ pub(crate) struct Section {
     raw_days: Option<u32>,
     #[serde(default)]
     receipts: bool,
+    export: Option<crate::export::Section>,
+}
+
+/// A checked `[audit]`: the log's settings and, with `[audit.export]`,
+/// where its events are exported.
+#[derive(Debug)]
+pub(crate) struct Checked {
+    settings: Settings,
+    export: Option<tunnelward_gateway::SiemSettings>,
+}
+
+impl Checked {
+    /// Starts the export, if any, then opens the log; inside the
+    /// runtime, since the export runs on a task.
+    pub(crate) fn open(self) -> Result<Arc<Sink>, String> {
+        let mut settings = self.settings;
+        if let Some(export) = self.export {
+            let forwarder = tunnelward_gateway::Forwarder::start(export)?;
+            settings.forward = Some(forwarder);
+        }
+        Sink::open(settings).map(Arc::new)
+    }
 }
 
 /// `<key>` with `suffix` added.
@@ -58,7 +83,7 @@ fn pseudonym_key(path: &Path) -> Result<[u8; PSEUDONYM_KEY_LEN], String> {
 
 /// Checks `section` and reads its keys; the log itself is opened only
 /// when the gateway starts, so checking a file never writes one.
-pub(crate) fn check(base: &Path, section: &Section, problems: &mut Problems) -> Option<Settings> {
+pub(crate) fn check(base: &Path, section: &Section, problems: &mut Problems) -> Option<Checked> {
     let raw_days = section.raw_days.unwrap_or(0);
     if raw_days > tunnelward_audit::MAX_RAW_DAYS {
         problems.push(format!(
@@ -74,7 +99,8 @@ pub(crate) fn check(base: &Path, section: &Section, problems: &mut Problems) -> 
     let key = signing_key(&key_path).map_err(|e| problems.push(format!("[audit] key: {e}")));
     let pseudonyms = pseudonym_key(&pseudonym_path)
         .map_err(|e| problems.push(format!("[audit] pseudonym_key: {e}")));
-    let (Ok(key), Ok(pseudonyms)) = (key, pseudonyms) else {
+    let export = (section.export.as_ref()).map(|e| crate::export::check(base, e, problems));
+    let (Ok(key), Ok(pseudonyms), None | Some(Some(_))) = (key, pseudonyms, &export) else {
         return None;
     };
     let mut settings = Settings::new(resolve(base, &section.path), key, pseudonyms);
@@ -83,7 +109,10 @@ pub(crate) fn check(base: &Path, section: &Section, problems: &mut Problems) -> 
         std::time::Duration::from_secs(section.checkpoint_secs.unwrap_or(60).max(1));
     settings.raw_days = raw_days;
     settings.receipts = section.receipts;
-    Some(settings)
+    Some(Checked {
+        settings,
+        export: export.flatten(),
+    })
 }
 
 /// Writes a new signing key to `out` (owner-only), its public key in hex
@@ -201,10 +230,10 @@ mod tests {
         let toml = "path = \"audit.jsonl\"\nkey = \"audit.key\"\nreceipts = true\n";
         let section: Section = toml::from_str(toml).unwrap();
         let mut problems = Problems::new();
-        let settings = check(&dir, &section, &mut problems).unwrap();
+        let checked = check(&dir, &section, &mut problems).unwrap();
         assert!(problems.is_empty(), "{problems:?}");
         assert!(!dir.join("audit.jsonl").exists(), "checking writes nothing");
-        let sink = tunnelward_audit::Sink::open(settings).unwrap();
+        let sink = checked.open().unwrap();
         sink.close();
         let report = verify_log(&dir.join("audit.jsonl"), &[public]).unwrap();
         assert!(report.contains("0 entries"), "{report}");

@@ -7,6 +7,41 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.20]
+
+### Added
+
+- Audit export to a SIEM (ADR 0013): `[audit.export]` sends each audit
+  entry, as its OCSF 1.3.0 event, to syslog (RFC 5424 framed by octet
+  counting, over TLS; plain TCP only to loopback) and to OTLP logs
+  (`<endpoint>/v1/logs`). A bounded queue drops and counts rather than
+  slow the log, and the log file stays the record. The gateway and the
+  control both read it. `tunnelward-audit` gains the `Forward` hook;
+  `tunnelward-gateway` gains `Forwarder` and its settings.
+- Out-of-band approval of high-impact calls (FR-17, ADR 0014):
+  `[approval]` makes every call to a `high_impact` tool wait for a
+  person's approval of exactly that call (the agent token's subject and
+  client, the path, the tool and the arguments). The agent gets MCP's
+  URL-elicitation error (-32042, `TW-P006`); the approver signs in at
+  their OIDC provider (authorization code with PKCE) on a page the
+  gateway serves, and may approve their own agent's calls or, in an
+  approver group, anyone's. The approved call runs once; a changed one
+  needs its own approval. Approvals live in the shared state, so any
+  gateway honours them, and each decision is an admin entry in the
+  audit log. New error ids `TW-P006` to `TW-P008`.
+- `tunnelward crypto report --admin <addr>`: each connector
+  connection's TLS version, key exchange, cipher suite and certificate
+  key, and how many used a hybrid post-quantum key exchange. The admin
+  inventory carries the same as `tls` on each connection;
+  `tunnelward-identity` gains `key_algorithm`.
+- `docs/DPIA.md`, a template for the data protection impact assessment.
+
+### Changed
+
+- `RequestInfo` carries the agent token's subject (`subject`).
+- The Kubernetes operator, planned for this version, moves to 0.0.21,
+  where it is the one item and is tested against a real cluster.
+
 ## [0.0.19]
 
 ### Added

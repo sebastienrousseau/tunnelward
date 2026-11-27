@@ -110,6 +110,12 @@ impl AgentAuth {
         if scheme != bind::Scheme::Bearer {
             return Err("give a Bearer token".to_owned());
         }
+        self.token(raw, now)
+    }
+
+    /// The caller a JWT names, checked as [`AgentAuth::bearer`] checks
+    /// one: an approver's ID token, say, with its client as the resource.
+    pub(crate) fn token(&self, raw: &str, now: SystemTime) -> Result<Caller, String> {
         let claims = self.verified(raw, now)?;
         Ok(Caller {
             subject: claims.sub,
@@ -145,6 +151,8 @@ fn reason(denial: Denial) -> String {
 /// Who a valid token says is calling.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Principal {
+    /// `sub`.
+    pub(crate) subject: Option<String>,
     /// `client_id` (RFC 9068), else `azp`.
     pub(crate) client_id: Option<String>,
     /// Keys to record once in the shared store: the `DPoP` proof's `jti`,
@@ -265,6 +273,7 @@ pub(crate) fn check(
     let secs = now.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     let once = bind::check(auth, (scheme, raw), claims, request, secs)?;
     Ok(Principal {
+        subject: claims.sub.clone(),
         client_id: claims.client_id.clone().or_else(|| claims.azp.clone()),
         once,
         bound: bind::is_bound(claims),

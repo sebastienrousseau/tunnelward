@@ -39,6 +39,8 @@ pub struct RequestInfo {
     /// The OAuth client the agent's token names (`client_id`, else
     /// `azp`), once [`crate::AgentAuth`] has checked it.
     pub client_id: Option<String>,
+    /// The token's `sub`, once [`crate::AgentAuth`] has checked it.
+    pub subject: Option<String>,
     /// The provider whose published ranges hold the client address
     /// (FR-12, network-level evidence only).
     pub provider: Option<crate::ProviderTag>,

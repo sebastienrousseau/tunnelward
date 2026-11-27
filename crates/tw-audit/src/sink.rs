@@ -48,6 +48,16 @@ pub struct Settings {
     pub receipts: bool,
     /// Entries waiting to be written before more are dropped (16,384).
     pub queue: usize,
+    /// Where each line goes once written, such as a SIEM forwarder.
+    pub forward: Option<Arc<dyn Forward>>,
+}
+
+/// Takes each line after the log has written it: the file stays the
+/// record, and what is forwarded is a copy (a SIEM export, ADR 0013).
+pub trait Forward: Send + Sync + core::fmt::Debug {
+    /// `line`, without its newline, was written. Called on the writer's
+    /// thread, so it must not block.
+    fn line(&self, line: &[u8]);
 }
 
 impl Settings {
@@ -63,6 +73,7 @@ impl Settings {
             raw_days: 0,
             receipts: false,
             queue: 16_384,
+            forward: None,
         }
     }
 }
@@ -124,6 +135,7 @@ impl Sink {
             last_checkpoint: Instant::now(),
             last_prune: None,
             dropped: dropped.clone(),
+            forward: settings.forward,
         };
         let handle = std::thread::Builder::new()
             .name("tunnelward-audit".into())
@@ -294,6 +306,7 @@ struct Writer {
     last_checkpoint: Instant,
     last_prune: Option<Instant>,
     dropped: Arc<AtomicU64>,
+    forward: Option<Arc<dyn Forward>>,
 }
 
 impl Writer {
@@ -386,6 +399,9 @@ impl Writer {
         let text = serde_json::to_vec(&line)?;
         self.file.write_all(&text)?;
         self.file.write_all(b"\n")?;
+        if let Some(forward) = &self.forward {
+            forward.line(&text);
+        }
         self.prev = chain::hash_line(&text);
         self.next += 1;
         self.unsigned += 1;

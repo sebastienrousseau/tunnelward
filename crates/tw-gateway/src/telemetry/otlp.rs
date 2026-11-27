@@ -57,7 +57,7 @@ impl OtlpSettings {
     ///
     /// A sentence saying what is wrong with it.
     pub fn check(&self) -> Result<(), String> {
-        traces_url(&self.endpoint).map(drop)
+        signal_url(&self.endpoint, "traces").map(drop)
     }
 
     /// Spans to `endpoint` as `tunnelward-gateway`: a queue of 2,048,
@@ -95,7 +95,7 @@ impl OtlpExporter {
     /// The endpoint is not `https://`, or is `http://` to an address
     /// other than loopback.
     pub fn start(settings: OtlpSettings, roots: Arc<RootCertStore>) -> Result<Arc<Self>, String> {
-        let url = traces_url(&settings.endpoint)?;
+        let url = signal_url(&settings.endpoint, "traces")?;
         let (queue, spans) = mpsc::channel(settings.queue.max(1));
         let failed = Arc::new(AtomicU64::new(0));
         let sender = Sender {
@@ -189,9 +189,10 @@ impl ProxyObserver for OtlpExporter {
     }
 }
 
-/// `<endpoint>/v1/traces`, if the endpoint is one spans may go to.
-fn traces_url(endpoint: &str) -> Result<Uri, String> {
-    let url = format!("{}/v1/traces", endpoint.trim_end_matches('/'));
+/// `<endpoint>/v1/<signal>`, if the endpoint is one telemetry may go
+/// to: `https://`, or `http://` to a loopback address.
+pub(crate) fn signal_url(endpoint: &str, signal: &str) -> Result<Uri, String> {
+    let url = format!("{}/v1/{signal}", endpoint.trim_end_matches('/'));
     let uri: Uri = url
         .parse()
         .map_err(|e| format!("endpoint {endpoint:?}: {e}"))?;
@@ -237,14 +238,23 @@ impl Sender {
     }
 
     async fn post(&self, body: Vec<u8>) -> Result<(), String> {
-        if self.url.scheme_str() == Some("https") {
-            let url = self.url.to_string();
-            return crate::https_post(&url, body, self.roots.clone(), ANSWER_LIMIT)
-                .await
-                .map(drop);
-        }
-        plain_post(&self.url, body).await
+        post(&self.url, body, &self.roots).await
     }
+}
+
+/// POSTs JSON to `url`: over TLS trusting `roots`, or plain HTTP to a
+/// loopback collector ([`signal_url`] allows no other).
+pub(crate) async fn post(
+    url: &Uri,
+    body: Vec<u8>,
+    roots: &Arc<RootCertStore>,
+) -> Result<(), String> {
+    if url.scheme_str() == Some("https") {
+        return crate::https_post(&url.to_string(), body, roots.clone(), ANSWER_LIMIT)
+            .await
+            .map(drop);
+    }
+    plain_post(url, body).await
 }
 
 /// POSTs JSON over plain HTTP/1.1, for a collector on loopback.
@@ -290,10 +300,10 @@ mod tests {
             "http://localhost:4318",
         ];
         for endpoint in ok {
-            assert!(traces_url(endpoint).is_ok(), "{endpoint}");
+            assert!(signal_url(endpoint, "traces").is_ok(), "{endpoint}");
         }
         assert_eq!(
-            traces_url("https://otel.example.org:4318/").map(|u| u.to_string()),
+            signal_url("https://otel.example.org:4318/", "traces").map(|u| u.to_string()),
             Ok("https://otel.example.org:4318/v1/traces".into())
         );
         for endpoint in [
@@ -302,7 +312,7 @@ mod tests {
             "ftp://x",
             "otel:4318",
         ] {
-            assert!(traces_url(endpoint).is_err(), "{endpoint}");
+            assert!(signal_url(endpoint, "traces").is_err(), "{endpoint}");
         }
     }
 }

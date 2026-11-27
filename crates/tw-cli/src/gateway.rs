@@ -62,7 +62,7 @@ fn open_sinks(
     checked: &mut config::Checked,
 ) -> Result<Option<Arc<tunnelward_audit::Sink>>, String> {
     let audit = (checked.audit.take())
-        .map(|settings| tunnelward_audit::Sink::open(settings).map(Arc::new))
+        .map(crate::audit::Checked::open)
         .transpose()?;
     checked.gateway.audit.clone_from(&audit);
     let otlp = checked.otlp.take().map(crate::observe::Otlp::start);
