@@ -78,8 +78,8 @@ A container image is at `ghcr.io/sebastienrousseau/tunnelward`.
 
 ```toml
 [dependencies]
-tunnelward-connector = "0.0.20"   # embed a connector in your service
-tunnelward-gateway = "0.0.20"     # embed a gateway in your server
+tunnelward-connector = "0.0.21"   # embed a connector in your service
+tunnelward-gateway = "0.0.21"     # embed a gateway in your server
 ```
 
 `tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
@@ -181,6 +181,7 @@ its own.
 | SIEM export | Each audit entry as its OCSF event, live, to syslog (RFC 5424 over TLS, octet-counted) and OTLP logs; a bounded queue that drops and counts rather than slow the log, which stays the record (`[audit.export]`, ADR 0013) | Shipped in 0.0.20 |
 | Approval of high-impact calls | A call to a `high_impact` tool runs only with a person's approval of exactly that call (agent, path, tool, arguments): the agent gets MCP's URL elicitation, the approver signs in with OIDC (PKCE), and the approved call runs once (`[approval]`, FR-17, ADR 0014) | Shipped in 0.0.20 |
 | Crypto inventory | `tunnelward crypto report` lists each connector connection's TLS version, key exchange, cipher suite and certificate key, and counts the hybrid post-quantum ones | Shipped in 0.0.20 |
+| Kubernetes operator (alpha) | `tunnelward operator` keeps `TunnelwardGateway` resources running, with route ownership from `ConnectorBinding`s and the tool policy from a `RoutePolicy`; it checks each change with the gateway's own parsers and leaves the running gateway as it is when one fails, saying why in the resource's status (`deploy/operator`, ADR 0015) | Shipped in 0.0.21 |
 
 ---
 
@@ -248,6 +249,9 @@ The audit log's live export to a SIEM is `[audit.export]`
 ([`export.rs`](crates/tw-cli/src/export.rs)), and approval of
 high-impact calls is `[approval]`
 ([`approval.rs`](crates/tw-cli/src/approval.rs)).
+On Kubernetes, `tunnelward operator` (manifests in
+[`deploy/operator`](deploy/operator)) renders the gateway file from
+custom resources instead.
 [`docs/DPIA.md`](docs/DPIA.md) is a template for the data protection
 impact assessment, stating what each of these records.
 Check a file before deploying it:
