@@ -59,7 +59,7 @@ mod telemetry;
 mod tls;
 
 pub use admin::{AdminConfig, Connection, Inventory, Redaction};
-pub use auth::{AgentAuth, Issuer, KeyError, KeySet, TokenRule};
+pub use auth::{AgentAuth, Caller, Issuer, KeyError, KeySet, TokenRule};
 pub use botauth::{BotAuth, BotAuthError, OnInvalid, Signer};
 pub use cidr::{Cidr, CidrError};
 pub use client_addr::ClientAddr;
@@ -68,7 +68,7 @@ pub use cors::CorsRule;
 pub use drain::{DrainReport, DrainTarget};
 pub use enrol::{Enrolment, Tokens, request_enrolment, request_renewal};
 pub use error::{AdmitError, SendError};
-pub use https::{https_get, https_post};
+pub use https::{https_get, https_get_as, https_post};
 pub use ingress::{Ingress, IngressBody};
 pub use mismatch::{ClaimSource, Mismatch};
 pub use observer::{ProxyObserver, RequestInfo};

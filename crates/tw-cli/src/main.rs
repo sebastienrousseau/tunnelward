@@ -11,6 +11,7 @@ mod backend;
 mod config;
 mod conformance;
 mod connector;
+mod control;
 mod dev;
 mod devcert;
 mod doctor;
@@ -89,6 +90,12 @@ Commands:
       [--format text|json]
                  Run the conformance kit against a gateway as the connector
                  in <cert>; fail unless every check passes
+  control --config <file>
+                 Run the control plane: operators publish tool policies with
+                 OIDC tokens, gateways with [control] pull them signed
+  control keygen --out <file>
+                 Make the key that signs policy bundles; gateways trust
+                 <file>.pub
 
 Options:
   -h, --help     Print this help
@@ -401,7 +408,7 @@ fn attest(args: &[String]) -> Result<(), Outcome> {
 type Command = fn(&[String]) -> Result<(), Outcome>;
 
 /// Every command, by the names that call it.
-const COMMANDS: [(&[&str], Command); 14] = [
+const COMMANDS: [(&[&str], Command); 15] = [
     (&["-h", "--help"], |_| {
         print!("{USAGE}");
         Ok(())
@@ -422,6 +429,7 @@ const COMMANDS: [(&[&str], Command); 14] = [
     (&["receipt"], receipt),
     (&["attest"], attest),
     (&["conformance"], conformance::command),
+    (&["control"], control::command),
 ];
 
 fn dispatch(args: &[String]) -> Outcome {

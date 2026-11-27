@@ -82,6 +82,66 @@ impl AgentAuth {
     }
 }
 
+/// Who a valid bearer token names, for an API that takes the same
+/// tokens as the ingress (the control plane's, ADR 0012).
+#[derive(Debug, Clone, Default, PartialEq)]
+#[non_exhaustive]
+pub struct Caller {
+    /// `sub`.
+    pub subject: Option<String>,
+    /// `client_id` (RFC 9068), else `azp`.
+    pub client_id: Option<String>,
+    /// The claims beyond the registered ones checked here, such as
+    /// `groups`.
+    pub claims: serde_json::Map<String, serde_json::Value>,
+}
+
+impl AgentAuth {
+    /// Checks the `Authorization: Bearer` token in `headers` at `now`:
+    /// a trusted issuer's signature, `aud` naming
+    /// [`AgentAuth::resource`], in date, with [`AgentAuth::scopes`].
+    /// Token rules and `DPoP` do not apply.
+    ///
+    /// # Errors
+    ///
+    /// Why the token is missing or refused.
+    pub fn bearer(&self, headers: &HeaderMap, now: SystemTime) -> Result<Caller, String> {
+        let (scheme, raw) = presented(headers).map_err(reason)?;
+        if scheme != bind::Scheme::Bearer {
+            return Err("give a Bearer token".to_owned());
+        }
+        let claims = self.verified(raw, now)?;
+        Ok(Caller {
+            subject: claims.sub,
+            client_id: claims.client_id.or(claims.azp),
+            claims: claims.other,
+        })
+    }
+
+    /// The claims of `raw`, if a trusted issuer signed it and it is in
+    /// date, for this resource, with the scopes required.
+    fn verified(&self, raw: &str, now: SystemTime) -> Result<jwt::Claims, String> {
+        let token = jwt::parse(raw).map_err(str::to_owned)?;
+        signed_by_an_issuer(self, &token).map_err(reason)?;
+        let claims = token.claims;
+        in_date(&claims, now, self.leeway).map_err(reason)?;
+        if !claims.for_audience(&self.resource) {
+            return Err("the token is not for this resource".to_owned());
+        }
+        has_scopes(self, &claims).map_err(reason)?;
+        Ok(claims)
+    }
+}
+
+/// A denial as [`AgentAuth::bearer`] reports it.
+fn reason(denial: Denial) -> String {
+    match denial {
+        Denial::Missing => "no bearer token".to_owned(),
+        Denial::Invalid(why) | Denial::Proof(why) => why.to_owned(),
+        Denial::Scope => "the token lacks a required scope".to_owned(),
+    }
+}
+
 /// Who a valid token says is calling.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Principal {
@@ -175,7 +235,7 @@ pub(crate) fn is_metadata_request(auth: &AgentAuth, method: &http::Method, path:
 }
 
 /// Why a request was not authorised.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Denial {
     /// No bearer token: 401 with the metadata URL only.
     Missing,

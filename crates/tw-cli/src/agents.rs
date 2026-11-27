@@ -67,11 +67,11 @@ struct PathPart {
     single_use: bool,
 }
 
-/// The `[[agents.paths]]` rules, each path given once and starting `/`.
-fn token_rules(parts: &[PathPart], problems: &mut Problems) -> Vec<TokenRule> {
+/// The `[[<name>.paths]]` rules, each path given once and starting `/`.
+fn token_rules(parts: &[PathPart], name: &str, problems: &mut Problems) -> Vec<TokenRule> {
     let mut seen = std::collections::HashSet::new();
     for part in parts {
-        let at = format!("[[agents.paths]] path {:?}", part.path);
+        let at = format!("[[{name}.paths]] path {:?}", part.path);
         if !part.path.starts_with('/') {
             problems.push(format!("{at}: start it with /"));
         }
@@ -112,22 +112,33 @@ pub(crate) struct Checked {
 
 /// Checks `agents`, read from a file in `base`, adding to `problems`.
 pub(crate) fn check(base: &Path, agents: &Agents, problems: &mut Problems) -> Option<Checked> {
+    check_named(base, agents, "agents", problems)
+}
+
+/// [`check`] for a section of the same shape named `name`, such as the
+/// control file's `[operators]` (ADR 0012).
+pub(crate) fn check_named(
+    base: &Path,
+    agents: &Agents,
+    name: &str,
+    problems: &mut Problems,
+) -> Option<Checked> {
     let before = problems.len();
     if !agents.resource.starts_with("https://") && !agents.resource.starts_with("http://") {
         problems.push(format!(
-            "[agents] resource {:?}: give the https:// URL agents use",
+            "[{name}] resource {:?}: give the https:// URL {name} use",
             agents.resource
         ));
     }
     if agents.issuers.is_empty() {
-        problems.push("[agents]: name at least one [[agents.issuers]]".into());
+        problems.push(format!("[{name}]: name at least one [[{name}.issuers]]"));
     }
-    let rules = token_rules(&agents.paths, problems);
+    let rules = token_rules(&agents.paths, name, problems);
     let mut fetched = Vec::new();
     let issuers: Vec<Issuer> = agents
         .issuers
         .iter()
-        .filter_map(|part| issuer(base, agents, part, &mut fetched, problems))
+        .filter_map(|part| issuer(base, agents, (name, part), &mut fetched, problems))
         .collect();
     (problems.len() == before).then(|| {
         let mut auth = AgentAuth::new(agents.resource.clone(), issuers);
@@ -147,11 +158,11 @@ pub(crate) fn check(base: &Path, agents: &Agents, problems: &mut Problems) -> Op
 fn issuer(
     base: &Path,
     agents: &Agents,
-    part: &IssuerPart,
+    (name, part): (&str, &IssuerPart),
     fetched: &mut Vec<Arc<KeySet>>,
     problems: &mut Problems,
 ) -> Option<Issuer> {
-    let at = format!("[[agents.issuers]] issuer {:?}", part.issuer);
+    let at = format!("[[{name}.issuers]] issuer {:?}", part.issuer);
     let keys = match (&part.jwks_uri, &part.jwks) {
         (Some(_), Some(_)) => Err("give jwks_uri or jwks, not both".to_owned()),
         (None, None) => Err("give jwks_uri or jwks".to_owned()),
