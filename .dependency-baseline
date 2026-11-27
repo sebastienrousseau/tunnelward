@@ -68,7 +68,6 @@ smallvec
 socket2
 subtle
 syn
-syn
 tokio
 tokio-macros
 tokio-rustls
@@ -99,5 +98,4 @@ windows_x86_64_gnullvm
 windows_x86_64_msvc
 winnow
 zeroize
-zeroize_derive
 zmij

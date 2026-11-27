@@ -28,7 +28,7 @@ rustls.workspace = true
 aws-lc-rs.workspace = true
 tunnelward-testpki.workspace = true
 # The X-Wing known answers expand the draft's seeds (ADR 0016); test only.
-kyberlib = { version = "=0.0.17", default-features = false }
+kyberlib = { version = "=0.0.18", default-features = false }
 
 [lints]
 workspace = true
