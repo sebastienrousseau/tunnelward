@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 //! Plain HTTPS (HTTP/1.1 over TLS 1.3): a GET for the public documents a
-//! gateway reads, issuers' JWK Sets and providers' published ranges, and
-//! a JSON POST for a connector's enrolment.
+//! gateway reads, issuers' JWK Sets and providers' published ranges, a
+//! JSON POST for a connector's enrolment, and a GET that presents a
+//! client certificate, for the control plane's fleet listener.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,8 +16,8 @@ use hyper::Request;
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
-use tunnelward_crypto::rustls::RootCertStore;
 use tunnelward_crypto::rustls::pki_types::ServerName;
+use tunnelward_crypto::rustls::{ClientConfig, RootCertStore};
 use tunnelward_crypto::{KeyExchange, client_config};
 
 /// Longest a fetch may take.
@@ -40,7 +41,28 @@ pub async fn https_get(
         .header(http::header::ACCEPT, "application/json")
         .body(Full::new(Bytes::new()))
         .map_err(|e| fail("request", &e))?;
-    tokio::time::timeout(TIMEOUT, fetch(&uri, request, roots, limit))
+    tokio::time::timeout(TIMEOUT, fetch(&uri, request, plain(roots)?, limit))
+        .await
+        .map_err(|_| "timed out".to_owned())?
+}
+
+/// [`https_get`] over `tls`, a client configuration that may present a
+/// certificate. Its ALPN must offer `http/1.1`, or none.
+///
+/// # Errors
+///
+/// As [`https_get`].
+pub async fn https_get_as(
+    url: &str,
+    tls: Arc<ClientConfig>,
+    limit: usize,
+) -> Result<Vec<u8>, String> {
+    let uri = https_uri(url)?;
+    let request = Request::get(uri.path_and_query().map_or("/", |p| p.as_str()))
+        .header(http::header::ACCEPT, "application/json")
+        .body(Full::new(Bytes::new()))
+        .map_err(|e| fail("request", &e))?;
+    tokio::time::timeout(TIMEOUT, fetch(&uri, request, tls, limit))
         .await
         .map_err(|_| "timed out".to_owned())?
 }
@@ -64,9 +86,16 @@ pub async fn https_post(
         .header(http::header::ACCEPT, "application/json")
         .body(Full::new(Bytes::from(body)))
         .map_err(|e| fail("request", &e))?;
-    tokio::time::timeout(TIMEOUT, fetch(&uri, request, roots, limit))
+    tokio::time::timeout(TIMEOUT, fetch(&uri, request, plain(roots)?, limit))
         .await
         .map_err(|_| "timed out".to_owned())?
+}
+
+/// A client configuration trusting `roots`, with no certificate.
+fn plain(roots: Arc<RootCertStore>) -> Result<Arc<ClientConfig>, String> {
+    client_config(roots, None, KeyExchange::default(), &[b"http/1.1"])
+        .map(Arc::new)
+        .map_err(|e| fail("TLS", &e))
 }
 
 fn https_uri(url: &str) -> Result<Uri, String> {
@@ -84,10 +113,10 @@ fn fail(what: &str, e: &dyn std::fmt::Display) -> String {
 async fn fetch(
     uri: &Uri,
     mut request: Request<Full<Bytes>>,
-    roots: Arc<RootCertStore>,
+    tls_config: Arc<ClientConfig>,
     limit: usize,
 ) -> Result<Vec<u8>, String> {
-    let mut sender = connect(uri, roots).await?;
+    let mut sender = connect(uri, tls_config).await?;
     let host = uri.host().unwrap_or_default();
     let authority = uri.authority().map_or(host, http::uri::Authority::as_str);
     let value = http::HeaderValue::from_str(authority).map_err(|e| fail("host", &e))?;
@@ -109,12 +138,12 @@ async fn fetch(
     Ok(body.to_vec())
 }
 
-/// An HTTP/1.1 connection to `uri`'s host over TLS 1.3, trusting `roots`.
+/// An HTTP/1.1 connection to `uri`'s host over TLS 1.3 with `config`.
 async fn connect(
     uri: &Uri,
-    roots: Arc<RootCertStore>,
+    config: Arc<ClientConfig>,
 ) -> Result<hyper::client::conn::http1::SendRequest<Full<Bytes>>, String> {
-    let stream = tls(uri, roots).await?;
+    let stream = tls(uri, config).await?;
     let (sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
         .await
         .map_err(|e| fail("HTTP", &e))?;
@@ -122,19 +151,17 @@ async fn connect(
     Ok(sender)
 }
 
-/// A TLS 1.3 stream to `uri`'s host and port, trusting `roots`.
+/// A TLS 1.3 stream to `uri`'s host and port with `config`.
 async fn tls(
     uri: &Uri,
-    roots: Arc<RootCertStore>,
+    config: Arc<ClientConfig>,
 ) -> Result<tokio_rustls::client::TlsStream<TcpStream>, String> {
     let host = uri.host().unwrap_or_default().trim_matches(['[', ']']);
-    let config = client_config(roots, None, KeyExchange::default(), &[b"http/1.1"])
-        .map_err(|e| fail("TLS", &e))?;
     let name = ServerName::try_from(host.to_owned()).map_err(|e| fail("host", &e))?;
     let tcp = TcpStream::connect((host, uri.port_u16().unwrap_or(443)))
         .await
         .map_err(|e| fail("connect", &e))?;
-    TlsConnector::from(Arc::new(config))
+    TlsConnector::from(config)
         .connect(name, tcp)
         .await
         .map_err(|e| fail("TLS", &e))

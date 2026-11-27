@@ -34,6 +34,8 @@ enum Audience {
 #[derive(Deserialize)]
 pub(crate) struct Claims {
     pub(crate) iss: String,
+    /// The subject: who the token names.
+    pub(crate) sub: Option<String>,
     aud: Audience,
     pub(crate) exp: u64,
     pub(crate) nbf: Option<u64>,
@@ -45,6 +47,9 @@ pub(crate) struct Claims {
     /// What the token is bound to (RFC 7800): a `DPoP` key or a client
     /// certificate.
     pub(crate) cnf: Option<Confirmation>,
+    /// Every other claim, for an API that maps one to a role.
+    #[serde(flatten)]
+    pub(crate) other: serde_json::Map<String, serde_json::Value>,
 }
 
 /// `cnf`: the key or certificate a token is bound to.
