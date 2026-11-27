@@ -4,6 +4,7 @@
 //! The `tunnelward` command-line tool.
 
 mod agents;
+mod approval;
 mod args;
 mod attest;
 mod audit;

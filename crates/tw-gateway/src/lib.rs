@@ -19,6 +19,7 @@
 mod admin;
 mod admit;
 mod answers;
+mod approval;
 mod attempt;
 mod attestation;
 mod audit;
@@ -60,6 +61,7 @@ mod telemetry;
 mod tls;
 
 pub use admin::{AdminConfig, Connection, Inventory, Redaction, Tls};
+pub use approval::Approvals;
 pub use auth::{AgentAuth, Caller, Issuer, KeyError, KeySet, TokenRule};
 pub use botauth::{BotAuth, BotAuthError, OnInvalid, Signer};
 pub use cidr::{Cidr, CidrError};

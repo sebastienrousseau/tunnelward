@@ -20,18 +20,10 @@ use tunnelward_connector::register;
 use tunnelward_gateway::{AgentAuth, InMemory, Issuer, KeySet, SharedState};
 use tunnelward_policy::{Effect, Policy, Rule};
 
-use common::ingress::{h1, ingress_config, start_ingress};
-use common::jwt::{Signer, now};
+use common::agent::{Agent, ISSUER, RESOURCE, agent, transfer};
+use common::ingress::{ingress_config, start_ingress};
+use common::jwt::Signer;
 use common::{Res, connector_config, registration};
-
-const ISSUER: &str = "https://as.example.org";
-const RESOURCE: &str = "https://mcp.example.org";
-
-/// The agent: its issuer and its `DPoP` key.
-struct Agent {
-    issuer: Signer,
-    key: Signer,
-}
 
 /// A gateway sharing `state`, permitting every tool with `transfer`
 /// marked high impact; its connector counts runs into `runs`.
@@ -75,63 +67,6 @@ async fn gateway(
         let _ended = session.serve(service).await;
     });
     Ok(ingress)
-}
-
-fn agent() -> Res<Agent> {
-    Ok(Agent {
-        issuer: Signer::es256("as")?,
-        key: Signer::eddsa("agent")?,
-    })
-}
-
-/// A token for the agent, bound to its key when `bound`.
-fn token(agent: &Agent, bound: bool) -> Res<String> {
-    let cnf = if bound {
-        format!(r#","cnf":{{"jkt":"{}"}}"#, agent.key.thumbprint())
-    } else {
-        String::new()
-    };
-    agent.issuer.token(&format!(
-        r#"{{"iss":"{ISSUER}","aud":"{RESOURCE}","exp":{},"client_id":"agent"{cnf}}}"#,
-        now() + 600
-    ))
-}
-
-/// POSTs a `transfer` of `amount`, with a fresh proof, and `key` when given.
-async fn transfer(
-    ingress: &str,
-    agent: &Agent,
-    (amount, key): (u32, Option<&str>),
-    bound: bool,
-) -> Res<(StatusCode, hyper::HeaderMap, String)> {
-    let t = token(agent, bound)?;
-    let body = format!(
-        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"transfer","arguments":{{"amount":{amount}}}}}}}"#
-    );
-    let mut request = Request::post("/mcp")
-        .header("host", "mcp.example.org")
-        .header("content-type", "application/json");
-    if bound {
-        let jti = format!("{amount}-{}", now_nanos());
-        let proof = agent
-            .key
-            .proof("POST", &format!("{RESOURCE}/mcp"), &t, now(), &jti)?;
-        request = request
-            .header("authorization", format!("DPoP {t}"))
-            .header("dpop", proof);
-    } else {
-        request = request.header("authorization", format!("Bearer {t}"));
-    }
-    if let Some(k) = key {
-        request = request.header("idempotency-key", k);
-    }
-    h1(ingress, request.body(Full::new(Bytes::from(body)))?).await
-}
-
-fn now_nanos() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos())
 }
 
 #[tokio::test]

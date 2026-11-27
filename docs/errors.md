@@ -257,8 +257,8 @@ incident.
 
 ## Policy (`TW-P`)
 
-The tool policy (FR-4, `[policy]`) and the idempotency keys of
-high-impact tools (FR-13).
+The tool policy (FR-4, `[policy]`), and the idempotency keys (FR-13)
+and approvals (FR-17) of high-impact tools.
 
 ### TW-P001
 
@@ -295,6 +295,25 @@ answer is not known: the connection failed after the request left the
 gateway, or the answer was over 1 MiB to keep. 502, now and on every
 retry with the key, so the tool never runs twice to find out. Check the
 service for what happened.
+
+### TW-P006
+
+**Approval required.** The call is to a high-impact tool, and with
+`[approval]` on (FR-17, ADR 0014) it runs only with an unspent approval
+of exactly that call: the same agent, path, tool and arguments. HTTP 200
+with MCP's URL-elicitation error (code -32042): `data.elicitations[0].url`
+is the page where a person signs in and approves it. Send the same call
+again once approved; it runs once.
+
+### TW-P007
+
+**Approve one call at a time.** A high-impact call that needs approval
+came in a batch, or is not a readable `tools/call`. 403. Send it alone.
+
+### TW-P008
+
+**Approvals unavailable.** The shared state, which holds approvals, did
+not answer. 503. Retry once the store is back.
 
 ## Connector (`TW-C`)
 

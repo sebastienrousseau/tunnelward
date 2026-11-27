@@ -35,6 +35,7 @@ use crate::provenance;
 use crate::refusal::{Refusal, refusal_for};
 use crate::{ClientAddr, Gateway, RequestInfo, ResponseBody};
 
+mod approve;
 mod judge;
 mod respond;
 
@@ -143,6 +144,7 @@ impl Ingress {
             trace: provenance::Trace::of(provenance::traceparent(headers).as_deref()),
             mcp_session: provenance::declared(headers, tunnelward_mcp::SESSION_HEADER),
             client_id: None,
+            subject: None,
             provider,
             evidence: tunnelward_policy::Evidence::Declared,
             mismatches: Vec::new(),
@@ -172,6 +174,9 @@ impl Ingress {
             && enrol::is_enrolment_path(request.uri().path())
         {
             return self.enrol(enrolment, request, info, started).await;
+        }
+        if let Some(approvals) = self.approvals_for(&request) {
+            return self.approval(&approvals, request, info, started).await;
         }
         if let Some(response) = self.metadata(&request, &info) {
             return self.audited(response, &info, Decision::Answered, None, started);
@@ -342,6 +347,7 @@ impl Ingress {
                 ..Refusal::new(r.id, r.status, r.reason)
             })?;
         info.client_id = principal.client_id;
+        info.subject = principal.subject;
         Ok(principal.bound)
     }
 

@@ -110,6 +110,9 @@ pub struct IngressConfig {
     /// Connector enrolment and renewal on this ingress. `None` serves
     /// neither endpoint.
     pub enrolment: Option<std::sync::Arc<crate::Enrolment>>,
+    /// Out-of-band approval of high-impact calls (FR-17, ADR 0014).
+    /// Needs [`IngressConfig::agent_auth`]. `None` asks for none.
+    pub approvals: Option<std::sync::Arc<crate::Approvals>>,
     /// The tool policy (FR-4), replaceable at runtime with
     /// [`crate::Gateway::set_policy`]. `None` decides nothing.
     pub policy: Option<std::sync::Arc<dyn tunnelward_policy::PolicyEngine>>,
@@ -144,6 +147,7 @@ impl Default for IngressConfig {
             providers: None,
             bot_auth: None,
             enrolment: None,
+            approvals: None,
             policy: None,
             risk: None,
             otlp: None,
