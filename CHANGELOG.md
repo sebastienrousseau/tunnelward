@@ -7,6 +7,27 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.21]
+
+### Added
+
+- A Kubernetes operator alpha (ADR 0015), `tunnelward operator`, from
+  the same binary and image as the gateway. Every 10 s it reads three
+  namespaced custom resources in `tunnelward.satellion.com/v1alpha1`:
+  `TunnelwardGateway` (image, replicas, TLS and admin Secrets, extra
+  gateway configuration), `ConnectorBinding` (a SPIFFE identity owning
+  routes, rendered as `[[connectors.owners]]`) and `RoutePolicy` (the
+  tool policy file). It renders the gateway file, checks it and the
+  policy with the gateway's own parsers, and applies the ConfigMap,
+  Deployment and Services the Helm chart writes, owned by the
+  `TunnelwardGateway`; a change rolls the pods. A change that fails a
+  check leaves the running gateway as it is, and the resource says why
+  in its status (`Accepted`, `Bound`, `Ready`).
+- `deploy/operator`: the CRDs, and the operator's service account, role
+  and Deployment.
+- `scripts/operator-e2e.sh`, the operator end to end against a real
+  cluster (DEVELOPMENT.md); CI does not run it.
+
 ## [0.0.20]
 
 ### Added

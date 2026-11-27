@@ -1,0 +1,85 @@
+# SPDX-FileCopyrightText: 2026 Sebastien Rousseau
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# The operator in namespace `tunnelward` (ADR 0015): its service account,
+# what it may do there, and its Deployment. Apply crds.yaml first. To run
+# it in another namespace, change every `namespace: tunnelward` below.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tunnelward-operator
+  namespace: tunnelward
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tunnelward-operator
+  namespace: tunnelward
+rules:
+  - apiGroups: [tunnelward.satellion.com]
+    resources: [tunnelwardgateways, connectorbindings, routepolicies]
+    verbs: [get, list, watch]
+  - apiGroups: [tunnelward.satellion.com]
+    resources: [tunnelwardgateways/status, connectorbindings/status, routepolicies/status]
+    verbs: [get, patch]
+  - apiGroups: [""]
+    resources: [configmaps, services]
+    verbs: [get, list, create, patch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tunnelward-operator
+  namespace: tunnelward
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tunnelward-operator
+subjects:
+  - kind: ServiceAccount
+    name: tunnelward-operator
+    namespace: tunnelward
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tunnelward-operator
+  namespace: tunnelward
+  labels:
+    app.kubernetes.io/name: tunnelward-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tunnelward-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tunnelward-operator
+    spec:
+      serviceAccountName: tunnelward-operator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: operator
+          image: ghcr.io/sebastienrousseau/tunnelward:0.0.21
+          args: [operator]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

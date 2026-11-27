@@ -46,6 +46,23 @@ cargo xtask fuzz 60     # replay seeds, then 60 s per fuzz target
 A fuzz crash leaves its input in `fuzz/artifacts/`. Fix the bug, then
 commit that input to `fuzz/seeds/<target>/` so every run replays it.
 
+## The operator against a cluster
+
+`scripts/operator-e2e.sh` runs `tunnelward operator` from this tree
+against a real API server (ADR 0015): it installs the CRDs and the
+operator's role in a fresh namespace, then creates, changes, breaks and
+deletes a gateway and checks what the operator does each time. CI does
+not run it, since a cluster in CI would add a tool. Run it before a
+change to `crates/tw-cli/src/operator/` or `deploy/operator/` lands.
+Against k3s in colima, whose `kubectl` is inside the VM:
+
+```bash
+TW_SERVER=https://127.0.0.1:<port> KUBECTL="colima ssh -- sudo k3s kubectl" \
+  scripts/operator-e2e.sh
+```
+
+The port is the `server:` in `/etc/rancher/k3s/k3s.yaml` inside the VM.
+
 ## Test certificates
 
 `crates/tw-testpki/pki/` holds TEST-ONLY certificates and keys,

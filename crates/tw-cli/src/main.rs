@@ -22,6 +22,7 @@ mod enrolled;
 mod export;
 mod gateway;
 mod observe;
+mod operator;
 mod policy;
 mod providers;
 mod serve;
@@ -56,6 +57,9 @@ Commands:
                  Check a gateway's or a connector's file and list every problem
   doctor [--config <file>]
                  Check this machine and, given a file, its configuration
+  operator [--namespace <ns>] [--server <url> --token-file <f> --ca <f>]
+                 Keep TunnelwardGateway resources running in Kubernetes
+                 (alpha; in a pod it uses its service account)
   crypto report --admin <addr>
                  List each connector connection's TLS version, key exchange,
                  cipher suite and key, from a gateway's admin API
@@ -415,7 +419,7 @@ fn attest(args: &[String]) -> Result<(), Outcome> {
 type Command = fn(&[String]) -> Result<(), Outcome>;
 
 /// Every command, by the names that call it.
-const COMMANDS: [(&[&str], Command); 16] = [
+const COMMANDS: [(&[&str], Command); 17] = [
     (&["-h", "--help"], |_| {
         print!("{USAGE}");
         Ok(())
@@ -438,6 +442,7 @@ const COMMANDS: [(&[&str], Command); 16] = [
     (&["conformance"], conformance::command),
     (&["control"], control::command),
     (&["crypto"], crypto::command),
+    (&["operator"], operator::command),
 ];
 
 fn dispatch(args: &[String]) -> Outcome {
