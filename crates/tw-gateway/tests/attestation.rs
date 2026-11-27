@@ -4,7 +4,8 @@
 //! Admission by passmcp attestation (FR-5, ADR 0009), end to end: a
 //! route that requires one refuses a connector without it (TW-R006) or
 //! with a bad one (TW-R007), admits one with a cosign-signed statement,
-//! and drains it when the statement is revoked.
+//! and drains it when the statement is revoked. The audit log records
+//! which statement admitted a connector (FR-10).
 
 mod common;
 
@@ -16,7 +17,10 @@ use tunnelward_connector::{Error, Registered, register};
 use tunnelward_gateway::Gateway;
 use tunnelward_proto::{Register, RejectCode};
 
-use common::{Res, connector_config, gateway_config, get, registration, start, start_connector};
+use common::{
+    Res, audit_sink, connector_config, gateway_config, get, logged, registration, start,
+    start_connector,
+};
 
 const KEY: &[u8] = include_bytes!("../../tw-attest/tests/vectors/cosign-p256.pub");
 const BUNDLE: &[u8] = include_bytes!("../../tw-attest/tests/vectors/cosign-bundle.json");
@@ -86,6 +90,25 @@ async fn an_attested_connector_serves_its_route() -> Res<()> {
     let _open = start_connector(&addr, "open", claim(2, &["open"], None)).await?;
     assert_eq!(get(&gateway, "/pay/x").await?.1, "pay GET /pay/x");
     assert_eq!(get(&gateway, "/open/x").await?.1, "open GET /open/x");
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_audit_log_records_the_statement_a_connector_was_admitted_with() -> Res<()> {
+    let (sink, path) = audit_sink("attested")?;
+    let mut config = gateway_config()?;
+    config.attestation = Some(admission(Revoked::default())?);
+    config.audit = Some(sink.clone());
+    let (_gateway, addr) = start(config).await?;
+    let _pay = start_connector(&addr, "pay", claim(1, &["pay"], Some(BUNDLE))).await?;
+    refusal(&addr, claim(2, &["pay"], None)).await?;
+    let entries = logged(&sink, &path, "registration")?;
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    assert_eq!(entries[0]["decision"], "accepted");
+    assert_eq!(entries[0]["attestation"], statement_digest());
+    assert_eq!(entries[1]["decision"], "refused");
+    assert_eq!(entries[1]["error"], RejectCode::AttestationRequired.id());
+    assert!(entries[1].get("attestation").is_none());
     Ok(())
 }
 

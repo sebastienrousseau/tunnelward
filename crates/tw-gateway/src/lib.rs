@@ -19,6 +19,7 @@
 mod admin;
 mod admit;
 mod answers;
+mod attempt;
 mod attestation;
 mod audit;
 mod auth;

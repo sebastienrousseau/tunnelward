@@ -28,7 +28,7 @@ pub mod verify;
 
 pub use calls::calls;
 pub use chain::{GENESIS, hash_line, key_id};
-pub use entry::{AdminEntry, Call, Entry, RequestEntry};
+pub use entry::{AdminEntry, Call, Entry, RegistrationEntry, RequestEntry};
 pub use pseudonym::{KEY_LEN as PSEUDONYM_KEY_LEN, Pseudonyms};
 pub use raw::Raw;
 pub use sink::{MAX_RAW_DAYS, Settings, Sink};

@@ -108,6 +108,12 @@ const STEPS: &[Step] = &[
         args: &["scripts/complexity.sh"],
         env: &[],
     },
+    Step {
+        name: "dependencies",
+        program: "bash",
+        args: &["scripts/deps-baseline.sh"],
+        env: &[],
+    },
 ];
 
 const MIRI: &[Step] = &[Step {

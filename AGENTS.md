@@ -17,8 +17,9 @@ is specific here and wins where it is stricter.
 ## Rules
 
 1. **Do not invent a multiplexing protocol.** Connector traffic is HTTP/2
-   with reversed roles over the connector's outbound TLS stream, then
-   QUIC. Bounds come from `h2`/`quinn`, not from hand-written framing.
+   with reversed roles over the connector's outbound TLS stream; QUIC
+   only as an in-house design (rule 7). Bounds come from `h2`, not from
+   hand-written framing.
 2. **Every limit is enforced before allocation**, and every limit is
    configurable with a documented default.
 3. **No `unsafe`, no panics outside tests.** Enforced by workspace lints.
@@ -32,8 +33,11 @@ is specific here and wins where it is stricter.
    `tunnelward-mcp`, `tunnelward-connector`, `tunnelward-conformance` and `tunnelward-testpki` are MIT OR Apache-2.0 and must
    never depend on a GPL crate (`scripts/licence-boundary.sh`). A new crate
    an SDK needs is permissive from its first commit.
-7. **Crypto changes need an ADR** in `docs/adr/` and test vectors.
-8. **Releases**: `v0.0.N`, one `feat/v0.0.N` branch and one pull request
+7. **No new dependency** (`~/Code/AGENTS.md` section 11): build it here.
+   `.dependency-baseline` may only shrink (`scripts/deps-baseline.sh`).
+   QUIC, HTTP/3 and the operator wait for in-house designs.
+8. **Crypto changes need an ADR** in `docs/adr/` and test vectors.
+9. **Releases**: `v0.0.N`, one `feat/v0.0.N` branch and one pull request
    per release; signed annotated tag `tunnelward v0.0.N`; GitHub release
    title `tunnelward 0.0.N`.
 
@@ -51,4 +55,4 @@ It is the source of truth; see [DEVELOPMENT.md](DEVELOPMENT.md).
 - `docs/cla/`: drafts pending legal review; change only on the maintainer's word.
 - `supply-chain/` and `Cargo.lock`: change them only through `cargo vet`
   and `cargo`, never by hand.
-- `.complexity-baseline`: it may only shrink.
+- `.complexity-baseline`, `.dependency-baseline`: they may only shrink.

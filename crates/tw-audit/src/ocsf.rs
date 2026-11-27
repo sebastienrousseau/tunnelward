@@ -3,7 +3,8 @@
 
 //! Audit lines as OCSF 1.3.0 events, for a SIEM. A request is an HTTP
 //! Activity (class 4002) with the security-control profile's allow or
-//! deny; an admin action is an API Activity (class 6003). What OCSF has
+//! deny; an admin action is an API Activity (class 6003); a connector
+//! registration is an Authentication (class 3002) logon. What OCSF has
 //! no field for (evidence, mismatches, digests) goes in `unmapped`.
 //! Checkpoints and gaps are the chain's own lines and are not events.
 //!
@@ -11,7 +12,7 @@
 
 use serde_json::{Value, json};
 
-use crate::{AdminEntry, Entry, RequestEntry};
+use crate::{AdminEntry, Entry, RegistrationEntry, RequestEntry};
 
 /// The OCSF schema version written.
 pub const VERSION: &str = "1.3.0";
@@ -26,6 +27,7 @@ pub fn event(line: &str) -> Option<Value> {
     match serde_json::from_value::<Entry>(value).ok()? {
         Entry::Request(entry) => Some(request(&entry, seq, time)),
         Entry::Admin(entry) => Some(admin(&entry, seq, time)),
+        Entry::Registration(entry) => Some(registration(&entry, seq, time)),
     }
 }
 
@@ -139,6 +141,46 @@ fn admin(entry: &AdminEntry, seq: u64, time: u64) -> Value {
     })
 }
 
+fn registration(entry: &RegistrationEntry, seq: u64, time: u64) -> Value {
+    // Logon: the connector proves who it is to serve its routes.
+    let activity = 1;
+    let accepted = entry.decision == "accepted";
+    let mut event = json!({
+        "category_uid": 3,
+        "class_uid": 3002,
+        "activity_id": activity,
+        "type_uid": 300_200 + activity,
+        "time": time,
+        "severity_id": if accepted { 1 } else { 3 },
+        "status_id": if accepted { 1 } else { 2 },
+        "metadata": metadata(seq, None, &[]),
+        // System: a workload, not a person.
+        "user": { "uid": entry.certificate, "type_id": 3 },
+        "auth_protocol_id": 99,
+        "auth_protocol": "mTLS X.509-SVID",
+        "is_remote": true,
+        "dst_endpoint": { "svc_name": "tunnelward" },
+        "unmapped": {
+            "decision": entry.decision,
+            "spiffe_id": entry.spiffe_id,
+            "connector_id": entry.connector_id,
+            "routes": entry.routes,
+            "domains": entry.domains,
+            "attestation": entry.attestation,
+        },
+    });
+    if let Some(peer) = &entry.peer {
+        event["src_endpoint"] = json!({ "uid": peer });
+    }
+    if let Some(error) = &entry.error {
+        event["status_detail"] = json!(error);
+    }
+    if let Some(reason) = &entry.reason {
+        event["message"] = json!(reason);
+    }
+    event
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,5 +224,26 @@ mod tests {
         assert!(super::event("nonsense").is_none());
         assert_eq!(http_activity("PATCH"), 99);
         assert_eq!(http_activity("GET"), 3);
+    }
+
+    #[test]
+    fn registrations_are_authentication_logons() {
+        let text = line(
+            r#""kind":"registration","decision":"refused","error":"TW-R003","reason":"the certificate is spiffe://a/x","peer":"ef","certificate":"spiffe://a/x","spiffe_id":"spiffe://a/y","routes":["pay"]"#,
+        );
+        let event = event(&text).unwrap();
+        assert_eq!(event["class_uid"], 3002);
+        assert_eq!(event["type_uid"], 300_201);
+        assert_eq!(event["status_id"], 2);
+        assert_eq!(event["status_detail"], "TW-R003");
+        assert_eq!(event["user"]["uid"], "spiffe://a/x");
+        assert_eq!(event["src_endpoint"]["uid"], "ef");
+        assert_eq!(event["unmapped"]["spiffe_id"], "spiffe://a/y");
+        assert_eq!(event["unmapped"]["routes"][0], "pay");
+        let accepted =
+            line(r#""kind":"registration","decision":"accepted","certificate":"spiffe://a/x""#);
+        let event = super::event(&accepted).unwrap();
+        assert_eq!(event["status_id"], 1);
+        assert!(event.get("status_detail").is_none() && event.get("src_endpoint").is_none());
     }
 }

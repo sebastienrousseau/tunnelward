@@ -10,7 +10,7 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 
   <groupId>io.github.sebastienrousseau</groupId>
   <artifactId>tunnelward-testcontainers</artifactId>
-  <version>0.0.17</version>
+  <version>0.0.18</version>
   <name>Tunnelward Testcontainers module</name>
   <description>A Tunnelward gateway and connector in containers, with a throwaway PKI, for integration tests</description>
   <url>https://github.com/sebastienrousseau/tunnelward</url>
