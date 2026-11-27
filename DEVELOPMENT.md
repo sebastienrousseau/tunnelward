@@ -28,7 +28,9 @@ Runs, in order and stopping at the first failure: `cargo fmt --check`,
 warnings denied, `cargo deny check`, `scripts/licence-boundary.sh`,
 `cargo vet`, `reuse lint`, `scripts/semver.sh` (`cargo semver-checks`
 against crates.io, so it needs the network and `cargo install
-cargo-semver-checks --locked`) and `scripts/complexity.sh`. CI runs this
+cargo-semver-checks --locked`), `scripts/complexity.sh` and
+`scripts/deps-baseline.sh` (no third-party crate beyond
+`.dependency-baseline`). CI runs this
 command and nothing else on Linux x86_64, so passing it locally means
 that job passes; the test job adds macOS, Windows and Linux aarch64.
 

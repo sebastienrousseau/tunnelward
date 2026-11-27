@@ -25,6 +25,16 @@ Every release moves the patch number by one (0.0.1, 0.0.2, ...), prepared
 on a `feat/v0.0.N` branch and merged through one pull request. Until 0.1.0
 any release may change any API; the CHANGELOG says what changed.
 
+## Dependencies
+
+No new third-party dependency without the maintainer's approval of that
+named dependency (`~/Code/AGENTS.md` section 11): a capability is built
+in this repository, so the code is written, tested and vetted here.
+Cryptography (`aws-lc-rs`, `rustls`) and the HTTP/2 stack (`h2`, `hyper`)
+stay dependencies. `.dependency-baseline` lists every third-party crate
+in `Cargo.lock` and may only shrink; `scripts/deps-baseline.sh` enforces
+it in `cargo xtask ci`.
+
 ## Complexity
 
 Every function stays within cyclomatic complexity 10, cognitive complexity
