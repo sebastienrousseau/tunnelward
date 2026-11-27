@@ -7,6 +7,39 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.19]
+
+### Added
+
+- A control plane alpha (ADR 0012), `tunnelward control --config
+  control.toml`, with `tunnelward control keygen` for its signing key.
+  Operators call its API with OIDC access tokens from the issuers in
+  `[operators]` (the keys of a gateway's `[agents]`). A role comes from
+  a token claim (`groups` by default): `viewer` lists bundles and the
+  fleet, `operator` also publishes a tool policy, `admin` also rolls
+  back. A policy is checked as a gateway checks a policy file, then
+  published as the next version of a bundle signed with a composite
+  ML-DSA-65 + Ed25519 key and kept in `<dir>/bundles/<version>.json`;
+  the control refuses to start if one of those files no longer verifies.
+- `[control]` in the gateway file: the gateway asks the control's fleet
+  listener for the newest bundle over mutual TLS, presenting its SPIFFE
+  certificate, and applies it only if it verifies under the control's
+  public key, is newer than the one running, and its policy checks.
+  Until the first bundle the gateway denies every call. `[control]` and
+  `[policy]` cannot be used together.
+- The control's audit log records each publish and rollback as an admin
+  entry naming who made it: `AdminEntry` gains `actor`, mapped to
+  `actor.user.uid` in the OCSF export.
+- `AgentAuth::bearer` and `Caller` in `tunnelward-gateway`: the bearer
+  token check of the ingress, for another API, with the token's subject
+  and its other claims. `https_get_as` fetches with a client
+  certificate.
+
+### Changed
+
+- SIEM forwarding (syslog, OTLP logs) and out-of-band approval for
+  high-impact tools (FR-17), planned for this version, move to 0.0.20.
+
 ## [0.0.18]
 
 ### Added

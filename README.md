@@ -78,8 +78,8 @@ A container image is at `ghcr.io/sebastienrousseau/tunnelward`.
 
 ```toml
 [dependencies]
-tunnelward-connector = "0.0.18"   # embed a connector in your service
-tunnelward-gateway = "0.0.18"     # embed a gateway in your server
+tunnelward-connector = "0.0.19"   # embed a connector in your service
+tunnelward-gateway = "0.0.19"     # embed a gateway in your server
 ```
 
 `tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
@@ -177,6 +177,7 @@ its own.
 | Conformance kit | `tunnelward conformance` runs six protocol checks against a gateway as a connector (ALPN, malformed and over-long frames, version, identity, registration and HTTP/2), as text or JSON (alpha) | Shipped in 0.0.17 |
 | Kubernetes | Helm chart for the gateway (non-root, read-only root, Secrets for TLS and the admin token, optional ServiceMonitor), published as a signed OCI chart | Shipped in 0.0.17 |
 | Testcontainers | Java module starting a gateway and a connector with a throwaway PKI, for integration tests through Tunnelward | Shipped in 0.0.17 |
+| Control plane (alpha) | `tunnelward control` signs tool policies operators publish with OIDC tokens (roles `viewer`, `operator`, `admin` from a token claim) and serves them to gateways over mutual TLS; a gateway with `[control]` applies each newer signed bundle and denies every call until its first; publishes and rollbacks are in the audit log with who made them (ADR 0012) | Shipped in 0.0.19 |
 
 ---
 
@@ -235,6 +236,11 @@ is a dashboard for them. `tunnelward connector --config connector.toml` runs a c
 in front of a local service. Each format, with every key, is documented
 at the top of [`config.rs`](crates/tw-cli/src/config.rs) and
 [`connector.rs`](crates/tw-cli/src/connector.rs).
+`tunnelward control --config control.toml` runs the control plane
+([`control/file.rs`](crates/tw-cli/src/control/file.rs)); a gateway pulls
+its policy from it with `[control]`
+([`control/pull.rs`](crates/tw-cli/src/control/pull.rs)), and operators
+use the API in [`control/api.rs`](crates/tw-cli/src/control/api.rs).
 Check a file before deploying it:
 
 ```bash
