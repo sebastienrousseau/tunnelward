@@ -125,7 +125,7 @@ fn unmapped(entry: &RequestEntry) -> Value {
 fn admin(entry: &AdminEntry, seq: u64, time: u64) -> Value {
     // Update: an admin action changes the gateway's own state.
     let activity = 3;
-    json!({
+    let mut event = json!({
         "category_uid": 6,
         "class_uid": 6003,
         "activity_id": activity,
@@ -138,7 +138,11 @@ fn admin(entry: &AdminEntry, seq: u64, time: u64) -> Value {
         "api": { "operation": entry.action },
         "src_endpoint": { "uid": entry.peer },
         "unmapped": { "target": entry.target, "changed": entry.changed },
-    })
+    });
+    if let Some(actor) = &entry.actor {
+        event["actor"]["user"] = json!({ "uid": actor });
+    }
+    event
 }
 
 fn registration(entry: &RegistrationEntry, seq: u64, time: u64) -> Value {
@@ -219,6 +223,11 @@ mod tests {
         let event = event(&text).unwrap();
         assert_eq!(event["class_uid"], 6003);
         assert_eq!(event["api"]["operation"], "dark");
+        assert!(event["actor"].get("user").is_none());
+        let by = line(
+            r#""kind":"admin","action":"publish","target":"bundle=2","changed":true,"peer":"cd","actor":"ops-7""#,
+        );
+        assert_eq!(super::event(&by).unwrap()["actor"]["user"]["uid"], "ops-7");
         assert!(super::event(&line(r#""kind":"checkpoint","key":"k","sig":"s""#)).is_none());
         assert!(super::event(&line(r#""kind":"gap","dropped":3"#)).is_none());
         assert!(super::event("nonsense").is_none());

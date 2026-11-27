@@ -102,6 +102,10 @@ pub struct AdminEntry {
     pub changed: bool,
     /// The admin caller's address, as a pseudonym.
     pub peer: String,
+    /// Who acted, when a token named them: the control plane's operator
+    /// (ADR 0012).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<String>,
 }
 
 impl AdminEntry {
@@ -113,7 +117,15 @@ impl AdminEntry {
             target,
             changed,
             peer,
+            actor: None,
         }
+    }
+
+    /// The entry, naming `actor` as who acted.
+    #[must_use]
+    pub fn by(mut self, actor: String) -> Self {
+        self.actor = Some(actor);
+        self
     }
 }
 
