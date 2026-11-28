@@ -1,7 +1,17 @@
 
 # cargo-vet audits file
 
-[audits]
+[[audits.errno]]
+who = "Sebastien Rousseau <sebastienrousseau@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+delta = "0.3.14 -> 0.3.15"
+notes = "Delta only adds link_name targets for errno_location (NuttX, Fuchsia, mlibc, QNX) and a clippy msrv attribute; docs and CI changes. No new unsafe logic on Linux, macOS or Windows."
+
+[[audits.signal-hook-registry]]
+who = "Sebastien Rousseau <sebastienrousseau@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+delta = "1.4.1 -> 1.4.8"
+notes = "static mut GLOBAL_DATA becomes an AtomicPtr set once from Box::into_raw; handler casts go through *const () (pointer provenance); an ErrnoGuard saves and restores errno around each handler; HashMap/BTreeMap replaced by a safe Vec-backed VecMap (insertion order kept); SA_RESTART skipped on QNX. Unsafe surface unchanged in kind, soundness improved."
 
 [[trusted.autocfg]]
 criteria = "safe-to-deploy"
