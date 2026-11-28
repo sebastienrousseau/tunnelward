@@ -39,8 +39,8 @@ Approved by name:
 
 | Package | Scope | Approved | Why |
 | :-- | :-- | :-- | :-- |
-| `kyberlib` 0.0.18 | test only (`tunnelward-crypto`) | 0.0.22 | expands X-Wing's draft seeds for its known-answer test (ADR 0016); a second ML-KEM implementation, not ours to write |
-| `rand_core` 0.6 | test only, through `kyberlib` | 0.0.22 | `kyberlib`'s own dependency |
+| `kyberlib` 0.0.18 | test only (`tunnelward-crypto`) | 0.0.22 | expands X-Wing's draft seeds for its known-answer test (ADR 0016), and checks aws-lc-rs's ML-KEM-768 in `tests/ml_kem_differential.rs` (0.0.23); a second ML-KEM implementation, not ours to write |
+| `rand_core` 0.6 | test only: `kyberlib`'s own dependency, and from 0.0.23 a direct dev-dependency of `tunnelward-crypto` for `kyberlib`'s RNG trait | 0.0.22 | no package added: the same locked version |
 
 ## Complexity
 
