@@ -360,7 +360,11 @@ pub(crate) async fn run(path: &Path) -> Result<(), String> {
     };
     config.session.pinned.clone_from(&pinned);
     let connector = start(config, backend, blind, pinned);
-    report(&connector).await;
+    let events = connector.events();
+    tokio::select! {
+        () = report(events) => {}
+        () = crate::signal::stop_asked() => stop(connector).await,
+    }
     keeper.abort();
     Ok(())
 }
@@ -424,9 +428,24 @@ fn fresh_id() -> Result<ConnectorId, String> {
     Ok(ConnectorId(id))
 }
 
+/// How long a stopping connector gives requests in flight.
+const DRAIN: Duration = Duration::from_secs(30);
+
+/// Stops on a signal: GOAWAY on every connection, so the gateways route
+/// nothing new here, and up to [`DRAIN`] for requests in flight (G7).
+async fn stop(connector: Connector) {
+    println!(
+        "tunnelward connector: stopping, letting requests finish for up to {}s",
+        DRAIN.as_secs()
+    );
+    let completed = connector.shutdown(DRAIN).await;
+    println!("tunnelward connector: stopped; every request finished: {completed}");
+}
+
 /// Prints the connector's events until it stops.
-async fn report(connector: &Connector) {
-    let mut events = connector.events();
+async fn report(
+    mut events: tokio::sync::broadcast::Receiver<tunnelward_connector::ConnectorEvent>,
+) {
     loop {
         match events.recv().await {
             Ok(event) => println!("tunnelward connector: {event:?}"),

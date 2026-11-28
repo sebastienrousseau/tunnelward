@@ -27,6 +27,7 @@ mod operator;
 mod policy;
 mod providers;
 mod serve;
+mod signal;
 mod signers;
 mod state;
 mod svid;

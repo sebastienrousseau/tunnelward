@@ -56,6 +56,14 @@ impl Gateway {
         self.finish(&sessions, deadline).await
     }
 
+    /// Drains every connection, as a gateway does when it stops: no new
+    /// request reaches a connector, in-flight requests get until
+    /// `deadline`, then the connections close.
+    pub async fn drain_all(&self, deadline: Duration) -> DrainReport {
+        let sessions = self.inner.registry.mark_draining(|_| true);
+        self.finish(&sessions, deadline).await
+    }
+
     /// Turns connections matching `target` dark (G14), or back on. A dark
     /// connection stays connected and finishes what it has, but takes no
     /// new request; requests for a route with only dark connections wait

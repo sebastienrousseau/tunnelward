@@ -4,6 +4,7 @@
 //! Binding a gateway's listeners and serving them until one stops.
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -42,6 +43,29 @@ pub(crate) async fn bind(addr: SocketAddr) -> Result<TcpListener, String> {
     TcpListener::bind(addr)
         .await
         .map_err(|e| format!("cannot listen on {addr}: {e}"))
+}
+
+/// Serves every listener on its own task until the first one stops, or
+/// until the process is asked to stop: then it stops accepting, reports
+/// not ready, and drains every connection within `drain` (FR-7).
+pub(crate) async fn until_stopped(
+    gateway: &Gateway,
+    listeners: Listeners,
+    drain: Duration,
+) -> Result<(), String> {
+    tokio::select! {
+        stopped = until_one_stops(gateway, listeners) => stopped,
+        () = crate::signal::stop_asked() => {
+            println!("tunnelward gateway: stopping, draining connections for up to {}s", drain.as_secs());
+            gateway.set_ready(false);
+            let report = gateway.drain_all(drain).await;
+            println!(
+                "tunnelward gateway: stopped; {} drained, {} finished, {} reset",
+                report.sessions, report.finished, report.reset
+            );
+            Ok(())
+        }
+    }
 }
 
 /// Serves every listener on its own task until the first one stops.

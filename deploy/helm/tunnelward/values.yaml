@@ -64,6 +64,10 @@ resources:
   limits:
     memory: 256Mi
 
+# On SIGTERM the gateway stops accepting and drains for [listen] drain_secs
+# (30 s by default); Kubernetes must wait longer before it sends SIGKILL.
+terminationGracePeriodSeconds: 45
+
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 65532
