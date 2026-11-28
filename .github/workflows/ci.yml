@@ -152,6 +152,10 @@ jobs:
           java-version: "25"
           cache: maven
       - run: mvn -B -f sdk/java/testcontainers/pom.xml test -Dtunnelward.image=tunnelward:ci
+      # The gateway-blind Java helper against the Rust connector side
+      # (ADR 0016). The TypeScript one needs Node 24.7 or later, which CI
+      # does not have: scripts/sdk-interop.sh runs both before a release.
+      - run: cargo test --locked -p tunnelward-mcp --test sdk_interop -- --ignored the_java_helper
 
   msrv:
     name: MSRV (1.89)

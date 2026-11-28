@@ -28,6 +28,7 @@ only through it (`cargo vet trust`, `cargo vet certify`, `cargo vet fmt`).
 | 2026-11-07 | pin-project-lite | github:taiki-e/pin-project-lite | Trusted (tokio and hyper depend on it) |
 | 2026-11-07 | tracing | hds | Trusted (tokio maintainer; h2 depends on it) |
 | 2026-11-07 | smallvec | alejandro-vaz | Trusted: a listed crates.io owner beside the Servo team (hyper depends on it) |
+| 2026-11-27 | kyberlib | github:sebastienrousseau/kyberlib | Trusted: the maintainer's own crate, test-only here (X-Wing known answers, ADR 0016) |
 
 ## Exemptions
 

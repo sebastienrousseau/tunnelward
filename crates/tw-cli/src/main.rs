@@ -9,6 +9,7 @@ mod args;
 mod attest;
 mod audit;
 mod backend;
+mod blind;
 mod config;
 mod conformance;
 mod connector;
@@ -60,6 +61,9 @@ Commands:
   operator [--namespace <ns>] [--server <url> --token-file <f> --ca <f>]
                  Keep TunnelwardGateway resources running in Kubernetes
                  (alpha; in a pod it uses its service account)
+  blind keygen --out <file>
+                 Make a connector's gateway-blind key (experimental); the
+                 public key agents seal to goes to <file>.pub
   crypto report --admin <addr>
                  List each connector connection's TLS version, key exchange,
                  cipher suite and key, from a gateway's admin API
@@ -419,7 +423,7 @@ fn attest(args: &[String]) -> Result<(), Outcome> {
 type Command = fn(&[String]) -> Result<(), Outcome>;
 
 /// Every command, by the names that call it.
-const COMMANDS: [(&[&str], Command); 17] = [
+const COMMANDS: [(&[&str], Command); 18] = [
     (&["-h", "--help"], |_| {
         print!("{USAGE}");
         Ok(())
@@ -443,6 +447,7 @@ const COMMANDS: [(&[&str], Command); 17] = [
     (&["control"], control::command),
     (&["crypto"], crypto::command),
     (&["operator"], operator::command),
+    (&["blind"], blind::command),
 ];
 
 fn dispatch(args: &[String]) -> Outcome {

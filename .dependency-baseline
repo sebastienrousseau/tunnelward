@@ -35,6 +35,7 @@ hyper-util
 indexmap
 itoa
 jobserver
+kyberlib
 libc
 memchr
 mio
@@ -47,6 +48,7 @@ proptest
 quote
 r-efi
 rand
+rand_core
 rand_core
 rand_xorshift
 regex-syntax

@@ -63,6 +63,15 @@ TW_SERVER=https://127.0.0.1:<port> KUBECTL="colima ssh -- sudo k3s kubectl" \
 
 The port is the `server:` in `/etc/rancher/k3s/k3s.yaml` inside the VM.
 
+## The gateway-blind SDK helpers
+
+`scripts/sdk-interop.sh` runs the TypeScript and Java agent helpers
+(`sdk/typescript/blind`, `sdk/java/blind`) against the Rust connector
+side, both directions (ADR 0016). It needs Node 24.7 or later and JDK 25
+or later, and fails rather than skips when either is missing. CI runs
+the Java half; its Node has no ML-KEM, so run the script before every
+release and after any change to `sdk/*/blind` or the wire format.
+
 ## Test certificates
 
 `crates/tw-testpki/pki/` holds TEST-ONLY certificates and keys,
@@ -106,7 +115,8 @@ that alters what it shows.
 ## Releasing
 
 Each version is one pull request from `feat/vX.Y.Z` into `main`, merged
-with a merge commit. Then, on an up-to-date `main`:
+with a merge commit. Before the merge, `scripts/sdk-interop.sh` must
+pass (CI runs only its Java half). Then, on an up-to-date `main`:
 
 1. `scripts/release-preflight.sh X.Y.Z` must pass: no open alert or
    issue, a clean tree equal to `origin/main`, the version and CHANGELOG

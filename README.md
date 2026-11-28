@@ -78,8 +78,8 @@ A container image is at `ghcr.io/sebastienrousseau/tunnelward`.
 
 ```toml
 [dependencies]
-tunnelward-connector = "0.0.21"   # embed a connector in your service
-tunnelward-gateway = "0.0.21"     # embed a gateway in your server
+tunnelward-connector = "0.0.22"   # embed a connector in your service
+tunnelward-gateway = "0.0.22"     # embed a gateway in your server
 ```
 
 `tunnelward-proto` and `tunnelward-crypto` are the wire protocol and
@@ -182,6 +182,7 @@ its own.
 | Approval of high-impact calls | A call to a `high_impact` tool runs only with a person's approval of exactly that call (agent, path, tool, arguments): the agent gets MCP's URL elicitation, the approver signs in with OIDC (PKCE), and the approved call runs once (`[approval]`, FR-17, ADR 0014) | Shipped in 0.0.20 |
 | Crypto inventory | `tunnelward crypto report` lists each connector connection's TLS version, key exchange, cipher suite and certificate key, and counts the hybrid post-quantum ones | Shipped in 0.0.20 |
 | Kubernetes operator (alpha) | `tunnelward operator` keeps `TunnelwardGateway` resources running, with route ownership from `ConnectorBinding`s and the tool policy from a `RoutePolicy`; it checks each change with the gateway's own parsers and leaves the running gateway as it is when one fails, saying why in the resource's status (`deploy/operator`, ADR 0015) | Shipped in 0.0.21 |
+| Gateway-blind mode (experimental) | An agent seals a tool call's arguments to the connector's key (HPKE with X-Wing, hybrid post-quantum); the gateway routes, polices and audits by tool name without reading or changing them, and the answer comes back sealed (`[blind]`, `tunnelward blind keygen`, ADR 0016). Agent helpers in TypeScript (Node, browsers) and Java (`sdk/*/blind`) | Shipped in 0.0.22 |
 
 ---
 

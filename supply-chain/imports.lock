@@ -157,6 +157,11 @@ when = "2026-07-06"
 user-id = 55123
 user-login = "rust-lang-owner"
 
+[[publisher.kyberlib]]
+version = "0.0.18"
+when = "2026-11-27"
+trusted-publisher = "github:sebastienrousseau/kyberlib"
+
 [[publisher.libc]]
 version = "0.2.191"
 when = "2026-10-16"

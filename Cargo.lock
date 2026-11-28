@@ -84,7 +84,7 @@ checksum = "65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06"
 dependencies = [
  "cfg-if",
  "cpufeatures",
- "rand_core",
+ "rand_core 0.10.1",
 ]
 
 [[package]]
@@ -182,7 +182,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "r-efi",
- "rand_core",
+ "rand_core 0.10.1",
 ]
 
 [[package]]
@@ -318,6 +318,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyberlib"
+version = "0.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1690eed0fe3728415236ed98a21304bb3f5974fcf37e2614dfbdf182db174c5d"
+dependencies = [
+ "rand_core 0.6.4",
+ "zeroize",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -414,8 +424,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af"
 dependencies = [
  "getrandom 0.4.3",
- "rand_core",
+ "rand_core 0.10.1",
 ]
+
+[[package]]
+name = "rand_core"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 
 [[package]]
 name = "rand_core"
@@ -429,7 +445,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60aa6af80be32871323012e02e6e65f8a7cc7890931ae421d217ad8fe0df2ccf"
 dependencies = [
- "rand_core",
+ "rand_core 0.10.1",
 ]
 
 [[package]]
@@ -710,7 +726,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tunnelward"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -737,7 +753,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-attest"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "aws-lc-rs",
  "serde",
@@ -749,7 +765,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-audit"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "aws-lc-rs",
  "serde",
@@ -759,7 +775,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-bench"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "bytes",
  "http",
@@ -777,7 +793,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-conformance"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "cbor4ii",
  "h2",
@@ -790,7 +806,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-connector"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -802,21 +818,23 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tunnelward-crypto",
+ "tunnelward-mcp",
  "tunnelward-proto",
 ]
 
 [[package]]
 name = "tunnelward-crypto"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "aws-lc-rs",
+ "kyberlib",
  "rustls",
  "tunnelward-testpki",
 ]
 
 [[package]]
 name = "tunnelward-gateway"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -844,7 +862,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-identity"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -859,20 +877,21 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-mcp"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "tunnelward-crypto",
 ]
 
 [[package]]
 name = "tunnelward-policy"
-version = "0.0.21"
+version = "0.0.22"
 
 [[package]]
 name = "tunnelward-proto"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "cbor4ii",
  "proptest",
@@ -883,7 +902,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-risk"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "aws-lc-rs",
  "tunnelward-audit",
@@ -891,7 +910,7 @@ dependencies = [
 
 [[package]]
 name = "tunnelward-testpki"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "bytes",
  "http",
@@ -1030,7 +1049,7 @@ checksum = "8c3b93199df0ab874cdf0c6a94f0a0dc3423fe41f1cafb62b8bd7b1deb277aef"
 
 [[package]]
 name = "xtask"
-version = "0.0.21"
+version = "0.0.22"
 
 [[package]]
 name = "zeroize"

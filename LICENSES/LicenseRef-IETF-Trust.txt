@@ -1,0 +1,16 @@
+Test vectors reproduced from an IETF document. That document carries this
+notice:
+
+   Copyright (c) 2026 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents (https://trustee.ietf.org/
+   license-info) in effect on the date of publication of this document.
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.
+
+The vectors are used unchanged, to test this repository's
+implementation of the scheme the document specifies. For the rights and
+restrictions that apply, see the IETF Trust's Legal Provisions at
+https://trustee.ietf.org/license-info.

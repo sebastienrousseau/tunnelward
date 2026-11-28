@@ -71,3 +71,12 @@ path = ["deploy/grafana/tunnelward.json"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>"
 SPDX-License-Identifier = "GPL-3.0-only"
+
+# X-Wing's known-answer vectors, reproduced unchanged from
+# draft-connolly-cfrg-xwing-kem-11, Appendix C (ADR 0016), under the
+# IETF Trust's terms; see LICENSES/LicenseRef-IETF-Trust.txt.
+[[annotations]]
+path = ["crates/tw-crypto/tests/xwing_draft11.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 IETF Trust and the persons identified as the document authors"
+SPDX-License-Identifier = "LicenseRef-IETF-Trust"

@@ -26,6 +26,7 @@
 //! Self-described fields ([`ClientInfo`], a `traceparent` in `_meta`) are
 //! what the client says about itself: evidence, never identity.
 
+pub mod blind;
 mod envelope;
 
 pub use envelope::{ClientInfo, Envelope, EnvelopeError, Id, Kind, Message, parse};
