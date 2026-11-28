@@ -849,7 +849,7 @@ version = "0.0.23"
 dependencies = [
  "aws-lc-rs",
  "kyberlib",
- "rand_core 0.6.4",
+ "rand_core 0.10.1",
  "rustls",
  "tunnelward-testpki",
 ]

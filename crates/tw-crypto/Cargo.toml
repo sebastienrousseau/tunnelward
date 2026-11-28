@@ -30,7 +30,7 @@ tunnelward-testpki.workspace = true
 # The X-Wing known answers expand the draft's seeds (ADR 0016); test only.
 kyberlib = { version = "=0.0.18", default-features = false }
 # kyberlib's RNG trait, for the ML-KEM differential test; test only.
-rand_core = { version = "0.6", default-features = false }
+rand_core = { version = "0.10", default-features = false }
 
 [lints]
 workspace = true
