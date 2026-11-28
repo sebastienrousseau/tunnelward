@@ -35,32 +35,67 @@ fn answer(method: &str, id: &Value, params: &Value) -> (Option<Value>, Value) {
             ),
         ),
         "ping" => (None, result(id, &json!({}))),
-        "tools/list" => (
-            None,
-            result(
-                id,
-                &json!({"tools": [{
-                    "name": "echo",
-                    "description": std::env::var("STDIO_ECHO_DESCRIPTION").unwrap_or_default(),
-                    "inputSchema": {"type": "object"},
-                }]}),
-            ),
-        ),
-        "tools/call" => {
-            let text = params["arguments"]["text"].as_str().unwrap_or_default();
-            let note = json!({
-                "jsonrpc": "2.0",
-                "method": "notifications/message",
-                "params": {"level": "info", "data": format!("echoing {text}")},
-            });
-            let reply = result(id, &json!({"content": [{"type": "text", "text": text}]}));
-            (Some(note), reply)
-        }
+        "tools/list" => (None, result(id, &json!({"tools": [tool()]}))),
+        "tools/call" => call(id, params),
         _ => (
             None,
             json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32601, "message": "unknown method"}}),
         ),
     }
+}
+
+/// The one tool, `echo`, with its schemas and annotations.
+fn tool() -> Value {
+    let description = std::env::var("STDIO_ECHO_DESCRIPTION")
+        .unwrap_or_else(|_| "Answers with the text it is given, unchanged.".to_owned());
+    json!({
+        "name": "echo",
+        "title": "Echo",
+        "description": description,
+        "inputSchema": {
+            "type": "object",
+            "properties": {"text": {"type": "string", "description": "The text to answer with."}},
+            "required": ["text"],
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {"text": {"type": "string", "description": "The text, unchanged."}},
+            "required": ["text"],
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false,
+        },
+    })
+}
+
+/// `tools/call`: `echo` with a string `text`, else invalid params.
+fn call(id: &Value, params: &Value) -> (Option<Value>, Value) {
+    let invalid =
+        |why: &str| json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32602, "message": why}});
+    match params["name"].as_str() {
+        Some("echo") => {}
+        Some(other) => return (None, invalid(&format!("unknown tool: {other}"))),
+        None => return (None, invalid("tools/call needs a tool name")),
+    }
+    let Some(text) = params["arguments"]["text"].as_str() else {
+        return (None, invalid("echo needs a string argument text"));
+    };
+    let note = json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/message",
+        "params": {"level": "info", "data": format!("echoing {text}")},
+    });
+    let reply = result(
+        id,
+        &json!({
+            "content": [{"type": "text", "text": text}],
+            "structuredContent": {"text": text},
+        }),
+    );
+    (Some(note), reply)
 }
 
 fn main() -> std::io::Result<()> {
