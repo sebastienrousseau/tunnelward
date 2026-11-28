@@ -96,6 +96,7 @@ impl StdioConfig {
 pub struct StdioBridge {
     config: Arc<StdioConfig>,
     sessions: Arc<Mutex<HashMap<String, Arc<Session>>>>,
+    pinned: Option<crate::Pinned>,
 }
 
 impl std::fmt::Debug for StdioBridge {
@@ -180,7 +181,42 @@ impl StdioBridge {
         Self {
             config: Arc::new(config),
             sessions: Arc::default(),
+            pinned: None,
         }
+    }
+
+    /// Holds the server to what it registered as (ADR 0017); see
+    /// [`Forward::with_pinned`](crate::Forward::with_pinned).
+    #[must_use]
+    pub fn with_pinned(mut self, pinned: crate::Pinned) -> Self {
+        self.pinned = Some(pinned);
+        self
+    }
+
+    /// Starts the server once, asks who it is and what tools it has,
+    /// and ends it (ADR 0017).
+    ///
+    /// # Errors
+    ///
+    /// The step that failed.
+    pub async fn describe(&self) -> Result<crate::Described, String> {
+        let session = Session::start(&self.config)?;
+        let described = self.describe_on(&session).await;
+        session.end();
+        described
+    }
+
+    async fn describe_on(&self, session: &Session) -> Result<crate::Described, String> {
+        let mut ask = Asking {
+            bridge: self,
+            session,
+        };
+        let init = crate::describe::Ask::ask(&mut ask, crate::describe::initialize()).await?;
+        let (name, version) = crate::tools::server_info(&init);
+        let (name, version) = (name.to_owned(), version.to_owned());
+        session.send(&crate::describe::initialized()).await?;
+        let tools = crate::describe::tools(&mut ask).await?;
+        crate::Described::new(&name, &version, &tools)
     }
 
     /// Sessions open now.
@@ -267,6 +303,13 @@ impl StdioBridge {
             None => return Err(refused(StatusCode::BAD_REQUEST, "missing Mcp-Session-Id")),
         };
         let answers = self.exchange(&session, &messages).await?;
+        if let Some(pinned) = &self.pinned {
+            let asked = crate::tools::asked(&messages);
+            if let Err(why) = pinned.check(&asked, &answers) {
+                let refused = crate::tools::refusal(&asked, &why, batch);
+                return Ok(json(&refused));
+            }
+        }
         Ok(reply(&answers, batch, opened.then_some(id.as_str())))
     }
 
@@ -352,6 +395,23 @@ impl StdioBridge {
         self.table().remove(&id);
         session.end();
         Ok(answer(StatusCode::NO_CONTENT, ""))
+    }
+}
+
+/// One describing session on the bridge's own process.
+struct Asking<'a> {
+    bridge: &'a StdioBridge,
+    session: &'a Session,
+}
+
+impl crate::describe::Ask for Asking<'_> {
+    async fn ask(&mut self, request: Value) -> Result<Value, String> {
+        let found = (self
+            .bridge
+            .exchange(self.session, std::slice::from_ref(&request))
+            .await)
+            .map_err(|(_, why)| why)?;
+        crate::describe::result_of(&found, &request["id"])
     }
 }
 

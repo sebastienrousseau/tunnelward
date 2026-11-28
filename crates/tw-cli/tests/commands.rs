@@ -485,3 +485,40 @@ fn a_stdio_mcp_server_is_served_through_the_tunnel() -> Res<()> {
     drop((connector, gateway));
     Ok(std::fs::remove_dir_all(dir)?)
 }
+
+#[test]
+fn a_described_stdio_server_registers_with_its_name_and_serves_its_tools() -> Res<()> {
+    let dir = pki_dir("stdio-described")?;
+    let (gateway, out, _) = spawn_gateway(&gateway_file(&dir, "127.0.0.1:0", "127.0.0.1:0")?)?;
+    let started = expect(&out, "connectors on")?;
+    let (connectors, ingress) = (bound(&started, "connectors")?, bound(&started, "agents")?);
+    let file = stdio_connector_file(&dir, &connectors)?;
+    let mut text = std::fs::read_to_string(&file)?;
+    text.push_str("\n[register.describe]\non_change = \"block\"\n");
+    std::fs::write(&file, text)?;
+    let (connector, connector_out) = spawn_connector(&file)?;
+    expect(&connector_out, "serving stdio-echo 1.0.0")?;
+    expect(&connector_out, "Registered")?;
+    let session = initialise(&ingress)?;
+    let list = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#;
+    let answer = read_until(&ingress, &mcp_post(list, Some(&session)), "inputSchema")?;
+    assert!(answer.contains(r#""name":"echo""#), "{answer}");
+    drop((connector, gateway));
+    Ok(std::fs::remove_dir_all(dir)?)
+}
+
+#[test]
+fn a_describe_path_must_be_a_path() -> Res<()> {
+    let dir = pki_dir("describe-check")?;
+    let file = connector_file(&dir, "127.0.0.1:7443", "http://127.0.0.1:8080", "\"mcp\"")?;
+    let mut toml = std::fs::read_to_string(&file)?;
+    toml.push_str("\n[register.describe]\npath = \"mcp\"\n");
+    std::fs::write(&file, toml)?;
+    let out = tunnelward(&["config", "check", &file.to_string_lossy()])?;
+    let errors = text(&out.stderr);
+    assert!(
+        errors.contains("[register.describe] path \"mcp\": give a path starting with /"),
+        "{errors}"
+    );
+    Ok(std::fs::remove_dir_all(dir)?)
+}

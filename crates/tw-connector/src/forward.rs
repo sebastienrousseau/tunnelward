@@ -83,6 +83,7 @@ pub struct Forward {
     timeout: Duration,
     hook: Option<RequestHook>,
     blind: Option<Arc<crate::blind::Blind>>,
+    pinned: Option<crate::Pinned>,
 }
 
 impl core::fmt::Debug for Forward {
@@ -92,6 +93,7 @@ impl core::fmt::Debug for Forward {
             .field("timeout", &self.timeout)
             .field("hook", &self.hook.is_some())
             .field("blind", &self.blind.is_some())
+            .field("pinned", &self.pinned.is_some())
             .finish()
     }
 }
@@ -106,6 +108,7 @@ impl Forward {
             timeout,
             hook: None,
             blind: None,
+            pinned: None,
         }
     }
 
@@ -125,6 +128,25 @@ impl Forward {
         self
     }
 
+    /// Holds the target to the server it registered as: answers to
+    /// `initialize` and `tools/list` that show another server, version
+    /// or tool set are refused (ADR 0017).
+    #[must_use]
+    pub fn with_pinned(mut self, pinned: crate::Pinned) -> Self {
+        self.pinned = Some(pinned);
+        self
+    }
+
+    /// Asks the target who it is and what tools it has, at `path`
+    /// (ADR 0017). The guard does not see these requests.
+    ///
+    /// # Errors
+    ///
+    /// The step that failed.
+    pub async fn describe(&self, path: &str) -> Result<crate::Described, String> {
+        crate::describe::http(self, path).await
+    }
+
     async fn forward(self, mut request: Request<Incoming>) -> Response<ForwardBody> {
         if let Some(hook) = &self.hook {
             hook(&mut request);
@@ -136,8 +158,19 @@ impl Forward {
         self.send(request).await
     }
 
-    /// Sends `request` to the target within the timeout.
+    /// Sends `request` to the target within the timeout, through the
+    /// guard when a server is pinned.
     pub(crate) async fn send(&self, request: Outgoing) -> Response<ForwardBody> {
+        match &self.pinned {
+            Some(pinned) if request.method() == hyper::Method::POST => {
+                crate::guard::send(self, pinned, request).await
+            }
+            _ => self.send_unguarded(request).await,
+        }
+    }
+
+    /// [`Forward::send`] without the guard.
+    pub(crate) async fn send_unguarded(&self, request: Outgoing) -> Response<ForwardBody> {
         match timeout(self.timeout, self.exchange(request)).await {
             Ok(Ok(response)) => response.map(BodyExt::boxed),
             Ok(Err(why)) => error_response(StatusCode::BAD_GATEWAY, &why),

@@ -4,7 +4,9 @@
 //! A small MCP server over stdio, for trying the stdio bridge and for its
 //! tests: one JSON-RPC message per line. It offers one tool, `echo`,
 //! which first sends a `notifications/message` on its own (so the bridge
-//! has an event to stream) and then answers with its `text`.
+//! has an event to stream) and then answers with its `text`. The tool's
+//! description is `STDIO_ECHO_DESCRIPTION` when set, so a test can start
+//! a server whose tool changed (ADR 0017).
 //!
 //! ```sh
 //! cargo run -p tunnelward-connector --example stdio-echo
@@ -37,7 +39,11 @@ fn answer(method: &str, id: &Value, params: &Value) -> (Option<Value>, Value) {
             None,
             result(
                 id,
-                &json!({"tools": [{"name": "echo", "inputSchema": {"type": "object"}}]}),
+                &json!({"tools": [{
+                    "name": "echo",
+                    "description": std::env::var("STDIO_ECHO_DESCRIPTION").unwrap_or_default(),
+                    "inputSchema": {"type": "object"},
+                }]}),
             ),
         ),
         "tools/call" => {

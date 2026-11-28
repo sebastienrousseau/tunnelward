@@ -39,6 +39,10 @@ pub struct Config {
     /// renewed statement is sent without a restart. It replaces
     /// `register.attestation`.
     pub attestation_file: Option<PathBuf>,
+    /// The server the connector holds its target to (ADR 0017): its
+    /// descriptor replaces `register.mcp` at every registration, and a
+    /// change of server asks every connection to register again.
+    pub pinned: Option<crate::Pinned>,
     /// Frame limits; the gateway's answer must fit them.
     pub limits: Limits,
     /// Longest the TCP, TLS and registration exchange may take together.
@@ -99,10 +103,14 @@ async fn register_inner(config: &Config) -> Result<Registered, Error> {
     }
 }
 
-/// The register frame to send: `config.register`, with the attestation
-/// file's contents when there is one.
+/// The register frame to send: `config.register`, with the pinned
+/// server's descriptor and the attestation file's contents when there
+/// are.
 async fn claim(config: &Config) -> Result<Register, Error> {
     let mut claim = config.register.clone();
+    if let Some(pinned) = &config.pinned {
+        claim.mcp = Some(pinned.descriptor());
+    }
     if let Some(path) = &config.attestation_file {
         let max = config.limits.max_frame_len;
         claim.attestation = Some(read_attestation(path.clone(), max).await?);

@@ -103,9 +103,10 @@ where
         finishing: &mut Vec<JoinHandle<()>>,
     ) -> Ended {
         let mut conn = Box::pin(conn);
+        let mut changes = self.config.pinned.as_ref().map(crate::Pinned::changes);
         let ended = tokio::select! {
             _ = conn.as_mut() => Ended::Closed,
-            () = sleep(renew_after) => {
+            () = renewal(renew_after, changes.as_mut()) => {
                 self.emit(ConnectorEvent::Renewing { gateway: self.gateway });
                 conn.as_mut().graceful_shutdown();
                 finishing.push(tokio::spawn(async move {
@@ -158,6 +159,25 @@ fn failure(gateway: SocketAddr, error: Error) -> ConnectorEvent {
 /// connections of one connector do not all renew at once.
 fn renew_after(lease_secs: u32) -> Duration {
     Duration::from_secs(u64::from(lease_secs)).mul_f64(0.7 + 0.2 * unit_random())
+}
+
+/// Resolves when the lease nears its end, or sooner when the pinned
+/// server changes (ADR 0017): either way the slot registers again.
+async fn renewal(after: Duration, changes: Option<&mut tokio::sync::watch::Receiver<u64>>) {
+    let server_changed = async {
+        match changes {
+            Some(rx) => {
+                if rx.changed().await.is_err() {
+                    std::future::pending::<()>().await;
+                }
+            }
+            None => std::future::pending().await,
+        }
+    };
+    tokio::select! {
+        () = sleep(after) => {}
+        () = server_changed => {}
+    }
 }
 
 /// Resolves when a stop is asked for, with its deadline.

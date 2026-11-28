@@ -73,3 +73,50 @@ async fn a_refused_registration_is_logged_with_its_code_and_both_identities() ->
     );
     Ok(())
 }
+
+/// ADR 0017: the server a connector reports is in its registration
+/// entry, and when its tools change under `Reregister` it registers
+/// again with the new digest, which the log shows.
+#[tokio::test]
+async fn the_reported_server_and_a_change_of_tools_are_logged() -> Res<()> {
+    use tunnelward_connector::{Connector, ConnectorEvent, Described, Gateways, OnChange, Pinned};
+    let (addr, sink, path) = audited("registration-described").await?;
+    let tool = |d: &str| serde_json::json!({ "name": "transfer", "description": d });
+    let pinned = Pinned::new(
+        Described::new("payments", "2.1.0", &[tool("Moves money.")])?,
+        OnChange::Reregister,
+    );
+    let mut config = common::supervised(Gateways::Static(vec![common::addr(&addr)?]), &addr)?;
+    config.connections_per_gateway = 1;
+    config.session.pinned = Some(pinned.clone());
+    let connector = Connector::start(
+        config,
+        common::gated_service(Arc::new(tokio::sync::Semaphore::new(64))),
+    );
+    let mut events = connector.events();
+    let registered = |e: &ConnectorEvent| matches!(e, ConnectorEvent::Registered { .. });
+    while !registered(&events.recv().await?) {}
+    let before = hex(&pinned.descriptor().tools_digest);
+    let changed = serde_json::json!({ "jsonrpc": "2.0", "id": 1, "result": { "tools": [tool("Moves money, and more.")] } });
+    let request = serde_json::json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" });
+    assert!(pinned.check_exchange(&[request], &[changed]).is_err());
+    while !registered(&events.recv().await?) {}
+    drop(connector);
+    let entries = logged(&sink, &path, "registration")?;
+    let accepted: Vec<_> = entries
+        .iter()
+        .filter(|e| e["decision"] == "accepted")
+        .collect();
+    assert!(accepted.len() >= 2, "{entries:?}");
+    assert_eq!(accepted[0]["server"], "payments");
+    assert_eq!(accepted[0]["server_version"], "2.1.0");
+    assert_eq!(accepted[0]["tools_digest"], before.as_str());
+    let after = hex(&pinned.descriptor().tools_digest);
+    assert_ne!(before, after);
+    assert_eq!(accepted[accepted.len() - 1]["tools_digest"], after.as_str());
+    Ok(())
+}
+
+fn hex(bytes: &[u8]) -> String {
+    tunnelward_audit::hex(bytes)
+}
