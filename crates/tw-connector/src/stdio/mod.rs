@@ -159,7 +159,12 @@ fn is_initialize(messages: &[Value]) -> bool {
 /// as a batch when the request was one. A new session's id goes with it.
 fn reply(answers: &[Value], batch: bool, new: Option<&str>) -> Response<StdioBody> {
     let mut response = match (answers, batch) {
-        ([], _) => answer(StatusCode::ACCEPTED, ""),
+        // The transport requires an empty body here.
+        ([], _) => {
+            let mut accepted = Response::new(Full::new(Bytes::new()).boxed());
+            *accepted.status_mut() = StatusCode::ACCEPTED;
+            accepted
+        }
         ([one], false) => json(one),
         (all, _) => json(&Value::Array(all.to_vec())),
     };

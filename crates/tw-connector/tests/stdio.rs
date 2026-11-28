@@ -168,9 +168,11 @@ async fn notifications_are_accepted_and_batches_answered_in_order() -> Res<()> {
     let (addr, _) = bridge().await?;
     let session = open(&addr).await?;
     let note = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
+    let (status, _, body) = post(&addr, Some(&session), &note).await?;
     assert_eq!(
-        post(&addr, Some(&session), &note).await?.0,
-        StatusCode::ACCEPTED
+        (status, body.as_str()),
+        (StatusCode::ACCEPTED, ""),
+        "no body"
     );
     let batch = json!([echo(5, "a"), echo(6, "b")]);
     let (status, _, body) = post(&addr, Some(&session), &batch).await?;
