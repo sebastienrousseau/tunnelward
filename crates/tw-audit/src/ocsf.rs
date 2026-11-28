@@ -119,6 +119,7 @@ fn unmapped(entry: &RequestEntry) -> Value {
         "request_digest": entry.request_digest,
         "result_digest": entry.result_digest,
         "receipt": entry.receipt,
+        "would_deny": entry.would_deny,
     })
 }
 

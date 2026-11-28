@@ -31,6 +31,8 @@ pub(crate) struct Trail {
     pub(crate) calls: Vec<Call>,
     /// SHA-256 of the receipt sent.
     pub(crate) receipt: Option<String>,
+    /// In shadow mode, why the policy would have denied the request.
+    pub(crate) would_deny: Option<String>,
 }
 
 /// How the gateway dealt with a request.
@@ -104,6 +106,7 @@ fn entry(sink: &Sink, info: &RequestInfo, status: u16, decision: Decision) -> Re
     entry.error = decision.error();
     entry.status = status;
     entry.receipt.clone_from(&info.trail.receipt);
+    entry.would_deny.clone_from(&info.trail.would_deny);
     if let Some(risk) = &info.risk {
         entry.risk = Some(risk.score);
         entry.risk_signals = risk.signals.iter().map(ToString::to_string).collect();

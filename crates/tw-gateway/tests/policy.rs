@@ -210,3 +210,43 @@ async fn a_rule_demanding_cryptographic_evidence_denies_a_network_verified_clien
     assert_eq!(reached.load(Ordering::SeqCst), 0);
     Ok(())
 }
+
+/// Shadow mode: on a path in shadow, a call the policy would deny goes
+/// on, and the audit log says why it would have been denied. A
+/// high-impact tool still needs its idempotency key.
+#[tokio::test]
+async fn shadow_mode_forwards_what_it_would_deny_and_logs_why() -> Res<()> {
+    let (sink, path) = common::audit_sink("policy-shadow")?;
+    let policy = Policy {
+        shadow: vec!["/mcp".into()],
+        high_impact: vec!["transfer".into()],
+        ..tools_policy()
+    };
+    let mut config = ingress_config(|i| i.policy = Some(Arc::new(policy)))?;
+    config.audit = Some(sink.clone());
+    let (_g, ingress, reached) = gateway(config).await?;
+    let (status, body) = post(&ingress, &tool_call(7, "delete_account")).await?;
+    assert_eq!(
+        (status, body.contains("\"result\"")),
+        (StatusCode::OK, true),
+        "{body}"
+    );
+    assert_eq!(reached.load(Ordering::SeqCst), 1, "forwarded");
+    let (_, body) = post(&ingress, &tool_call(8, "read_balance")).await?;
+    assert!(body.contains("\"result\""), "{body}");
+    let (status, body) = post(&ingress, &tool_call(9, "transfer")).await?;
+    assert_ne!(status, StatusCode::OK, "no Idempotency-Key: {body}");
+    assert_eq!(reached.load(Ordering::SeqCst), 2, "transfer held back");
+    let entries = common::logged(&sink, &path, "request")?;
+    let would: Vec<_> = entries
+        .iter()
+        .map(|e| e.get("would_deny").cloned())
+        .collect();
+    assert_eq!(
+        would[0],
+        Some(serde_json::json!("forbidden by rule 3")),
+        "{entries:?}"
+    );
+    assert_eq!(would[1], None, "a permitted call has nothing to note");
+    Ok(())
+}

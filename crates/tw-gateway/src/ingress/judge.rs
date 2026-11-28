@@ -32,16 +32,19 @@ impl Ingress {
 
     /// The policy's decision on every call in the request, if there is a
     /// policy: whether one is to a high-impact tool.
+    /// In shadow mode, notes in the audit trail what it would have
+    /// denied.
     fn decide(
         &self,
         request: &Request<Full<Bytes>>,
         body: &Bytes,
-        info: &RequestInfo,
+        info: &mut RequestInfo,
     ) -> Result<bool, Refusal> {
         let Some(engine) = self.gateway.policy() else {
             return Ok(false);
         };
         let verdict = crate::policy::decide(engine.as_ref(), request.method(), body, info)?;
-        Ok(verdict == crate::policy::Verdict::Forward { high_impact: true })
+        info.trail.would_deny = verdict.would_deny;
+        Ok(verdict.high_impact)
     }
 }

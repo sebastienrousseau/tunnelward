@@ -195,6 +195,21 @@ pub enum Decision {
 pub trait PolicyEngine: Send + Sync + std::fmt::Debug {
     /// The decision for `call`.
     fn decide(&self, call: &Call<'_>) -> Decision;
+
+    /// Whether `call` is on a path in shadow mode: a denial there is
+    /// recorded in the audit log and the call goes on. None by default.
+    fn shadowed(&self, call: &Call<'_>) -> bool {
+        let _ = call;
+        false
+    }
+
+    /// Whether `call` is to a high-impact tool, whatever the decision: a
+    /// call shadow mode lets through keeps the idempotency key and the
+    /// approval a high-impact tool needs. None by default.
+    fn high_impact(&self, call: &Call<'_>) -> bool {
+        let _ = call;
+        false
+    }
 }
 
 /// The in-house rules engine.
@@ -209,6 +224,11 @@ pub struct Policy {
     pub high_impact: Vec<String>,
     /// Apply the D6 baseline before the rules.
     pub baseline: bool,
+    /// Paths in shadow mode (each covers itself and everything under
+    /// it): calls the policy would deny there are forwarded, and the
+    /// audit log records why they would have been denied. For trying a
+    /// stricter policy on live traffic before enforcing it.
+    pub shadow: Vec<String>,
 }
 
 impl Policy {
@@ -220,6 +240,7 @@ impl Policy {
             default: Effect::Forbid,
             high_impact: Vec::new(),
             baseline: true,
+            shadow: Vec::new(),
         }
     }
 
@@ -265,6 +286,14 @@ impl PolicyEngine for Policy {
             return Decision::Allow { high_impact };
         }
         Decision::Deny("no rule permits the call".into())
+    }
+
+    fn shadowed(&self, call: &Call<'_>) -> bool {
+        self.shadow.iter().any(|p| covers(p, call.path))
+    }
+
+    fn high_impact(&self, call: &Call<'_>) -> bool {
+        self.is_high_impact(call)
     }
 }
 
@@ -454,5 +483,32 @@ mod tests {
             assert_eq!(Evidence::named(e.name()), Some(e));
         }
         assert_eq!(Evidence::named("strong"), None);
+    }
+
+    #[test]
+    fn shadow_paths_cover_themselves_and_below_and_high_impact_stays_known() {
+        let p = Policy {
+            shadow: vec!["/mcp/payments".into()],
+            high_impact: vec!["transfer".into()],
+            ..policy(Vec::new())
+        };
+        let on = call("transfer", Evidence::Network);
+        let below = Call {
+            path: "/mcp/payments/eu",
+            ..on.clone()
+        };
+        let beside = Call {
+            path: "/mcp/paymentsx",
+            ..on.clone()
+        };
+        assert!(p.shadowed(&on) && p.shadowed(&below));
+        assert!(!p.shadowed(&beside), "on a / boundary");
+        assert!(
+            matches!(p.decide(&on), Decision::Deny(_)),
+            "the decision is unchanged"
+        );
+        assert!(p.high_impact(&on));
+        assert!(!p.high_impact(&call("read", Evidence::Network)));
+        assert!(!Policy::deny_by_default().shadowed(&on));
     }
 }

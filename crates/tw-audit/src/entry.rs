@@ -88,6 +88,10 @@ pub struct RequestEntry {
     /// What raised it, such as `velocity:tool:61>60` or `canary-record`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub risk_signals: Vec<String>,
+    /// In shadow mode, why the policy would have denied the request
+    /// that was forwarded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub would_deny: Option<String>,
 }
 
 /// An operator's action through the admin API.
