@@ -72,6 +72,26 @@ or later, and fails rather than skips when either is missing. CI runs
 the Java half; its Node has no ML-KEM, so run the script before every
 release and after any change to `sdk/*/blind` or the wire format.
 
+## MCP compliance: passmcp and the conformance suite
+
+`scripts/passmcp-check.sh` runs passmcp, the suite's MCP validator, on
+every MCP server the repository ships or serves: the `stdio-echo`
+example on its own and through the whole tunnel (gateway ingress,
+connector, stdio bridge), where no check may fail, and the MCP
+reference server directly and through `tunnelward dev`, where the
+gateway must add no finding (that server's own findings are not ours to
+fix). Use the latest passmcp release.
+
+`scripts/mcp-conformance.sh` runs the MCP project's conformance suite
+(`@modelcontextprotocol/conformance`, pinned in `scripts/mcp-conformance/`)
+against the reference server directly and through `tunnelward dev`, and
+fails unless every scenario has the same result both ways. The suite's
+scenarios target its own test server, which is not on npm, so some fail
+either way.
+
+Both need docker, and both run before every release and after any
+change to the ingress, the connector's forwarding or the stdio bridge.
+
 ## Test certificates
 
 `crates/tw-testpki/pki/` holds TEST-ONLY certificates and keys,
@@ -115,8 +135,9 @@ that alters what it shows.
 ## Releasing
 
 Each version is one pull request from `feat/vX.Y.Z` into `main`, merged
-with a merge commit. Before the merge, `scripts/sdk-interop.sh` must
-pass (CI runs only its Java half). Then, on an up-to-date `main`:
+with a merge commit. Before the merge, `scripts/sdk-interop.sh` (CI runs
+only its Java half), `scripts/passmcp-check.sh` and
+`scripts/mcp-conformance.sh` must pass. Then, on an up-to-date `main`:
 
 1. `scripts/release-preflight.sh X.Y.Z` must pass: no open alert or
    issue, a clean tree equal to `origin/main`, the version and CHANGELOG

@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "The MCP project's conformance suite, run through a tunnelward gateway (scripts/mcp-conformance.sh), pinned with its lockfile",
+  "dependencies": {
+    "@modelcontextprotocol/conformance": "0.1.16"
+  }
+}
