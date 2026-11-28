@@ -4,6 +4,11 @@
 //! CORS per route (G17), so browser-based MCP clients can call the
 //! gateway from the origins an operator allows, and from no other.
 //!
+//! Any request with an `Origin` that no rule allows is refused, not only
+//! a preflight: MCP Streamable HTTP requires servers to check `Origin`,
+//! or a page the user opens can reach the gateway through DNS rebinding
+//! with a simple POST. Clients that are not browsers send no `Origin`.
+//!
 //! Credentials (cookies) are never allowed: MCP clients authenticate with
 //! a bearer token in `Authorization`, which needs no credentials mode.
 
@@ -63,11 +68,11 @@ const ALLOW_METHODS: &str = "GET, POST, DELETE, OPTIONS";
 
 /// What CORS says about one request.
 pub(crate) enum Cors {
-    /// No `Origin`, or no rule for its path: nothing to add.
+    /// No `Origin`: nothing to add.
     None,
     /// A preflight from an allowed origin: answer it with these headers.
     Preflight(HeaderMap),
-    /// A preflight from an origin no rule allows.
+    /// An origin no rule allows: refused, preflight or not.
     Refused,
     /// An allowed origin: add these headers to the response.
     Allowed(HeaderMap),
@@ -123,8 +128,7 @@ pub(crate) fn decide<B>(rules: &[CorsRule], request: &Request<B>) -> Cors {
             );
             Cors::Allowed(headers)
         }
-        (None, true) if !rules.is_empty() => Cors::Refused,
-        (None, _) => Cors::None,
+        (None, _) => Cors::Refused,
     }
 }
 

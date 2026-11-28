@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 //! CORS per route (G17): allowed origins get their headers, preflights are
-//! answered by the gateway, other origins get nothing or a 403.
+//! answered by the gateway, and any other origin gets a 403: a request
+//! with an `Origin` no rule allows is refused (DNS rebinding, MCP
+//! Streamable HTTP). Clients that are not browsers send no `Origin`.
 
 mod common;
 
@@ -94,26 +96,34 @@ async fn an_allowed_origin_can_read_the_answer_and_its_headers() -> Res<()> {
 }
 
 #[tokio::test]
-async fn other_origins_and_other_paths_get_no_cors_headers() -> Res<()> {
+async fn other_origins_and_uncovered_paths_are_refused() -> Res<()> {
     let ingress = rig(app_rule()).await?;
     let evil = request(Method::GET, "/mcp/x", "https://evil.example", false)?;
-    let (_, headers, _) = h1(&ingress, evil).await?;
-    assert_eq!(header(&headers, "access-control-allow-origin"), None);
-    let elsewhere = request(Method::GET, "/mcpx", APP, false)?;
-    let (_, headers, _) = h1(&ingress, elsewhere).await?;
+    let (status, headers, _) = h1(&ingress, evil).await?;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(header(&headers, "tw-error"), Some("TW-I007"));
+    let elsewhere = request(Method::POST, "/mcpx", APP, false)?;
+    let (status, headers, _) = h1(&ingress, elsewhere).await?;
+    assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(header(&headers, "access-control-allow-origin"), None);
     Ok(())
 }
 
 #[tokio::test]
-async fn without_rules_a_preflight_goes_to_the_connector() -> Res<()> {
+async fn without_rules_any_origin_is_refused_and_no_origin_is_served() -> Res<()> {
     let ingress = rig(Vec::new()).await?;
-    let (status, headers, body) =
-        h1(&ingress, request(Method::OPTIONS, "/mcp", APP, true)?).await?;
+    let (status, _, _) = h1(&ingress, request(Method::OPTIONS, "/mcp", APP, true)?).await?;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _, _) = h1(&ingress, request(Method::POST, "/mcp", APP, false)?).await?;
     assert_eq!(
-        (status, body.as_str()),
-        (StatusCode::OK, "echo OPTIONS /mcp")
+        status,
+        StatusCode::FORBIDDEN,
+        "a rebinding page's simple POST"
     );
-    assert_eq!(header(&headers, "access-control-allow-origin"), None);
+    let plain = Request::post("/mcp")
+        .header("host", "h")
+        .body(Full::new(Bytes::new()))?;
+    let (status, _, body) = h1(&ingress, plain).await?;
+    assert_eq!((status, body.as_str()), (StatusCode::OK, "echo POST /mcp"));
     Ok(())
 }
