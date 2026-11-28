@@ -303,7 +303,7 @@ impl Gateway {
 
     async fn wait(&self, target: &Target, route: &str) -> Result<Lease, SendError> {
         let config = &self.inner.config;
-        let _queued = self
+        let queued = self
             .inner
             .registry
             .enqueue(route, config.limits.max_waiting_per_route)
@@ -315,7 +315,11 @@ impl Gateway {
             tokio::pin!(notified);
             // Registered before looking, so a release in between is not missed.
             notified.as_mut().enable();
-            match self.pick(target) {
+            let pick = self
+                .inner
+                .registry
+                .pick_queued(config.resolver.as_ref(), target, &queued);
+            match pick {
                 Pick::Ready(lease) => return Ok(lease),
                 Pick::None => return Err(SendError::NoRoute),
                 Pick::Wait(_) => {}
