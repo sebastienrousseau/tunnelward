@@ -4,7 +4,7 @@
 //! Live connectors, routes kept after their connectors leave, and how
 //! many requests wait for each route.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -33,7 +33,9 @@ struct Kept {
 struct State {
     entries: Vec<Entry>,
     kept: Vec<Kept>,
-    waiting: HashMap<String, u32>,
+    /// Each route's wait queue, as tickets in arrival order.
+    waiting: HashMap<String, VecDeque<u64>>,
+    next_ticket: u64,
     /// Dark targets (G14): matching connections stay connected but take
     /// no new request.
     dark: Vec<DrainTarget>,
@@ -305,7 +307,9 @@ impl Registry {
     }
 
     pub(crate) fn waiting(&self) -> u32 {
-        self.lock().waiting.values().sum()
+        let state = self.lock();
+        let count: usize = state.waiting.values().map(VecDeque::len).sum();
+        u32::try_from(count).unwrap_or(u32::MAX)
     }
 
     /// The claim that ranks highest for `target` now, if any.
@@ -318,41 +322,85 @@ impl Registry {
     }
 
     /// Finds a slot for `target` among the connectors whose claim ranks
-    /// highest, or says where to wait.
+    /// highest, or says where to wait. A request that is not queued comes
+    /// after every request already waiting for that route.
     pub(crate) fn pick(&self, resolver: &dyn RouteResolver, target: &Target) -> Pick {
+        self.pick_at(resolver, target, None)
+    }
+
+    /// [`Registry::pick`] for a request holding `queued`: it may take a
+    /// free slot only when fewer requests wait ahead of it than there are
+    /// free slots, so slots go out in arrival order.
+    pub(crate) fn pick_queued(
+        &self,
+        resolver: &dyn RouteResolver,
+        target: &Target,
+        queued: &Queued<'_>,
+    ) -> Pick {
+        self.pick_at(resolver, target, Some(queued.ticket))
+    }
+
+    fn pick_at(&self, resolver: &dyn RouteResolver, target: &Target, ticket: Option<u64>) -> Pick {
         let mut state = self.lock();
         let now = Instant::now();
         state.entries.retain(|e| !e.sender.is_closed());
         state.kept.retain(|k| k.until > now);
-        let top = top_pool(resolver, &state.entries, target);
-        match top {
+        match top_pool(resolver, &state.entries, target) {
             None => coming_queue(resolver, &state, target),
-            Some((route, pool)) => {
-                let lit = |e: &&Entry| !state.dark.iter().any(|d| d.matches(e));
-                let room: Vec<&Entry> = pool
-                    .into_iter()
-                    .filter(|e| e.has_room() && lit(e))
-                    .collect();
-                choose(&room).map_or(Pick::Wait(route), |e| {
-                    Pick::Ready(e.lease(self.changed.clone()))
-                })
-            }
+            Some((route, pool)) => self.take(&state, route, pool, ticket),
         }
+    }
+
+    /// A slot among `pool`'s lit connectors with room, unless as many
+    /// requests wait ahead of `ticket` as there are free slots.
+    fn take(&self, state: &State, route: String, pool: Vec<&Entry>, ticket: Option<u64>) -> Pick {
+        let lit = |e: &&Entry| !state.dark.iter().any(|d| d.matches(e));
+        let room: Vec<&Entry> = pool
+            .into_iter()
+            .filter(|e| e.has_room() && lit(e))
+            .collect();
+        if ahead(state, &route, ticket) >= free_slots(&room) {
+            return Pick::Wait(route);
+        }
+        choose(&room).map_or(Pick::Wait(route), |e| {
+            Pick::Ready(e.lease(self.changed.clone()))
+        })
     }
 
     /// Joins the wait queue for `route` if it holds fewer than `max`.
     pub(crate) fn enqueue(&self, route: &str, max: u32) -> Option<Queued<'_>> {
         let mut state = self.lock();
-        let count = state.waiting.entry(route.to_owned()).or_insert(0);
-        if *count >= max {
+        let ticket = state.next_ticket;
+        let queue = state.waiting.entry(route.to_owned()).or_default();
+        if queue.len() >= usize::try_from(max).unwrap_or(usize::MAX) {
             return None;
         }
-        *count += 1;
+        queue.push_back(ticket);
+        state.next_ticket += 1;
         Some(Queued {
             registry: self,
             route: route.to_owned(),
+            ticket,
         })
     }
+}
+
+/// How many requests wait for `route` ahead of `ticket`: all of them
+/// for a request that is not in that queue.
+fn ahead(state: &State, route: &str, ticket: Option<u64>) -> usize {
+    let Some(queue) = state.waiting.get(route) else {
+        return 0;
+    };
+    ticket
+        .and_then(|t| queue.iter().position(|q| *q == t))
+        .unwrap_or(queue.len())
+}
+
+/// Free slots across `room`.
+fn free_slots(room: &[&Entry]) -> usize {
+    room.iter()
+        .map(|e| usize::try_from(e.capacity.saturating_sub(e.load())).unwrap_or(0))
+        .sum()
 }
 
 /// The connectors whose claim ranks highest for `target`, and the route
@@ -413,17 +461,22 @@ impl Drop for Reservation<'_> {
 pub(crate) struct Queued<'a> {
     registry: &'a Registry,
     route: String,
+    ticket: u64,
 }
 
 impl Drop for Queued<'_> {
+    /// Leaves the queue and wakes the others: the request behind may now
+    /// be close enough to the front to take a free slot.
     fn drop(&mut self) {
         let mut state = self.registry.lock();
-        if let Some(count) = state.waiting.get_mut(&self.route) {
-            *count = count.saturating_sub(1);
-            if *count == 0 {
+        if let Some(queue) = state.waiting.get_mut(&self.route) {
+            queue.retain(|t| *t != self.ticket);
+            if queue.is_empty() {
                 state.waiting.remove(&self.route);
             }
         }
+        drop(state);
+        self.registry.changed.notify_waiters();
     }
 }
 

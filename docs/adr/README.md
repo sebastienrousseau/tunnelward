@@ -24,3 +24,4 @@ never rewritten once accepted; a new record supersedes it.
 | [0014](0014-out-of-band-approval.md) | Out-of-band approval for high-impact tools, by MCP URL elicitation | Accepted, implemented in 0.0.20 |
 | [0015](0015-kubernetes-operator-alpha.md) | A Kubernetes operator written against the API server's REST API | Accepted, implemented in 0.0.21 |
 | [0016](0016-gateway-blind-mode.md) | Gateway-blind mode, HPKE with X-Wing between agent and connector | Accepted, implemented in 0.0.22 (experimental) |
+| [0017](0017-server-descriptor-and-tool-guard.md) | The connector reports its MCP server and guards its tool list | Accepted, implemented in 0.0.23 |

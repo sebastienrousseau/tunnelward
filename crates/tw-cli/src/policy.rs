@@ -11,6 +11,9 @@
 //!                                   # for every call; cryptographic
 //!                                   # evidence for high-impact tools
 //! high_impact = ["transfer", "refund*"]   # also need an Idempotency-Key
+//! shadow = ["/mcp/payments"]        # optional: on these paths a call the
+//!                                   # policy would deny goes on, and the
+//!                                   # audit log says why (would_deny)
 //!
 //! [[rules]]                         # forbid wins over permit
 //! effect = "permit"                 # or "forbid"
@@ -61,6 +64,8 @@ struct File {
     baseline: Option<bool>,
     #[serde(default)]
     high_impact: Vec<String>,
+    #[serde(default)]
+    shadow: Vec<String>,
     #[serde(default)]
     rules: Vec<RulePart>,
 }
@@ -154,11 +159,14 @@ pub(crate) fn parse(text: &str, at: &str) -> Result<Policy, Problems> {
         .enumerate()
         .map(|(i, r)| rule(r, &format!("{at} rule {}", i + 1), &mut problems))
         .collect();
+    let bad_shadow = file.shadow.iter().filter(|p| !p.starts_with('/'));
+    problems.extend(bad_shadow.map(|p| format!("{at} shadow: {p:?}: start it with /")));
     let policy = Policy {
         rules,
         default,
         high_impact: file.high_impact,
         baseline: file.baseline.unwrap_or(true),
+        shadow: file.shadow,
     };
     problems.is_empty().then_some(policy).ok_or(problems)
 }

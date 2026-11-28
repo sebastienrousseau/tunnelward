@@ -27,6 +27,7 @@ struct Claim {
     connector_id: [u8; 16],
     routes: Vec<String>,
     domains: Vec<String>,
+    mcp: Option<tunnelward_proto::McpDescriptor>,
 }
 
 /// What the gateway decided.
@@ -47,6 +48,7 @@ impl Attempt {
             connector_id: register.connector_id.0,
             routes: register.routes.clone(),
             domains: register.domains.clone(),
+            mcp: register.mcp.clone(),
         });
     }
 
@@ -80,6 +82,11 @@ impl Attempt {
             entry.connector_id = Some(hex(&claim.connector_id));
             entry.routes = claim.routes;
             entry.domains = claim.domains;
+            if let Some(mcp) = claim.mcp {
+                entry.tools_digest = Some(hex(&mcp.tools_digest));
+                entry.server = Some(mcp.name);
+                entry.server_version = Some(mcp.version);
+            }
         }
         sink.record(Entry::Registration(Box::new(entry)), None);
     }

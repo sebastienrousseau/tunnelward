@@ -9,6 +9,8 @@
 //! connectors = "0.0.0.0:7443"   # connectors dial in here (mutual TLS)
 //! ingress = "0.0.0.0:8443"      # agents connect here
 //! admin = "127.0.0.1:9090"      # optional admin API
+//! drain_secs = 30               # optional: on SIGTERM or SIGINT, stop
+//!                               # accepting and give requests this long
 //!
 //! [tls]                         # the connector listener
 //! cert = "gateway.crt"          # PEM chain, leaf first
@@ -126,6 +128,8 @@ pub(crate) struct Listen {
     pub(crate) connectors: SocketAddr,
     pub(crate) ingress: SocketAddr,
     pub(crate) admin: Option<SocketAddr>,
+    /// Seconds a stopping gateway gives requests in flight (default 30).
+    pub(crate) drain_secs: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]

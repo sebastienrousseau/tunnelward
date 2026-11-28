@@ -94,6 +94,7 @@ pub fn connector_config(addr: &str, register: Register) -> Res<ConnectorConfig> 
         limits: Limits::default(),
         handshake_timeout: WAIT,
         attestation_file: None,
+        pinned: None,
     })
 }
 

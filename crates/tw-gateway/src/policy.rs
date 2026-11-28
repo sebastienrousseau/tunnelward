@@ -6,6 +6,9 @@
 //! by the gateway with a JSON-RPC error (`TW-P001`, code -32001) and never
 //! reaches the connector.
 //!
+//! On a path the policy has in shadow mode, a denied call goes on and
+//! the verdict carries why it would have been denied, for the audit log.
+//!
 //! The policy must see what the server will see. A POST whose body is
 //! JSON but not a JSON-RPC message the gateway can read is refused, so a
 //! body the server reads differently cannot carry a call past the policy;
@@ -26,12 +29,13 @@ const ID: &str = "TW-P001";
 /// The JSON-RPC error code of a call the policy denies.
 const DENIED: i32 = -32001;
 
-/// What the policy says about a request.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Verdict {
-    /// Forward it; `high_impact` when a call in it is to a high-impact
-    /// tool, which needs an idempotency key.
-    Forward { high_impact: bool },
+/// What the policy says about a request: forward it. `high_impact` when
+/// a call in it is to a high-impact tool, which needs an idempotency key;
+/// `would_deny` when shadow mode let through a call it would deny.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct Verdict {
+    pub(crate) high_impact: bool,
+    pub(crate) would_deny: Option<String>,
 }
 
 /// How well the request's sender is known (FR-14): cryptographic for a
@@ -83,7 +87,14 @@ pub(crate) fn decide(
 /// A request that is not JSON-RPC: one call, refused with 403.
 fn single(engine: &dyn PolicyEngine, call: &Call<'_>) -> Result<Verdict, Refusal> {
     match engine.decide(call) {
-        Decision::Allow { high_impact } => Ok(Verdict::Forward { high_impact }),
+        Decision::Allow { high_impact } => Ok(Verdict {
+            high_impact,
+            would_deny: None,
+        }),
+        Decision::Deny(why) if engine.shadowed(call) => Ok(Verdict {
+            high_impact: engine.high_impact(call),
+            would_deny: Some(why),
+        }),
         Decision::Deny(why) => Err(Refusal::new(ID, StatusCode::FORBIDDEN, why)),
     }
 }
@@ -95,7 +106,7 @@ fn calls(
     envelope: &Envelope,
     info: &RequestInfo,
 ) -> Result<Verdict, Refusal> {
-    let mut high_impact = false;
+    let mut verdict = Verdict::default();
     let mut denied = None;
     for message in envelope
         .messages
@@ -103,15 +114,20 @@ fn calls(
         .filter(|m| m.kind != Kind::Response)
     {
         let method = message.method.as_deref().unwrap_or_default();
-        match engine.decide(&call(info, method, message.tool.as_deref())) {
-            Decision::Allow { high_impact: h } => high_impact |= h,
+        let call = call(info, method, message.tool.as_deref());
+        match engine.decide(&call) {
+            Decision::Allow { high_impact: h } => verdict.high_impact |= h,
+            Decision::Deny(why) if engine.shadowed(&call) => {
+                verdict.high_impact |= engine.high_impact(&call);
+                verdict.would_deny.get_or_insert(why);
+            }
             Decision::Deny(why) => {
                 denied.get_or_insert(why);
             }
         }
     }
     match denied {
-        None => Ok(Verdict::Forward { high_impact }),
+        None => Ok(verdict),
         Some(why) => Err(json_rpc_refusal(envelope, why)),
     }
 }

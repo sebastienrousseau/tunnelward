@@ -119,6 +119,7 @@ fn unmapped(entry: &RequestEntry) -> Value {
         "request_digest": entry.request_digest,
         "result_digest": entry.result_digest,
         "receipt": entry.receipt,
+        "would_deny": entry.would_deny,
     })
 }
 
@@ -171,6 +172,9 @@ fn registration(entry: &RegistrationEntry, seq: u64, time: u64) -> Value {
             "routes": entry.routes,
             "domains": entry.domains,
             "attestation": entry.attestation,
+            "server": entry.server,
+            "server_version": entry.server_version,
+            "tools_digest": entry.tools_digest,
         },
     });
     if let Some(peer) = &entry.peer {

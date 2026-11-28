@@ -131,11 +131,11 @@ impl Blind {
     }
 }
 
-fn full(bytes: Bytes) -> ForwardBody {
+pub(crate) fn full(bytes: Bytes) -> ForwardBody {
     Full::new(bytes).map_err(|e| match e {}).boxed()
 }
 
-fn rebuilt(parts: http::request::Parts, body: Bytes) -> Outgoing {
+pub(crate) fn rebuilt(parts: http::request::Parts, body: Bytes) -> Outgoing {
     Outgoing::from_parts(parts, full(body))
 }
 

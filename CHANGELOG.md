@@ -7,6 +7,72 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow the 0.0.N release train described in `AGENTS.md`.
 
+## [0.0.23]
+
+### Added
+
+- The connector reports its MCP server and guards its tool list (spec
+  G3, ADR 0017). With `[register.describe]` it asks its server for
+  `initialize` and every page of `tools/list` before registering, over
+  Streamable HTTP or the stdio bridge, and sends the name, version and
+  a digest of the tools in `Register.mcp`, so a route's attestation
+  rule now checks the version. Every `initialize` and `tools/list`
+  answer is then read on its way to the agent: a new or rewritten tool,
+  or another server or version, is replaced with a JSON-RPC error
+  (-32001), in normal and gateway-blind mode. `on_change = "block"`
+  (the default) keeps refusing until a restart; `"reregister"`
+  registers again so the gateway admits the change afresh. The
+  registration audit entry records `server`, `server_version` and
+  `tools_digest`. `tunnelward-connector`: `Described`, `Pinned`,
+  `OnChange`, `Forward::describe`, `Forward::with_pinned`,
+  `StdioBridge::describe`, `StdioBridge::with_pinned`.
+- Shadow mode for the tool policy: `shadow = ["/mcp/payments"]` in a
+  policy file forwards what the policy would deny on those paths and
+  records why in the audit entry (`would_deny`, also in the OCSF
+  export). A high-impact tool still needs its idempotency key and
+  approval. `PolicyEngine::shadowed` and `PolicyEngine::high_impact`
+  have defaults, so other engines keep working.
+- Graceful shutdown on SIGTERM and SIGINT (Ctrl-C on Windows). The
+  gateway reports not ready, stops accepting, drains every connector
+  connection for `[listen] drain_secs` (30 by default) and exits 0;
+  the connector sends GOAWAY, gives requests 30 s and exits 0. The Helm
+  chart sets `terminationGracePeriodSeconds: 45`.
+  `Gateway::drain_all`.
+- `tests/cranker.rs`: the five defect classes of the mu-cranker-router
+  audit as Tunnelward tests (M1's exit criterion): dark host bypass,
+  per-domain leak, header floods from agents and connectors, a stream
+  cut part-way, and the wait queue's order.
+- `tests/ml_kem_differential.rs`: aws-lc-rs's ML-KEM-768 against
+  kyberlib on every run: 2,000 encapsulations each way, 500 tampered
+  ciphertexts rejected to the same secret, and kyberlib encapsulating
+  to aws-lc-rs's keys.
+- `scripts/passmcp-check.sh` (passmcp on every MCP server the
+  repository ships or serves, directly and through the tunnel) and
+  `scripts/mcp-conformance.sh` (the MCP project's conformance suite,
+  directly and through the gateway, with the same result required),
+  both run before every release.
+- The release attests the crate SBOM to the container image
+  (`cosign verify-attestation --type cyclonedx`).
+
+### Fixed
+
+- A request with an `Origin` no CORS rule allows is refused with 403
+  (TW-I007), not only a preflight: a simple POST from a page reached the
+  gateway through DNS rebinding.
+- A freed slot goes to the request that has waited longest; a request
+  arriving at that moment could take it ahead of the queue.
+- The stdio bridge answers a notification with an empty 202 (it sent
+  a newline).
+- The `stdio-echo` example refuses an unknown tool or a missing name
+  and declares its description, schemas and annotations.
+
+### Changed
+
+- New dependencies, approved by name (docs/POLICIES.md):
+  `signal-hook-registry` 1.4.8 and `errno` 0.3.15, through tokio's
+  `signal` feature (101 third-party packages, from 99). `rand_core` 0.6
+  becomes a direct dev-dependency of `tunnelward-crypto`.
+
 ## [0.0.22]
 
 ### Added

@@ -10,9 +10,9 @@ use std::time::{Duration, SystemTime};
 use tunnelward_gateway::Gateway;
 
 use crate::config;
-use crate::serve::{Listeners, bind, until_one_stops};
+use crate::serve::{Listeners, bind, until_stopped};
 
-/// Binds every listener, then serves until one fails.
+/// Binds every listener, then serves until one fails or a stop is asked.
 pub(crate) async fn run(path: &Path) -> Result<(), String> {
     let file = config::load(path)?;
     let mut checked = config::check(path, file).map_err(|problems| problems.join("\n"))?;
@@ -47,7 +47,8 @@ pub(crate) async fn run(path: &Path) -> Result<(), String> {
         (checked.control)
             .map(|c| tokio::spawn(crate::control::pull::keep_pulling(c, gateway.clone()))),
     );
-    let stopped = until_one_stops(&gateway, listeners).await;
+    let drain = Duration::from_secs(checked.listen.drain_secs.unwrap_or(30));
+    let stopped = until_stopped(&gateway, listeners, drain).await;
     tasks.iter().for_each(tokio::task::JoinHandle::abort);
     // A last checkpoint signs everything written.
     if let Some(sink) = &audit {

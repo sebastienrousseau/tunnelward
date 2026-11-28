@@ -88,6 +88,10 @@ pub struct RequestEntry {
     /// What raised it, such as `velocity:tool:61>60` or `canary-record`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub risk_signals: Vec<String>,
+    /// In shadow mode, why the policy would have denied the request
+    /// that was forwarded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub would_deny: Option<String>,
 }
 
 /// An operator's action through the admin API.
@@ -166,6 +170,17 @@ pub struct RegistrationEntry {
     /// SHA-256 of the attestation it was admitted with (FR-5), in hex.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attestation: Option<String>,
+    /// The MCP server the connector reports (ADR 0017): its name, as in
+    /// its `initialize` answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
+    /// That server's version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_version: Option<String>,
+    /// SHA-256 of that server's tool list (ADR 0017), in hex, so a change
+    /// of tools between registrations shows in the log.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools_digest: Option<String>,
 }
 
 /// What a [`crate::Sink`] records.

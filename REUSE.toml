@@ -12,7 +12,7 @@ SPDX-PackageDownloadLocation = "https://github.com/sebastienrousseau/tunnelward"
 
 # Written by cargo, cargo-vet and npm, which rewrite them whole.
 [[annotations]]
-path = ["Cargo.lock", "fuzz/Cargo.lock", "supply-chain/**", "scripts/stdio-reference/package.json", "scripts/stdio-reference/package-lock.json"]
+path = ["Cargo.lock", "fuzz/Cargo.lock", "supply-chain/**", "scripts/stdio-reference/package.json", "scripts/stdio-reference/package-lock.json", "scripts/mcp-conformance/package.json", "scripts/mcp-conformance/package-lock.json"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Sebastien Rousseau <sebastian.rousseau@gmail.com>"
 SPDX-License-Identifier = "GPL-3.0-only"

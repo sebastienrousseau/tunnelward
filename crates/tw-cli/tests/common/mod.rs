@@ -15,6 +15,8 @@ use std::time::Duration;
 
 use tunnelward_testpki as pki;
 
+pub mod procs;
+
 pub type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
 pub fn tunnelward(args: &[&str]) -> std::io::Result<Output> {

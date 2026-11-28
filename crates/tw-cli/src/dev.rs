@@ -110,6 +110,7 @@ fn connector(
         limits: Limits::default(),
         handshake_timeout: Duration::from_secs(5),
         attestation_file: None,
+        pinned: None,
     };
     Ok(ConnectorConfig::new(
         Gateways::Static(vec![gateway]),

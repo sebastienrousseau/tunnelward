@@ -11,7 +11,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tunnelward_audit::{Sink, verify};
-use tunnelward_connector::{Error as ConnectError, register};
+use tunnelward_connector::{
+    Connector, ConnectorEvent, Described, Error as ConnectError, Gateways, OnChange, Pinned,
+    register,
+};
 use tunnelward_proto::RejectCode;
 
 use common::{Res, audit_sink, connector_config, gateway_config, logged, registration, start};
@@ -72,4 +75,61 @@ async fn a_refused_registration_is_logged_with_its_code_and_both_identities() ->
             .is_some_and(|r| r.contains(CONNECTOR))
     );
     Ok(())
+}
+
+/// ADR 0017: the server a connector reports is in its registration
+/// entry, and when its tools change under `Reregister` it registers
+/// again with the new digest, which the log shows.
+#[tokio::test]
+async fn the_reported_server_and_a_change_of_tools_are_logged() -> Res<()> {
+    let (addr, sink, path) = audited("registration-described").await?;
+    let pinned = Pinned::new(
+        Described::new("payments", "2.1.0", &[transfer("Moves money.")])?,
+        OnChange::Reregister,
+    );
+    let connector = pinned_connector(&addr, &pinned)?;
+    let mut events = connector.events();
+    registered(&mut events).await?;
+    let before = hex(&pinned.descriptor().tools_digest);
+    let changed = serde_json::json!({ "jsonrpc": "2.0", "id": 1, "result": { "tools": [transfer("Moves money, and more.")] } });
+    let request = serde_json::json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" });
+    assert!(pinned.check_exchange(&[request], &[changed]).is_err());
+    registered(&mut events).await?;
+    drop(connector);
+    let entries = logged(&sink, &path, "registration")?;
+    let accepted: Vec<_> = entries
+        .iter()
+        .filter(|e| e["decision"] == "accepted")
+        .collect();
+    assert!(accepted.len() >= 2, "{entries:?}");
+    assert_eq!(accepted[0]["server"], "payments");
+    assert_eq!(accepted[0]["server_version"], "2.1.0");
+    assert_eq!(accepted[0]["tools_digest"], before.as_str());
+    let after = hex(&pinned.descriptor().tools_digest);
+    assert_ne!(before, after);
+    assert_eq!(accepted[accepted.len() - 1]["tools_digest"], after.as_str());
+    Ok(())
+}
+
+fn transfer(description: &str) -> serde_json::Value {
+    serde_json::json!({ "name": "transfer", "description": description })
+}
+
+/// A supervised connector with one connection to `addr`, held to `pinned`.
+fn pinned_connector(addr: &str, pinned: &Pinned) -> Res<Connector> {
+    let mut config = common::supervised(Gateways::Static(vec![common::addr(addr)?]), addr)?;
+    config.connections_per_gateway = 1;
+    config.session.pinned = Some(pinned.clone());
+    let service = common::gated_service(Arc::new(tokio::sync::Semaphore::new(64)));
+    Ok(Connector::start(config, service))
+}
+
+/// Waits for the next `Registered` event.
+async fn registered(events: &mut tokio::sync::broadcast::Receiver<ConnectorEvent>) -> Res<()> {
+    while !matches!(events.recv().await?, ConnectorEvent::Registered { .. }) {}
+    Ok(())
+}
+
+fn hex(bytes: &[u8]) -> String {
+    tunnelward_audit::hex(bytes)
 }

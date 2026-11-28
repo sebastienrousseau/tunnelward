@@ -6,12 +6,15 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 mod common;
 
-use common::{Res, pki_dir, text, tunnelward, write_config};
+use common::procs::{
+    Lines, bound, connector_file, expect, gateway_file, spawn_connector, spawn_gateway_lines,
+};
+use common::{Res, Running, pki_dir, text, tunnelward, write_config};
 use tunnelward_testpki as pki;
 
 #[test]
@@ -102,25 +105,6 @@ fn hello_service() -> Res<String> {
     Ok(addr)
 }
 
-/// The address after `<label> on ` in a startup line.
-fn bound(line: &str, label: &str) -> Res<String> {
-    let rest = line
-        .split(&format!("{label} on "))
-        .nth(1)
-        .ok_or_else(|| format!("no {label} address in {line:?}"))?;
-    Ok(rest.split([',', ' ']).next().unwrap_or_default().to_owned())
-}
-
-/// Stops the child when the test ends, pass or fail.
-struct Running(Child);
-
-impl Drop for Running {
-    fn drop(&mut self) {
-        let _killed = self.0.kill();
-        let _reaped = self.0.wait();
-    }
-}
-
 #[test]
 fn dev_puts_a_tunnel_in_front_of_a_local_service() -> Res<()> {
     let service = hello_service()?;
@@ -176,52 +160,11 @@ fn dev_refuses_a_public_listener() -> Res<()> {
     Ok(())
 }
 
-/// Lines a child prints, on a channel, so a test can wait for one.
-fn lines(stream: impl Read + Send + 'static) -> std::sync::mpsc::Receiver<String> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        for line in BufReader::new(stream).lines().map_while(Result::ok) {
-            if tx.send(line).is_err() {
-                break;
-            }
-        }
-    });
-    rx
-}
-
-/// Waits for a line containing `wanted`, and returns it.
-fn expect(rx: &Lines, wanted: &str) -> Res<String> {
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
-        let line = rx.recv_timeout(left)?;
-        if line.contains(wanted) {
-            return Ok(line);
-        }
-    }
-    Err(format!("no line containing {wanted:?}").into())
-}
-
-type Lines = std::sync::mpsc::Receiver<String>;
-
-/// `tunnelward gateway` on `config`, with its stdout and stderr lines.
-fn spawn_gateway(config: &Path) -> Res<(Running, Lines, Lines)> {
-    let mut child = Running(
-        Command::new(env!("CARGO_BIN_EXE_tunnelward"))
-            .args(["gateway", "--config", &config.to_string_lossy()])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?,
-    );
-    let out = lines(child.0.stdout.take().ok_or("no stdout")?);
-    let err = lines(child.0.stderr.take().ok_or("no stderr")?);
-    Ok((child, out, err))
-}
-
 #[test]
 fn the_gateway_reloads_renewed_certificates_and_keeps_good_ones() -> Res<()> {
     let dir = pki_dir("reload")?;
     let path = write_config(&dir, "reload_secs = 1\n")?;
-    let (child, out, err) = spawn_gateway(&path)?;
+    let (child, out, err) = spawn_gateway_lines(&path)?;
     expect(&out, "tunnelward gateway: connectors on")?;
 
     std::fs::write(dir.join("gateway.key"), "not a key")?;
@@ -233,21 +176,6 @@ fn the_gateway_reloads_renewed_certificates_and_keeps_good_ones() -> Res<()> {
     expect(&out, "certificates and policy reloaded")?;
     drop(child);
     Ok(std::fs::remove_dir_all(dir)?)
-}
-
-fn connector_file(dir: &Path, gateway: &str, target: &str, routes: &str) -> Res<PathBuf> {
-    let path = dir.join("connector.toml");
-    std::fs::write(
-        &path,
-        format!(
-            "[gateway]\naddress = \"{gateway}\"\nserver_name = \"{}\"\nca = \"ca.crt\"\n\n\
-             [identity]\ncert = \"connector.crt\"\nkey = \"connector.key\"\n\
-             spiffe_id = \"spiffe://example.org/connector\"\n\n\
-             [register]\nroutes = [{routes}]\n\n[target]\nurl = \"{target}\"\n",
-            pki::GATEWAY_NAME
-        ),
-    )?;
-    Ok(path)
 }
 
 #[test]
@@ -287,36 +215,12 @@ fn a_connector_file_must_claim_its_certificates_identity() -> Res<()> {
     Ok(std::fs::remove_dir_all(dir)?)
 }
 
-fn gateway_file(dir: &Path, connectors: &str, ingress: &str) -> Res<PathBuf> {
-    let path = dir.join("tunnelward.toml");
-    std::fs::write(
-        &path,
-        format!(
-            "[listen]\nconnectors = \"{connectors}\"\ningress = \"{ingress}\"\n\n\
-             [tls]\ncert = \"gateway.crt\"\nkey = \"gateway.key\"\nclient_ca = \"ca.crt\"\n"
-        ),
-    )?;
-    Ok(path)
-}
-
 /// [`gateway_file`] on loopback ports with `extra` appended.
 fn gateway_file_with(dir: &Path, extra: &str) -> Res<PathBuf> {
     let path = gateway_file(dir, "127.0.0.1:0", "127.0.0.1:0")?;
     let text = std::fs::read_to_string(&path)? + extra;
     std::fs::write(&path, text)?;
     Ok(path)
-}
-
-/// `tunnelward connector` on `config`, with its stdout lines.
-fn spawn_connector(config: &Path) -> Res<(Running, Lines)> {
-    let mut child = Running(
-        Command::new(env!("CARGO_BIN_EXE_tunnelward"))
-            .args(["connector", "--config", &config.to_string_lossy()])
-            .stdout(Stdio::piped())
-            .spawn()?,
-    );
-    let out = lines(child.0.stdout.take().ok_or("no stdout")?);
-    Ok((child, out))
 }
 
 /// An agent's GET for `path` at `ingress`, and the whole raw answer.
@@ -344,7 +248,7 @@ fn start_pair(dir: &Path) -> Res<(Running, Running, String)> {
 /// `[tls]` table); also returns the gateway's stdout lines.
 fn start_pair_with(dir: &Path, extra: &str) -> Res<(Running, Running, String, Lines)> {
     let service = hello_service()?;
-    let (gateway, gateway_out, _) = spawn_gateway(&gateway_file_with(dir, extra)?)?;
+    let (gateway, gateway_out, _) = spawn_gateway_lines(&gateway_file_with(dir, extra)?)?;
     let started = expect(&gateway_out, "connectors on")?;
     let (connectors, ingress) = (bound(&started, "connectors")?, bound(&started, "agents")?);
     let target = format!("http://{service}");
@@ -384,104 +288,6 @@ fn a_gateway_and_a_connector_from_their_files_serve_a_request() -> Res<()> {
         answer.starts_with("HTTP/1.1 200") && answer.ends_with("hello"),
         "{answer}"
     );
-    drop((connector, gateway));
-    Ok(std::fs::remove_dir_all(dir)?)
-}
-
-/// tunnelward-connector's `stdio-echo` example, which a workspace
-/// `cargo test` builds into the profile directory's `examples`. The test
-/// binary sits in `deps` below that directory, or deeper in Cargo's newer
-/// build layout (`build/<package>/<hash>/out`), so every ancestor is
-/// tried.
-fn stdio_echo() -> Res<PathBuf> {
-    let exe = std::env::current_exe()?;
-    let name = format!("stdio-echo{}", std::env::consts::EXE_SUFFIX);
-    exe.ancestors()
-        .map(|dir| dir.join("examples").join(&name))
-        .find(|path| path.is_file())
-        .ok_or_else(|| "the stdio-echo example is not built: run `cargo test --workspace`".into())
-}
-
-/// Sends `request` to `ingress` and reads until `until` appears.
-fn read_until(ingress: &str, request: &str, until: &str) -> Res<String> {
-    let mut agent = TcpStream::connect(ingress)?;
-    agent.set_read_timeout(Some(Duration::from_secs(10)))?;
-    agent.write_all(request.as_bytes())?;
-    let mut seen = Vec::new();
-    let mut chunk = [0_u8; 4096];
-    while !String::from_utf8_lossy(&seen).contains(until) {
-        let n = agent.read(&mut chunk)?;
-        if n == 0 {
-            break;
-        }
-        seen.extend_from_slice(&chunk[..n]);
-    }
-    Ok(String::from_utf8_lossy(&seen).into_owned())
-}
-
-/// A JSON-RPC POST to `/mcp/`, in `session` when given.
-fn mcp_post(body: &str, session: Option<&str>) -> String {
-    let session = session.map_or(String::new(), |s| format!("mcp-session-id: {s}\r\n"));
-    format!(
-        "POST /mcp/ HTTP/1.1\r\nhost: h\r\ncontent-type: application/json\r\n{session}\
-         content-length: {}\r\nconnection: close\r\n\r\n{body}",
-        body.len()
-    )
-}
-
-/// A connector file in `dir` for `gateway` whose target is the stdio
-/// example.
-fn stdio_connector_file(dir: &Path, gateway: &str) -> Res<PathBuf> {
-    let file = connector_file(dir, gateway, "unused", "\"mcp\"")?;
-    let stdio = format!("stdio = ['{}']", stdio_echo()?.display());
-    let text = std::fs::read_to_string(&file)?.replace("url = \"unused\"", &stdio);
-    std::fs::write(&file, text)?;
-    Ok(file)
-}
-
-/// A gateway and a connector bridging to the stdio example, in `dir`:
-/// both processes and the ingress address, once registered.
-fn start_stdio_pair(dir: &Path) -> Res<(Running, Running, String)> {
-    let (gateway, out, _) = spawn_gateway(&gateway_file(dir, "127.0.0.1:0", "127.0.0.1:0")?)?;
-    let started = expect(&out, "connectors on")?;
-    let (connectors, ingress) = (bound(&started, "connectors")?, bound(&started, "agents")?);
-    let (connector, connector_out) = spawn_connector(&stdio_connector_file(dir, &connectors)?)?;
-    expect(&connector_out, "Registered")?;
-    Ok((gateway, connector, ingress))
-}
-
-/// Initialises an MCP session through `ingress`; its id.
-fn initialise(ingress: &str) -> Res<String> {
-    let init = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"#;
-    let answer = read_until(ingress, &mcp_post(init, None), "stdio-echo")?;
-    assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
-    let id = answer
-        .lines()
-        .find_map(|l| l.strip_prefix("mcp-session-id: "))
-        .ok_or("no session id")?;
-    Ok(id.trim().to_owned())
-}
-
-#[test]
-fn a_stdio_mcp_server_is_served_through_the_tunnel() -> Res<()> {
-    let dir = pki_dir("stdio-bridge")?;
-    let (gateway, connector, ingress) = start_stdio_pair(&dir)?;
-    let session = initialise(&ingress)?;
-    let call = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"echo","arguments":{"text":"through the tunnel"}}}"#;
-    let answer = read_until(
-        &ingress,
-        &mcp_post(call, Some(&session)),
-        "through the tunnel",
-    )?;
-    assert!(
-        answer.contains(r#""text":"through the tunnel""#),
-        "{answer}"
-    );
-    let stream = format!(
-        "GET /mcp/ HTTP/1.1\r\nhost: h\r\naccept: text/event-stream\r\nmcp-session-id: {session}\r\n\r\n"
-    );
-    let events = read_until(&ingress, &stream, "echoing through the tunnel")?;
-    assert!(events.contains("id: 1\n"), "{events}");
     drop((connector, gateway));
     Ok(std::fs::remove_dir_all(dir)?)
 }

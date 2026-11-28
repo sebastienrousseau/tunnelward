@@ -22,13 +22,16 @@
 
 mod backoff;
 mod blind;
+mod describe;
 mod error;
 mod event;
 mod forward;
+mod guard;
 mod session;
 mod slot;
 mod stdio;
 mod supervisor;
+mod tools;
 
 pub use backoff::Backoff;
 pub use blind::Blind;
@@ -38,3 +41,4 @@ pub use forward::{Forward, ForwardBody, RequestHook, Target};
 pub use session::{Config, Registered, register};
 pub use stdio::{StdioBody, StdioBridge, StdioConfig};
 pub use supervisor::{Connector, ConnectorConfig, Gateways};
+pub use tools::{Described, OnChange, Pinned};

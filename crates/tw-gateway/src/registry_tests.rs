@@ -80,3 +80,65 @@ async fn a_reservation_that_ends_wakes_the_waiters() -> Result<(), String> {
         .await
         .map_err(|_| "no wake-up when the reservation ended".to_owned())
 }
+
+/// A live link over an in-memory HTTP/2 connection whose server end
+/// answers nothing the tests send; they only take and free its slots.
+async fn link() -> Result<Link, String> {
+    use hyper_util::rt::{TokioExecutor, TokioIo};
+    let (client, server) = tokio::io::duplex(64 * 1024);
+    tokio::spawn(async move {
+        let service = hyper::service::service_fn(|_req| async {
+            Ok::<_, std::convert::Infallible>(hyper::Response::new(Full::new(Bytes::new())))
+        });
+        let _ended = hyper::server::conn::http2::Builder::new(TokioExecutor::new())
+            .serve_connection(TokioIo::new(server), service)
+            .await;
+    });
+    let (sender, conn) =
+        hyper::client::conn::http2::handshake(TokioExecutor::new(), TokioIo::new(client))
+            .await
+            .map_err(|e| e.to_string())?;
+    tokio::spawn(async move {
+        let _ended = conn.await;
+    });
+    Ok(Link {
+        sender,
+        grant: 16,
+        peer: None,
+        kill: Arc::new(crate::kill::KillSwitch::default()),
+        attested: None,
+        tls: crate::admin::Tls::default(),
+    })
+}
+
+/// A slot that frees while requests wait goes to the one that has
+/// waited longest: a request arriving at that moment queues behind
+/// them instead of taking it (the waiting-queue bypass).
+#[tokio::test]
+async fn a_freed_slot_goes_to_the_queue_not_a_newcomer() -> Result<(), String> {
+    let registry = Registry::default();
+    let _session = registry.insert(claim("mcp"), link().await?);
+    let Pick::Ready(first) = registry.pick(&LongestFirst, &target("/mcp/1")) else {
+        return Err("the free slot was not taken".into());
+    };
+    let Pick::Wait(route) = registry.pick(&LongestFirst, &target("/mcp/2")) else {
+        return Err("a full connector did not make the request wait".into());
+    };
+    let queued = registry.enqueue(&route, 8).ok_or("queue full")?;
+    drop(first);
+    assert!(
+        matches!(
+            registry.pick(&LongestFirst, &target("/mcp/3")),
+            Pick::Wait(_)
+        ),
+        "a newcomer took the slot ahead of the queue"
+    );
+    assert!(
+        matches!(
+            registry.pick_queued(&LongestFirst, &target("/mcp/2"), &queued),
+            Pick::Ready(_)
+        ),
+        "the longest waiter did not get the slot"
+    );
+    Ok(())
+}
