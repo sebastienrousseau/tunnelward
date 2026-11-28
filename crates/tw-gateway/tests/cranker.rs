@@ -123,26 +123,40 @@ async fn a_dark_connection_is_not_reached_by_domain_route_or_catch_all() -> Res<
     .await?;
     eventually("registered", || gateway.routes().len() == 2).await?;
     assert!(gateway.set_dark(DrainTarget::Connector(ConnectorId([1; 16])), true));
-    for uri in ["http://a.example/mcp/x", "http://a.example/other"] {
-        let sent = send(&gateway, uri).await?;
+    none_reached(&gateway, &DARK_CLAIMS).await?;
+    let _lit =
+        start_connector(&addr, "lit", registration(2, &["mcp", "*"], &["a.example"])).await?;
+    eventually("both connected", || connections(&gateway) == 2).await?;
+    all_served_by(&gateway, &DARK_CLAIMS, "lit ").await
+}
+
+/// A request for each of the dark connector's claims: its route, and
+/// the catch-all, on its domain.
+const DARK_CLAIMS: [&str; 2] = ["http://a.example/mcp/x", "http://a.example/other"];
+
+/// Every request in `uris` waits and is unavailable: none is served.
+async fn none_reached(gateway: &Gateway, uris: &[&str]) -> Res<()> {
+    for uri in uris {
+        let sent = send(gateway, uri).await?;
         assert!(
             matches!(sent, Err(SendError::Unavailable { .. })),
             "{uri} reached a dark connection: {sent:?}"
         );
     }
-    let _lit =
-        start_connector(&addr, "lit", registration(2, &["mcp", "*"], &["a.example"])).await?;
-    eventually("both connected", || connections(&gateway) == 2).await?;
-    for uri in ["http://a.example/mcp/x", "http://a.example/other"] {
-        assert!(get(&gateway, uri).await?.1.starts_with("lit "), "{uri}");
+    Ok(())
+}
+
+async fn all_served_by(gateway: &Gateway, uris: &[&str], name: &str) -> Res<()> {
+    for uri in uris {
+        assert!(get(gateway, uri).await?.1.starts_with(name), "{uri}");
     }
     Ok(())
 }
 
 /// Per-domain leak: a connector's claims serve only the hosts it claims,
-/// so a request is served only by a connector that claims its host. A host nobody claims, a look-alike of a claimed one, or a
-/// claimed host whose connector left is never handed to another domain's
-/// connector.
+/// so a request is served only by a connector that claims its host. A
+/// host nobody claims, a look-alike of a claimed one, or a claimed host
+/// whose connector left is never handed to another domain's connector.
 #[tokio::test]
 async fn a_request_never_reaches_another_domains_connector() -> Res<()> {
     let (gateway, addr) = gateway().await?;
@@ -151,16 +165,7 @@ async fn a_request_never_reaches_another_domains_connector() -> Res<()> {
     eventually("registered", || connections(&gateway) == 2).await?;
     assert_eq!(get(&gateway, "http://A.Example/x").await?.1, "a GET /x");
     assert_eq!(get(&gateway, "http://api.b.example/x").await?.1, "b GET /x");
-    for uri in [
-        "http://c.example/x",
-        "http://xa.example/x",
-        "http://a.example.evil.org/x",
-        "http://b.example/x",
-        "http://evilb.example/x",
-    ] {
-        let sent = send(&gateway, uri).await?;
-        assert!(matches!(sent, Err(SendError::NoRoute)), "{uri}: {sent:?}");
-    }
+    no_route(&gateway, &LOOK_ALIKES).await?;
     a.abort();
     eventually("a gone", || connections(&gateway) == 1).await?;
     let sent = send(&gateway, "http://a.example/x").await?;
@@ -171,6 +176,23 @@ async fn a_request_never_reaches_another_domains_connector() -> Res<()> {
         ),
         "a.example went to another connector: {sent:?}"
     );
+    Ok(())
+}
+
+/// Hosts nobody claims, next to the claimed `a.example` and `*.b.example`.
+const LOOK_ALIKES: [&str; 5] = [
+    "http://c.example/x",
+    "http://xa.example/x",
+    "http://a.example.evil.org/x",
+    "http://b.example/x",
+    "http://evilb.example/x",
+];
+
+async fn no_route(gateway: &Gateway, uris: &[&str]) -> Res<()> {
+    for uri in uris {
+        let sent = send(gateway, uri).await?;
+        assert!(matches!(sent, Err(SendError::NoRoute)), "{uri}: {sent:?}");
+    }
     Ok(())
 }
 
@@ -247,39 +269,20 @@ async fn a_broken_stream_does_not_take_its_siblings_down() -> Res<()> {
 /// queue behind them instead of taking the freed slot first.
 #[tokio::test]
 async fn a_newcomer_does_not_jump_the_wait_queue() -> Res<()> {
-    let (gateway, addr) = start(Config {
-        max_wait: Duration::from_secs(5),
-        ..gateway_config()?
-    })
-    .await?;
+    let (gateway, addr) = patient_gateway().await?;
     let seen = Arc::new(Mutex::new(Vec::new()));
     let gate = Arc::new(Semaphore::new(0));
     let _c = serve_in_order(&addr, seen.clone(), gate.clone()).await?;
     eventually("registered", || connections(&gateway) == 1).await?;
-    let mut sent = Vec::new();
-    for i in 0..4_u32 {
-        let g = gateway.clone();
-        sent.push(tokio::spawn(async move {
-            get(&g, &format!("http://h/mcp/{i}")).await
-        }));
-        eventually("queued in order", || {
-            gateway.in_flight() + gateway.waiting() == i + 1
-        })
-        .await?;
-    }
+    let mut sent = queue_in_order(&gateway, 4).await?;
     // Free the slot one answer at a time, and send a newcomer each time a
     // slot frees: it must still be served after every earlier request.
     for i in 0..4 {
         gate.add_permits(1);
-        let g = gateway.clone();
-        sent.push(tokio::spawn(async move {
-            get(&g, &format!("http://h/mcp/new{i}")).await
-        }));
+        sent.push(spawn_get(&gateway, format!("http://h/mcp/new{i}")));
     }
     gate.add_permits(4);
-    for request in sent {
-        let _answer = request.await??;
-    }
+    all_answered(sent).await?;
     let seen = seen.lock().map_err(|_| "poisoned")?.clone();
     assert_eq!(
         &seen[..4],
@@ -287,6 +290,43 @@ async fn a_newcomer_does_not_jump_the_wait_queue() -> Res<()> {
         "{seen:?}"
     );
     Ok(())
+}
+
+type Sent = tokio::task::JoinHandle<Res<(StatusCode, String)>>;
+
+/// Sends `/mcp/0` to `/mcp/<count - 1>`, each once the one before is in
+/// flight or queued, so their order of arrival is known.
+async fn queue_in_order(gateway: &Gateway, count: u32) -> Res<Vec<Sent>> {
+    let mut sent = Vec::new();
+    for i in 0..count {
+        sent.push(spawn_get(gateway, format!("http://h/mcp/{i}")));
+        eventually("queued in order", || {
+            gateway.in_flight() + gateway.waiting() == i + 1
+        })
+        .await?;
+    }
+    Ok(sent)
+}
+
+fn spawn_get(gateway: &Gateway, uri: String) -> Sent {
+    let g = gateway.clone();
+    tokio::spawn(async move { get(&g, &uri).await })
+}
+
+async fn all_answered(sent: Vec<Sent>) -> Res<()> {
+    for request in sent {
+        let _answer = request.await??;
+    }
+    Ok(())
+}
+
+/// A gateway that lets requests wait 5 s for a slot.
+async fn patient_gateway() -> Res<(Gateway, String)> {
+    start(Config {
+        max_wait: Duration::from_secs(5),
+        ..gateway_config()?
+    })
+    .await
 }
 
 /// A one-slot connector that records the order requests reach it, each

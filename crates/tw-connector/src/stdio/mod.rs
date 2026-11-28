@@ -303,14 +303,24 @@ impl StdioBridge {
             None => return Err(refused(StatusCode::BAD_REQUEST, "missing Mcp-Session-Id")),
         };
         let answers = self.exchange(&session, &messages).await?;
-        if let Some(pinned) = &self.pinned {
-            let asked = crate::tools::asked(&messages);
-            if let Err(why) = pinned.check(&asked, &answers) {
-                let refused = crate::tools::refusal(&asked, &why, batch);
-                return Ok(json(&refused));
-            }
+        if let Some(refused) = self.guard(&messages, &answers, batch) {
+            return Ok(refused);
         }
         Ok(reply(&answers, batch, opened.then_some(id.as_str())))
+    }
+
+    /// With a pinned server, the guard's errors when `answers` show a
+    /// changed one (ADR 0017).
+    fn guard(
+        &self,
+        messages: &[Value],
+        answers: &[Value],
+        batch: bool,
+    ) -> Option<Response<StdioBody>> {
+        let pinned = self.pinned.as_ref()?;
+        let asked = crate::tools::asked(messages);
+        let why = pinned.check(&asked, answers).err()?;
+        Some(json(&crate::tools::refusal(&asked, &why, batch)))
     }
 
     /// The messages in a POST body of at most `max_line` bytes.

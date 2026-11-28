@@ -97,26 +97,34 @@ impl Described {
     /// Why `answer` differs from this server, if it does.
     fn differs(&self, asked: Asked, result: &Value) -> Option<String> {
         match asked {
-            Asked::Initialize => {
-                let (name, version) = server_info(result);
-                (name != self.name || version != self.version).then(|| {
-                    format!(
-                        "the server is now {name} {version}, registered as {} {}",
-                        self.name, self.version
-                    )
-                })
-            }
+            Asked::Initialize => self.other_server(result),
             Asked::Tools => {
                 let tools = result.get("tools").and_then(Value::as_array)?;
-                tools.iter().find_map(|tool| match tool_digest(tool) {
-                    Ok((name, d)) if self.tools.get(&name) == Some(&d) => None,
-                    Ok((name, _)) if self.tools.contains_key(&name) => {
-                        Some(format!("tool {name:?} changed since registration"))
-                    }
-                    Ok((name, _)) => Some(format!("tool {name:?} is new since registration")),
-                    Err(e) => Some(e),
-                })
+                tools.iter().find_map(|tool| self.changed_tool(tool))
             }
+        }
+    }
+
+    fn other_server(&self, result: &Value) -> Option<String> {
+        let (name, version) = server_info(result);
+        (name != self.name || version != self.version).then(|| {
+            format!(
+                "the server is now {name} {version}, registered as {} {}",
+                self.name, self.version
+            )
+        })
+    }
+
+    /// Why `tool` is not one of this server's, if it is not.
+    fn changed_tool(&self, tool: &Value) -> Option<String> {
+        let (name, d) = match tool_digest(tool) {
+            Ok(found) => found,
+            Err(e) => return Some(e),
+        };
+        match self.tools.get(&name) {
+            Some(known) if *known == d => None,
+            Some(_) => Some(format!("tool {name:?} changed since registration")),
+            None => Some(format!("tool {name:?} is new since registration")),
         }
     }
 

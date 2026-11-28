@@ -148,6 +148,15 @@ async fn exchange(
     let tcp = TcpStream::connect(addr).await?;
     let (mut sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(tcp)).await?;
     tokio::spawn(conn);
+    let request = agent_post(session, message)?;
+    let response = tokio::time::timeout(WAIT, sender.send_request(request)).await??;
+    let new = (response.headers().get("mcp-session-id"))
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    Ok((answer(response).await?, new))
+}
+
+fn agent_post(session: Option<&str>, message: &Value) -> Res<Request<Full<Bytes>>> {
     let request = Request::post("/mcp")
         .header("host", "agent")
         .header("content-type", "application/json")
@@ -155,15 +164,13 @@ async fn exchange(
     let request = match session {
         Some(id) => request.header("mcp-session-id", id),
         None => request,
-    }
-    .body(Full::new(Bytes::from(message.to_string())))?;
-    let response = tokio::time::timeout(WAIT, sender.send_request(request)).await??;
-    let new = (response.headers().get("mcp-session-id"))
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_owned);
-    let event_stream = response
-        .headers()
-        .get("content-type")
+    };
+    Ok(request.body(Full::new(Bytes::from(message.to_string())))?)
+}
+
+/// The JSON-RPC answer in `response`: its body, or its first event's data.
+async fn answer(response: Response<Incoming>) -> Res<Value> {
+    let event_stream = (response.headers().get("content-type"))
         .is_some_and(|v| v.as_bytes().starts_with(b"text/event-stream"));
     let body = response.into_body().collect().await?.to_bytes();
     let text = String::from_utf8(body.to_vec())?;
@@ -171,11 +178,10 @@ async fn exchange(
         text.lines()
             .find_map(|l| l.strip_prefix("data: "))
             .unwrap_or("null")
-            .to_owned()
     } else {
-        text
+        &text
     };
-    Ok((serde_json::from_str(&json)?, new))
+    Ok(serde_json::from_str(json)?)
 }
 
 fn tools_list(cursor: Option<&str>) -> Value {

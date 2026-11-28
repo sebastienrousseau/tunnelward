@@ -345,23 +345,26 @@ impl Registry {
         let now = Instant::now();
         state.entries.retain(|e| !e.sender.is_closed());
         state.kept.retain(|k| k.until > now);
-        let top = top_pool(resolver, &state.entries, target);
-        match top {
+        match top_pool(resolver, &state.entries, target) {
             None => coming_queue(resolver, &state, target),
-            Some((route, pool)) => {
-                let lit = |e: &&Entry| !state.dark.iter().any(|d| d.matches(e));
-                let room: Vec<&Entry> = pool
-                    .into_iter()
-                    .filter(|e| e.has_room() && lit(e))
-                    .collect();
-                if ahead(&state, &route, ticket) >= free_slots(&room) {
-                    return Pick::Wait(route);
-                }
-                choose(&room).map_or(Pick::Wait(route), |e| {
-                    Pick::Ready(e.lease(self.changed.clone()))
-                })
-            }
+            Some((route, pool)) => self.take(&state, route, pool, ticket),
         }
+    }
+
+    /// A slot among `pool`'s lit connectors with room, unless as many
+    /// requests wait ahead of `ticket` as there are free slots.
+    fn take(&self, state: &State, route: String, pool: Vec<&Entry>, ticket: Option<u64>) -> Pick {
+        let lit = |e: &&Entry| !state.dark.iter().any(|d| d.matches(e));
+        let room: Vec<&Entry> = pool
+            .into_iter()
+            .filter(|e| e.has_room() && lit(e))
+            .collect();
+        if ahead(state, &route, ticket) >= free_slots(&room) {
+            return Pick::Wait(route);
+        }
+        choose(&room).map_or(Pick::Wait(route), |e| {
+            Pick::Ready(e.lease(self.changed.clone()))
+        })
     }
 
     /// Joins the wait queue for `route` if it holds fewer than `max`.
